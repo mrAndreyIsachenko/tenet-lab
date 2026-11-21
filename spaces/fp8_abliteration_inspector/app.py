@@ -55,6 +55,24 @@ except ImportError:  # pragma: no cover
     gr = None
     HAS_GRADIO = False
 
+try:  # ZeroGPU runtime on huggingface.co/spaces: reserve GPU seconds
+    import spaces
+
+    gpu_decorator = spaces.GPU
+except (ImportError, AttributeError):
+    # ImportError: the ZeroGPU lib is not installed locally. AttributeError:
+    # this repo's own ``spaces/`` directory (the bundle that holds app.py) can
+    # shadow the package as an empty namespace package without a GPU attr.
+    def gpu_decorator(*args: Any, **_kwargs: Any) -> Any:
+        """No-op stand-in for ``spaces.GPU`` supporting bare and kwargs forms."""
+        if args and callable(args[0]):
+            return args[0]
+
+        def _passthrough(inner):
+            return inner
+
+        return _passthrough
+
 # ---------------------------------------------------------------------------
 # Constants (kept in sync with src/sml/hub/validator.py)
 # ---------------------------------------------------------------------------
@@ -822,7 +840,10 @@ DEMO_PRESET: dict[str, Any] = {
 
 # ---------------------------------------------------------------------------
 # Tenet profile registry — Tab 1 profile selector + Tab 3 command generator.
-# Kept in sync with the PROFILES object in index.html.
+# Kept in sync with the PROFILES object in index.html. The ``*-v2`` entries are
+# the Qwen3-based Tenet v2 family (H15 Tri-Anchor ``<think>`` surgery, H16
+# length-calibrated GRPO, H17 24-seed arena verifier at 100.0 HP, and the H14+
+# Domain i1-CKA-Q4_K_M vs pure CKA-Q4_K_M GGUF audit).
 # ---------------------------------------------------------------------------
 TENET_PROFILES: dict[str, dict[str, Any]] = {
     "3b": {
@@ -967,6 +988,70 @@ TENET_PROFILES: dict[str, dict[str, Any]] = {
         "crest_factor": 3.68,
         "h12_gain": "+0.6611",
         "h12_releak": "7.50e-7",
+    },
+    "4b-v2": {
+        "id": "Tenet-4B-Qwen3-Unslop-v2",
+        "base": "Qwen/Qwen3-4B",
+        "hw": "NVIDIA H100 80GB (H15/H16/H17)",
+        "num_layers": 36,
+        "selected_layers": [13, 15, 17, 12, 11, 20, 9, 22],
+        "crest_factor": 3.1767,
+        "fp8_releak_tenet": "2.49%",
+        "fp8_retention": "97.51%",
+        "gates": "10/10 (PASS)",
+        "arena_hp": "F16 100.0 | CKA-Q4_K_M 100.0 | i1-CKA-Q4_K_M 100.0",
+        "ifeval_3way": "Base 25.0% / Tenet 20.0%",
+        "gsm8k_3way": "Base 15.0% / Tenet 15.0% (+0.0 pp)",
+        "unslop_rate": "100.0%",
+        "cka_recipe": "Q8_0:[0,12,13,15,17,35] Q6_K:[9,11,20,22] (5.074 bpw)",
+    },
+    "8b-v2": {
+        "id": "Tenet-8B-Qwen3-Unslop-v2",
+        "base": "Qwen/Qwen3-8B",
+        "hw": "NVIDIA H100 80GB (H15/H16/H17)",
+        "num_layers": 36,
+        "selected_layers": [20, 17, 9, 5, 18, 21, 7, 19],
+        "crest_factor": 4.3688,
+        "fp8_releak_tenet": "2.72%",
+        "fp8_retention": "97.28%",
+        "gates": "10/10 (PASS)",
+        "arena_hp": "F16 100.0 | CKA-Q4_K_M 100.0 | i1-CKA-Q4_K_M 100.0",
+        "ifeval_3way": "Base 30.0% / Naive 10.0% / Tenet 30.0%",
+        "gsm8k_3way": "Base 22.5% / Naive 17.5% / Tenet 17.5%",
+        "unslop_rate": "87.50% (Naive 79.17%)",
+        "cka_recipe": "Q8_0:[0,9,17,18,20,35] Q6_K:[5,7,19,21] (5.074 bpw)",
+    },
+    "14b-v2": {
+        "id": "Tenet-14B-Qwen3-Unslop-v2",
+        "base": "Qwen/Qwen3-14B",
+        "hw": "NVIDIA H100 80GB (H15/H16/H17)",
+        "num_layers": 40,
+        "selected_layers": [18, 11, 22, 12, 13, 10],
+        "crest_factor": 3.5974,
+        "fp8_releak_tenet": "2.59%",
+        "fp8_retention": "97.41%",
+        "gates": "5/10 (FAIL)",
+        "arena_hp": "F16 93.75 | CKA-Q4_K_M 91.67 (6/6 SQL) | i1-CKA-Q4_K_M 95.83 (0/6 SQL)",
+        "ifeval_3way": "Base 22.5% / Naive 22.5% / Tenet 25.0%",
+        "gsm8k_3way": "Base 15.0% / Naive 15.0% / Tenet 25.0% (+10.0 pp)",
+        "unslop_rate": "91.67%",
+        "cka_recipe": "Q8_0:[0,11,12,18,39] Q6_K:[10,13,22] (5.014 bpw)",
+    },
+    "32b-v2": {
+        "id": "Tenet-32B-Qwen3-Unslop-v2",
+        "base": "Qwen/Qwen3-32B",
+        "hw": "NVIDIA H100 80GB (H15/H16/H17)",
+        "num_layers": 64,
+        "selected_layers": [30, 42, 46, 45, 48, 24],
+        "crest_factor": 4.3593,
+        "fp8_releak_tenet": "2.56%",
+        "fp8_retention": "97.44%",
+        "gates": "9/10 (FAIL: i1_cka house 95.83%)",
+        "arena_hp": "F16 100.0 | CKA-Q4_K_M 100.0 (24/24) | i1-CKA-Q4_K_M 97.92 (23/24)",
+        "ifeval_3way": "Base 25.0% / Naive 30.0% / Tenet 22.5%",
+        "gsm8k_3way": "Base 17.5% / Naive 12.5% / Tenet 17.5%",
+        "unslop_rate": "87.50% (Naive 83.33%)",
+        "cka_recipe": "Q8_0:[0,42,46,48,63] Q6_K:[24,30,45] (4.952 bpw)",
     },
 }
 
@@ -1136,13 +1221,51 @@ def render_demo_svg() -> str:
 # in index.html
 # ---------------------------------------------------------------------------
 def _format_profile_table(profile: dict[str, Any]) -> str:
-    """Markdown Naive-vs-Tenet comparison table for a TENET_PROFILES entry."""
+    """Markdown Naive-vs-Tenet comparison table for a TENET_PROFILES entry.
+
+    v1 entries carry the full H9–H12 metric set; the Qwen3 ``*-v2`` entries
+    instead report the H15/H16/H17 gates, the 24-seed arena HP, 3-way
+    IFEval / GSM8K CoT scores and the CKA-Guided GGUF recipe. v2 fields are
+    accessed defensively so both families render without KeyError.
+    """
     crest = float(profile["crest_factor"])
+    header = f"**{profile['id']}** (`{profile['base']}`) — {profile['hw']}"
+    selected = [str(layer) for layer in profile.get("selected_layers") or []]
+    surgical_row = (
+        f"| Surgical layers ({profile['num_layers']} total) | — | "
+        f"{len(selected)} selected | {len(selected)} selected |"
+    )
+
+    if "gates" in profile:  # Tenet v2 (H15/H16/H17) family
+        gates = str(profile["gates"])
+        gate_cls = "✅" if "PASS" in gates.upper() else "❌"
+        return "\n".join(
+            [
+                header,
+                "",
+                "| metric | value |",
+                "|---|---|",
+                f"| H15/H16/H17 gates | {gate_cls} {gates} |",
+                f"| Arena HP (F16 / CKA-Q4_K_M / i1-CKA-Q4_K_M) | "
+                f"{profile['arena_hp']} |",
+                f"| Max row crest-factor (< 25.0) | {crest:.4f} |",
+                f"| FP8 subspace re-leakage (H11) | "
+                f"{profile['fp8_releak_tenet']} |",
+                f"| FP8 retention | {profile['fp8_retention']} |",
+                f"| IFEval (3-way) | {profile['ifeval_3way']} |",
+                f"| GSM8K CoT (3-way) | {profile['gsm8k_3way']} |",
+                f"| Unslop pass rate | {profile['unslop_rate']} |",
+                f"| CKA-Guided GGUF recipe | `{profile['cka_recipe']}` |",
+                f"| Surgical layers ({profile['num_layers']} total) | "
+                f"{len(selected)} selected: {', '.join(selected)} |",
+            ]
+        )
+
     lancet_kl = float(profile["lancet_kl"])
     naive_kl = float(profile["naive_kl"])
     return "\n".join(
         [
-            f"**{profile['id']}** (`{profile['base']}`) — {profile['hw']}",
+            header,
             "",
             "| metric | Naive Abliteration | Tenet Lancet (BF16) | Tenet Lancet (FP8) |",
             "|---|---|---|---|",
@@ -1161,22 +1284,112 @@ def _format_profile_table(profile: dict[str, Any]) -> str:
             f"| Max row crest-factor (< 25.0) | Unbounded | {crest:.2f} | {crest:.2f} |",
             f"| H12 multi-adapter merge gain | Baseline (0.00) | "
             f"{profile['h12_gain']} | {profile['h12_gain']} |",
-            f"| Surgical layers ({profile['num_layers']} total) | — | "
-            f"{len(profile['selected_layers'])} selected | "
-            f"{len(profile['selected_layers'])} selected |",
+            surgical_row,
         ]
     )
+
+
+_ARENA_CHUNK_RE = re.compile(r"^(\S+)\s+([0-9]+(?:\.[0-9]+)?)(.*)$")
+
+
+def _parse_arena_hp(arena_hp: Any) -> list[tuple[str, float, str]]:
+    """Split an ``arena_hp`` string like ``"F16 100.0 | CKA-Q4_K_M 91.67 (6/6 SQL)"``
+    into ``(label, score, note)`` triples (empty list when unparseable)."""
+    chunks = [] if arena_hp is None else str(arena_hp).split("|")
+    parsed: list[tuple[str, float, str]] = []
+    for chunk in chunks:
+        m = _ARENA_CHUNK_RE.match(chunk.strip())
+        if m:
+            parsed.append((m.group(1), float(m.group(2)), m.group(3).strip()))
+    return parsed
 
 
 def render_profile_svg(profile: dict[str, Any]) -> str:
     """Inline SVG damage profile for a TENET_PROFILES entry."""
     w, h = 960, 290
+    crest = float(profile["crest_factor"])
+    crest_pct = min(100.0, crest / MAX_ROW_CREST_FACTOR_THRESHOLD * 100)
+
+    if "gates" in profile:  # Tenet v2 (H15/H16/H17) family
+        gates = str(profile["gates"])
+        gates_ok = "PASS" in gates.upper()
+        gates_color = "#10b981" if gates_ok else "#ef4444"
+        crest_ok = crest < MAX_ROW_CREST_FACTOR_THRESHOLD
+        arena = _parse_arena_hp(profile.get("arena_hp"))
+        arena_rows: list[str] = []
+        for i, (label, score, note) in enumerate(arena[:3]):
+            y = 118 + i * 36
+            bar_w = min(score, 100.0) / 100.0 * 280
+            score_color = "#6ee7b7" if score >= 95.0 else "#fbbf24"
+            arena_rows.append(
+                f'<text x="42" y="{y}" fill="#cbd5e1" font-size="12">'
+                f"{_esc(label + (' (' + note + ')' if note else ''))}</text>",
+            )
+            arena_rows.append(
+                f'<rect x="42" y="{y + 6}" width="280" height="12" rx="3" fill="#1e293b"/>',
+            )
+            arena_rows.append(
+                f'<rect x="42" y="{y + 6}" width="{bar_w:.1f}" height="12" rx="3" '
+                f'fill="#6366f1"/>',
+            )
+            arena_rows.append(
+                f'<text x="{42 + 288:.0f}" y="{y}" font-size="12" font-weight="700" '
+                f'fill="{score_color}">{score:.2f}</text>',
+            )
+        return "".join(
+            [
+                f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} 400" '
+                'width="100%" height="380">',
+                f'<rect width="{w}" height="400" rx="8" fill="#0d1322"/>',
+                '<text x="24" y="32" fill="#f8fafc" font-size="15" font-weight="700">'
+                f"{_esc(profile['id'])} ({_esc(profile['base'])}) — damage profile"
+                "</text>",
+                '<text x="24" y="52" fill="#94a3b8" font-size="12">'
+                f"Hardware: {_esc(profile['hw'])}</text>",
+                # Panel 1: H17 24-seed arena HP
+                '<rect x="24" y="70" width="440" height="196" rx="8" '
+                'fill="#111827" stroke="#334155"/>',
+                '<text x="42" y="96" fill="#cbd5e1" font-size="13" font-weight="600">'
+                "H17: 24-Seed Arena HP (F16 / CKA-Q4_K_M / i1-CKA-Q4_K_M)</text>",
+                *arena_rows,
+                # Panel 2: FP8 crest gate + gates verdict
+                '<rect x="492" y="70" width="444" height="196" rx="8" '
+                'fill="#111827" stroke="#334155"/>',
+                '<text x="510" y="96" fill="#cbd5e1" font-size="13" font-weight="600">'
+                "H11 &amp; H15–H17: FP8 Row Crest-Factor Gate (&lt; 25.0)</text>",
+                '<text x="510" y="132" fill="#94a3b8" font-size="12.5">'
+                f"Max Row Crest-Factor: {crest:.4f} / 25.00 Threshold "
+                f"({'PASS' if crest_ok else 'FAIL'})</text>",
+                '<rect x="510" y="142" width="380" height="18" rx="4" fill="#1e293b"/>',
+                f'<rect x="510" y="142" width="{crest_pct * 3.8:.1f}" height="18" '
+                'rx="4" fill="#6366f1"/>',
+                '<line x1="890" y1="136" x2="890" y2="166" stroke="#ef4444" '
+                'stroke-width="2" stroke-dasharray="3,3"/>',
+                '<text x="510" y="192" fill="#6ee7b7" font-size="12.5">'
+                f"FP8 Retention: {_esc(profile['fp8_retention'])} | "
+                f"FP8 Re-Leakage: {_esc(profile['fp8_releak_tenet'])}</text>",
+                '<text x="510" y="218" font-size="12.5" font-weight="600" '
+                f'fill="{gates_color}">H15/H16/H17 Gates: {_esc(gates)}</text>',
+                '<text x="510" y="242" fill="#94a3b8" font-size="12">'
+                f"Unslop pass rate: {_esc(profile['unslop_rate'])}</text>",
+                # Footer: 3-way evals + CKA recipe
+                '<text x="24" y="292" fill="#a5b4fc" font-size="12.5">'
+                f"IFEval (3-way): {_esc(profile['ifeval_3way'])}</text>",
+                '<text x="24" y="314" fill="#a5b4fc" font-size="12.5">'
+                f"GSM8K CoT (3-way): {_esc(profile['gsm8k_3way'])}</text>",
+                '<text x="24" y="340" fill="#94a3b8" font-size="12.5">'
+                f"CKA-Guided GGUF recipe: {_esc(profile['cka_recipe'])}</text>",
+                '<text x="24" y="366" fill="#94a3b8" font-size="12">'
+                f"Surgical layers ({_esc(profile['num_layers'])} total): "
+                f"{_esc(', '.join(str(layer) for layer in profile['selected_layers']))}</text>",
+                "</svg>",
+            ]
+        )
+
     naive_kl = float(profile["naive_kl"])
     lancet_kl = float(profile["lancet_kl"])
-    crest = float(profile["crest_factor"])
     naive_bar = min(260.0, max(40.0, math.log10(1 + naive_kl * 100) * 95))
     lancet_bar = max(8.0, math.log10(1 + lancet_kl * 100) * 45)
-    crest_pct = min(100.0, crest / MAX_ROW_CREST_FACTOR_THRESHOLD * 100)
     return "".join(
         [
             f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" '
@@ -1476,6 +1689,7 @@ def build_demo():
         ]
     )
 
+    @gpu_decorator(duration=60)
     def _run_inspect(path: str):
         result = inspect_directory_or_bundle(path)
         metrics = {k: v for k, v in result.items() if k != "svg_chart"}
