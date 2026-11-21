@@ -284,3 +284,13 @@ $$\Delta W_{\text{safe}} = (I - U_{\text{ablate}} U_{\text{ablate}}^\top) \Delta
    - Доменная `imatrix` снизила `Mean KLD vs F16` на **66.1%** относительно `cka_q4_k_m` (`0.01314` vs `0.03872`) при PPL **ниже** FP16-референса (`8.4985` vs `8.5154`) и `Same Top-1 = 95.24%`, сохранив весовую защиту `CKA` (`1.227x` subspace amp, `1.189%` L2 error; [`gguf_audit/final_metrics.json`](../results/tenet_releases/Tenet-8B-Qwen3-Unslop-v2/gguf_audit/final_metrics.json)).
    - Метрики из [`foundry_summary.json`](../results/tenet_releases/Tenet-8B-Qwen3-Unslop-v2/foundry_summary.json): `cot_tag_integrity_rate = 1.0000` (на `f16` и `i1_cka_q4_k_m`), `arena_house_hp = 100.00`, `house_artifact_classification_rate = 1.0000` (`24/24`), `length_collapse_rate = 0.0`, `slop_and_refusal_rate = 0.0`, `unslop_pass_rate = 1.0000`, `sql_readonly_rate = 1.0000` (`6/6`).
    - Обе модели `Tenet v2` (`Tenet-4B-Qwen3-Unslop-v2`, `Tenet-8B-Qwen3-Unslop-v2`) собраны, аттестованы (`10/10` gates) и опубликованы в Hugging Face Hub.
+
+### Ночной H100-прогон `Tenet v2` (`14B` & `32B`) и 3-Way `lm-eval` по всем 8 релизам
+
+1. **`Tenet-32B-Qwen3-Unslop-v2` (`Qwen/Qwen3-32B`, `9/10` gates):**
+   - `BF16/FP8`: `max_row_crest_factor = 4.3593` (`< 25.0`), `fp8_subspace_releakage_pct = 2.5579%` (`< 3.0%`).
+   - `GGUF` (`40x512`, `4.896 bpw`): **`F16`** (`61.03 GiB`, `PPL 6.8993`) и чистый **`CKA-Q4_K_M`** (`18.68 GiB`, `PPL 7.0576`, `KLD 0.02407`, `Same Top-1 94.12%`) выбивают **`100.0 HP` (`24/24` артефактов, `100%` `<think>` CoT integrity, `100%` unslop, `6/6` SQL read-only)**. Единственный упавший гейт (`9/10`) — `house_artifact_classification_rate[i1_cka_q4_k_m]` (`97.92 HP`, `23/24`, промах на `house-edge-leap-years` при наложении `imatrix`), поэтому рекомендуемый 4-битный квант для `32B-v2` — чистый **`CKA-Q4_K_M`** или **`BF16/FP8`** ([`foundry_summary.json`](../results/tenet_releases/Tenet-32B-Qwen3-Unslop-v2/foundry_summary.json)).
+2. **`Tenet-14B-Qwen3-Unslop-v2` (`Qwen/Qwen3-14B`, `5/10` gates):**
+   - `BF16/FP8`: `max_row_crest_factor = 3.5974`, `fp8_subspace_releakage_pct = 2.5898%`.
+   - В 3-way `lm-eval` (`limit=40`) `Tenet-14B-v2` опережает Base и Naive по обоим ключевым бенчмаркам: **`IFEval Strict 0.250`** (vs `0.225` Base/Naive) и **`GSM8K CoT Flexible 0.250`** (vs `0.150` Base/Naive, **`+10.0 pp`**) при `unslop_pass_rate = 0.917` ([`Tenet-14B-Qwen3-Unslop-v2.json`](../results/external_evals/Tenet-14B-Qwen3-Unslop-v2.json)).
+   - `GGUF` (`40x512`, `5.003 bpw`): `91.67–95.83 HP` (`CKA-Q4_K_M` прошёл `6/6` SQL и `0%` length collapse, тогда как `F16` и `i1-CKA-Q4_K_M` получили `0/6` SQL и `1/24` collapse на `house-json-feature-flags`; [`foundry_summary.json`](../results/tenet_releases/Tenet-14B-Qwen3-Unslop-v2/foundry_summary.json)).

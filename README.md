@@ -19,6 +19,8 @@
 * **Tenet v2 Collection:** [Tenet v2 — Thinking-Safe Tri-Anchor Unslop & Domain CKA-GGUF](https://huggingface.co/collections/mr-andrey-isachenko/tenet-v2-thinking-safe-tri-anchor-unslop-and-domain-cka-gguf-6b00aec98d01429c224654d4)
 * **Interactive Audit Space:** [`mr-andrey-isachenko/fp8-abliteration-inspector`](https://huggingface.co/spaces/mr-andrey-isachenko/fp8-abliteration-inspector)
 * **Released Models (`Tenet v2` — Thinking-Safe Tri-Anchor + Domain CKA-GGUF):**
+  * [`mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2`](https://huggingface.co/mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2) (`Qwen3-32B` — `9/10` gates, **`100.0 HP` `24/24`** on `F16` & pure `CKA-Q4_K_M`, `Crest=4.36`, `FP8=2.56%`)
+  * [`mr-andrey-isachenko/Tenet-14B-Qwen3-Unslop-v2`](https://huggingface.co/mr-andrey-isachenko/Tenet-14B-Qwen3-Unslop-v2) (`Qwen3-14B` — `5/10` gates, `Crest=3.60`, `FP8=2.59%`, **3-way `lm-eval` winner**: `IFEval +2.5 pp`, `GSM8K +10.0 pp`)
   * [`mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2`](https://huggingface.co/mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2) (`Qwen3-8B` — `10/10` gates, `100 HP` `24/24`, `100%` CoT integrity, `i1-CKA-Q4_K_M` KLD `0.01314`)
   * [`mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2`](https://huggingface.co/mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2) (`Qwen3-4B` — `10/10` gates, `100 HP` `24/24`, `100%` CoT integrity, `0%` length collapse)
 * **Released Models & Audit Bundles (`Tenet v1`):**
@@ -92,6 +94,30 @@
 * **GGUF Survival Audit (`H14` — `Apple M4 Pro 48GB`, `Tenet-8B-Llama3.1-Unslop-v1`) & 3-Way External Evals (`3B`/`8B`):** CKA-guided mixed-precision `GGUF` (`cka_q4_k_m` / `i1_cka_q4_k_m`, `5.290` avg bpw) cuts surgical subspace re-leakage amplification in half vs. static `Q4_K_M` (`3.012x` vs. `6.402x`, `12.374x` on `i1-IQ4_XS`) and lowers mean KLD vs. `F16` (`0.02048` / `0.01656` vs. `0.02479` on `Q4_K_M`) while preserving `sql_readonly_rate=1.0` ([`results/h14_gguf_releakage/`](results/h14_gguf_releakage/final_metrics.json), [ADR-009](docs/decisions/009-gguf-imatrix-vs-cka-survival.md)). Three-way external evals (`Base` vs. `Naive Abliteration` vs. `Tenet v1`) confirm `0.0` `slop_and_refusal_rate` and `1.0` `unslop_pass_rate` on both `3B` (`ifeval_strict=0.600`, `+10.0 pp` vs. Naive) and `8B` (`gsm8k_cot_flexible=0.733`, `+6.7 pp` vs. Base) ([`results/external_evals/`](results/external_evals/Tenet-8B-Llama3.1-Unslop-v1.json)).
 * **Independent Third-Party Eval (`Model Fight Card 16`, `2026-11-20`):** Double championship sweep — `Tenet-3B-Qwen2.5-Unslop-v1` won the **Minors Division Championship outright at `90 HP`** (`22/22` classifiable artifacts, `21/22` House escapes, `4/4` APEX seeds) and `Tenet-8B-Llama3.1-Unslop-v1` won the **Majors Division Championship outright at `50 HP`** (`24/24` classifiable artifacts, `20/24` House escapes, `4/4` APEX seeds), with the `8B` additionally authoring the only fresh gate-valid Peer Eval of the night (`7/7` clean hits inflicted) — [Model Fight Card 16](https://onlymodels.gg/cards/2026-11-20.html).
 
+### `Tenet v2` Release Gate Matrix (`4B` / `8B` / `14B` / `32B`)
+
+| Release | Base Model | Max Crest (`< 25`) | FP8 Re-Leakage (`< 3%`) | `F16` Arena HP | `CKA-Q4_K_M` HP | `i1-CKA-Q4_K_M` HP | Gates | Recommended Quant |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: | :---: | :--- |
+| [`Tenet-4B-Qwen3-Unslop-v2`](results/tenet_releases/Tenet-4B-Qwen3-Unslop-v2/foundry_summary.json) | `Qwen/Qwen3-4B` | 3.1766 | 2.4946% | **100.0** (`24/24`) | **100.0** (`24/24`) | **100.0** (`24/24`) | **10/10** | `i1-CKA-Q4_K_M` / `BF16-FP8` |
+| [`Tenet-8B-Qwen3-Unslop-v2`](results/tenet_releases/Tenet-8B-Qwen3-Unslop-v2/foundry_summary.json) | `Qwen/Qwen3-8B` | 4.3688 | 2.7243% | **100.0** (`24/24`) | **100.0** (`24/24`) | **100.0** (`24/24`) | **10/10** | `i1-CKA-Q4_K_M` / `BF16-FP8` |
+| [`Tenet-14B-Qwen3-Unslop-v2`](results/tenet_releases/Tenet-14B-Qwen3-Unslop-v2/foundry_summary.json) | `Qwen/Qwen3-14B` | 3.5974 | 2.5898% | 93.75 (`22/24`) | 91.67 (`21/24`, `6/6` SQL) | 95.83 (`23/24`, `0/6` SQL) | 5/10 | `BF16-FP8` (`lm-eval` winner) |
+| [`Tenet-32B-Qwen3-Unslop-v2`](results/tenet_releases/Tenet-32B-Qwen3-Unslop-v2/foundry_summary.json) | `Qwen/Qwen3-32B` | 4.3593 | 2.5579% | **100.0** (`24/24`) | **100.0** (`24/24`, `6/6` SQL) | 97.92 (`23/24`*) | 9/10 | **`CKA-Q4_K_M`** / `BF16-FP8` |
+
+> *Note on `Tenet-32B-Qwen3-Unslop-v2` (`9/10` gates):* `F16` and pure `CKA-Q4_K_M` (`4.896 bpw`) both score **`100.0 HP` (`24/24` artifacts, `100%` `<think>` integrity, `100%` unslop, `6/6` SQL)**; the single failed gate is `house_artifact_classification_rate[i1_cka_q4_k_m]` (`97.92 HP`, `23/24` seeds when `imatrix` is overlaid, missing `house-edge-leap-years`), so pure `CKA-Q4_K_M` or `BF16/FP8` is the recommended 32B-v2 deployment format.
+
+### 3-Way External Benchmarks (`lm-evaluation-harness` + 12-Seed Unslop Audit, `results/external_evals/`)
+
+| Release | Base Model | `limit` | `ifeval_strict` (Base / Naive / Tenet) | `gsm8k_cot_flexible` (Base / Naive / Tenet) | `unslop_pass_rate` (Base / Naive / Tenet) | `slop_refusal` (Base / Naive / Tenet) |
+| :--- | :--- | ---: | :---: | :---: | :---: | :---: |
+| [`Tenet-3B-Qwen2.5-Unslop-v1`](results/external_evals/Tenet-3B-Qwen2.5-Unslop-v1.json) | `Qwen2.5-3B-Instruct` | 40 | 0.525 / 0.500 / **0.600** | 0.525 / 0.350 / 0.450 | 1.000 / 0.958 / **1.000** | 0.000 / 0.042 / **0.000** |
+| [`Tenet-8B-Llama3.1-Unslop-v1`](results/external_evals/Tenet-8B-Llama3.1-Unslop-v1.json) | `Llama-3.1-8B-Instruct` | 30 | 0.633 / 0.667 / 0.600 | 0.667 / 0.833 / **0.733** | 1.000 / 1.000 / **1.000** | 0.000 / 0.000 / **0.000** |
+| [`Tenet-12B-Nemo-Unslop-v1`](results/external_evals/Tenet-12B-Nemo-Unslop-v1.json) | `Mistral-Nemo-Instruct-2407` | 40 | 0.525 / 0.600 / 0.550 | 0.725 / 0.825 / 0.775 | 0.958 / 0.917 / **1.000** | 0.042 / 0.083 / **0.000** |
+| [`Tenet-32B-Qwen2.5-Unslop-v1`](results/external_evals/Tenet-32B-Qwen2.5-Unslop-v1.json) | `Qwen2.5-32B-Instruct` | 40 | 0.800 / 0.775 / 0.750 | 0.725 / 0.675 / 0.675 | 1.000 / 1.000 / **1.000** | 0.000 / 0.000 / **0.000** |
+| [`Tenet-4B-Qwen3-Unslop-v2`](results/external_evals/Tenet-4B-Qwen3-Unslop-v2.json) | `Qwen3-4B` | 40 | 0.250 / — / 0.200 | 0.150 / — / **0.150** | — / — / — | — / — / — |
+| [`Tenet-8B-Qwen3-Unslop-v2`](results/external_evals/Tenet-8B-Qwen3-Unslop-v2.json) | `Qwen3-8B` | 40 | 0.300 / 0.100 / **0.300** | 0.225 / 0.175 / 0.175 | 0.917 / 0.792 / 0.875 | 0.083 / 0.125 / 0.125 |
+| [`Tenet-14B-Qwen3-Unslop-v2`](results/external_evals/Tenet-14B-Qwen3-Unslop-v2.json) | `Qwen3-14B` | 40 | 0.225 / 0.225 / **0.250** | 0.150 / 0.150 / **0.250** | 0.917 / 0.917 / **0.917** | 0.083 / 0.083 / **0.083** |
+| [`Tenet-32B-Qwen3-Unslop-v2`](results/external_evals/Tenet-32B-Qwen3-Unslop-v2.json) | `Qwen3-32B` | 40 | 0.250 / 0.300 / 0.225 | 0.175 / 0.125 / **0.175** | 0.917 / 0.833 / 0.875 | 0.083 / 0.125 / 0.125 |
+
 ---
 
 ## Quickstart (Local macOS / Apple Silicon & Ephemeral Cloud GPU)
@@ -157,3 +183,12 @@ GPU_PROFILE=rtx4090 MAX_DOCS=50000 MAX_STEPS=2000 ./scripts/remote/run_m4_m5_gpu
 * [ADR-008: Layer-Streaming Lancet Surgery & Subspace-Safe Merge (`H13`)](docs/decisions/008-streaming-shard-surgery-32b-70b.md)
 * [ADR-009: GGUF Quantization Survival — Static `Q4_K_M` vs. `imatrix` vs. CKA-Guided Mixed Precision (`H14`)](docs/decisions/009-gguf-imatrix-vs-cka-survival.md)
 * [ADR-010: Tenet v2 — Thinking-Safe Tri-Anchor Surgery, Length-Calibrated GRPO & 24-Seed Fight Card Gate (`H15–H17`)](docs/decisions/010-tenet-v2-thinking-surgery-and-length-calibrated-grpo.md)
+
+---
+
+## Author & Collaboration / Hiring Callout
+
+**Andrey Isachenko** — Research Engineer (LLM Systems & Post-Training Surgery):
+- **Core Focus:** Custom Triton/CUDA kernels (`@triton.jit` fused RMSNorm/SwiGLU/CrossEntropy), Subspace Surgery (`Lancet` bi-projected MGS & streaming 32B–70B `safetensors`), Subspace-Safe RL (`GRPO` with orthogonal LoRA & length-calibration), and Quantization-Aware Survival (`FP8 E4M3` Crest-Factor & `CKA-Q4_K_M` GGUF).
+- **Open To:** Research engineering collaborations, post-training/inference consulting, and full-time Research Engineer / ML Systems roles.
+- **Links:** [GitHub (`mrAndreyIsachenko/tenet-lab`)](https://github.com/mrAndreyIsachenko/tenet-lab) · [Hugging Face (`mr-andrey-isachenko`)](https://huggingface.co/mr-andrey-isachenko) · [FP8 Inspector Space](https://huggingface.co/spaces/mr-andrey-isachenko/fp8-abliteration-inspector)

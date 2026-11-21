@@ -79,15 +79,14 @@ Both 4-bit CKA mixed-precision GGUFs are shipped directly in this repository:
 
 ---
 
-## External Benchmark Check (`lm-evaluation-harness`)
+## External Benchmark Check (`lm-evaluation-harness`, `limit=40`)
 
-| Arm | `gsm8k_cot` (Flexible Match) | `ifeval` (Instruction Strict) | `gsm8k_cot` Delta vs Base |
-| :--- | ---: | ---: | ---: |
-| `Qwen/Qwen3-4B` (Base) | 15.0% | 44.4% | — |
-| `Tenet-4B-Qwen3-Unslop-v2` | **15.0%** | 41.3% | **0.0 pp** |
+| Arm | `gsm8k_cot` (Flexible Match) | `ifeval` (Prompt Strict) | `ifeval` (Instruction Strict) | `gsm8k_cot` Delta vs Base |
+| :--- | ---: | ---: | ---: | ---: |
+| `Qwen/Qwen3-4B` (Base) | 0.150 | 0.250 | 0.444 | — |
+| `Tenet-4B-Qwen3-Unslop-v2` | **0.150** | 0.200 | 0.413 | **+0.0 pp** |
 
 ---
-
 ## Quickstart (`llama.cpp`, `vLLM`, `Transformers`)
 
 ### 1. Local `llama.cpp` (`Domain-i1-CKA-Q4_K_M` GGUF)
@@ -101,6 +100,7 @@ llama-server \
 ```bash
 vllm serve mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2 \
   --quantization fp8 \
+  --reasoning-parser qwen3 \
   --max-model-len 8192
 ```
 
@@ -118,3 +118,13 @@ inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 outputs = model.generate(**inputs, max_new_tokens=1024)
 print(tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True))
 ```
+
+---
+
+## Tenet Collections & Research Collaboration
+
+- **Tenet v1 Collection (FP8-Safe Bi-Projected Unslop):** [Tenet v1 on Hugging Face](https://huggingface.co/collections/mr-andrey-isachenko/tenet-v1-bi-projected-unslop-and-fp8-safe-llm-family-6afed2048ba13a74fb7e0fac) (includes Model Fight Card 16 Minors & Majors Champions `3B` & `8B`)
+- **Tenet v2 Collection (Thinking-Safe Tri-Anchor & Domain CKA-GGUF):** [Tenet v2 on Hugging Face](https://huggingface.co/collections/mr-andrey-isachenko/tenet-v2-thinking-safe-tri-anchor-unslop-and-domain-cka-gguf-6b00aec98d01429c224654d4)
+- **Interactive Inspector & Codebase:** [FP8 & Abliteration Inspector Space](https://huggingface.co/spaces/mr-andrey-isachenko/fp8-abliteration-inspector) · [GitHub: mrAndreyIsachenko/tenet-lab](https://github.com/mrAndreyIsachenko/tenet-lab)
+
+> **Collaboration / Hiring:** Built by Andrey Isachenko (Research Engineer — LLM Systems, Post-Training Subspace Surgery, GRPO, Triton/CUDA & Quantization-Aware Survival). Open to research engineering collaborations, consulting, and full-time roles in post-training, inference systems, and alignment/unslop tooling — reach out via [GitHub](https://github.com/mrAndreyIsachenko/tenet-lab) or [Hugging Face](https://huggingface.co/mr-andrey-isachenko).

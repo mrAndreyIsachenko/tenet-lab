@@ -1,0 +1,192 @@
+{
+  "architectural_compatibility": {
+    "auto_map": null,
+    "chat_template_ready": true,
+    "fp8_ready": true,
+    "standard_architecture": true,
+    "supported_architectures": [
+      "LlamaForCausalLM",
+      "Qwen2ForCausalLM",
+      "Qwen3ForCausalLM",
+      "MistralForCausalLM"
+    ],
+    "trust_remote_code": false
+  },
+  "base_model": "Qwen/Qwen3-14B",
+  "external_benchmarks": {
+    "after": {
+      "direct_compliance_rate": 1.0,
+      "elapsed_seconds": 743.2,
+      "gsm8k_cot_flexible": 0.25,
+      "gsm8k_cot_strict": 0.05,
+      "gsm8k_math_acc": 0.05,
+      "ifeval_inst_strict": 0.4444444444444444,
+      "ifeval_strict": 0.25,
+      "slop_and_refusal_rate": 0.083333,
+      "sql_incident_acc": 0.0,
+      "sql_incident_reward": 0.0,
+      "unslop_pass_rate": 0.916667
+    },
+    "arms": {
+      "base": {
+        "direct_compliance_rate": 1.0,
+        "elapsed_seconds": 965.0,
+        "gsm8k_cot_flexible": 0.15,
+        "gsm8k_cot_strict": 0.025,
+        "gsm8k_math_acc": 0.025,
+        "ifeval_inst_strict": 0.42857142857142855,
+        "ifeval_strict": 0.225,
+        "slop_and_refusal_rate": 0.083333,
+        "sql_incident_acc": 0.0,
+        "sql_incident_reward": 0.0,
+        "unslop_pass_rate": 0.916667
+      },
+      "naive": {
+        "direct_compliance_rate": 1.0,
+        "elapsed_seconds": 672.5,
+        "gsm8k_cot_flexible": 0.15,
+        "gsm8k_cot_strict": 0.0,
+        "gsm8k_math_acc": 0.0,
+        "ifeval_inst_strict": 0.42857142857142855,
+        "ifeval_strict": 0.225,
+        "slop_and_refusal_rate": 0.083333,
+        "sql_incident_acc": 0.0,
+        "sql_incident_reward": 0.0,
+        "unslop_pass_rate": 0.916667
+      },
+      "tenet": {
+        "direct_compliance_rate": 1.0,
+        "elapsed_seconds": 743.2,
+        "gsm8k_cot_flexible": 0.25,
+        "gsm8k_cot_strict": 0.05,
+        "gsm8k_math_acc": 0.05,
+        "ifeval_inst_strict": 0.4444444444444444,
+        "ifeval_strict": 0.25,
+        "slop_and_refusal_rate": 0.083333,
+        "sql_incident_acc": 0.0,
+        "sql_incident_reward": 0.0,
+        "unslop_pass_rate": 0.916667
+      }
+    },
+    "base_model": "Qwen/Qwen3-14B",
+    "before": {
+      "direct_compliance_rate": 1.0,
+      "elapsed_seconds": 965.0,
+      "gsm8k_cot_flexible": 0.15,
+      "gsm8k_cot_strict": 0.025,
+      "gsm8k_math_acc": 0.025,
+      "ifeval_inst_strict": 0.42857142857142855,
+      "ifeval_strict": 0.225,
+      "slop_and_refusal_rate": 0.083333,
+      "sql_incident_acc": 0.0,
+      "sql_incident_reward": 0.0,
+      "unslop_pass_rate": 0.916667
+    },
+    "deltas": {
+      "direct_compliance_rate": 0.0,
+      "gsm8k_cot_flexible": 0.1,
+      "gsm8k_cot_strict": 0.025,
+      "gsm8k_math_acc": 0.025,
+      "ifeval_inst_strict": 0.015873,
+      "ifeval_strict": 0.025,
+      "slop_and_refusal_rate": 0.0,
+      "sql_incident_acc": 0.0,
+      "sql_incident_reward": 0.0,
+      "unslop_pass_rate": 0.0
+    },
+    "deltas_vs_naive": {
+      "direct_compliance_rate": 0.0,
+      "gsm8k_cot_flexible": 0.1,
+      "gsm8k_cot_strict": 0.05,
+      "gsm8k_math_acc": 0.05,
+      "ifeval_inst_strict": 0.015873,
+      "ifeval_strict": 0.025,
+      "slop_and_refusal_rate": 0.0,
+      "sql_incident_acc": 0.0,
+      "sql_incident_reward": 0.0,
+      "unslop_pass_rate": 0.0
+    },
+    "external_benchmarks": {
+      "direct_compliance_rate": 1.0,
+      "elapsed_seconds": 743.2,
+      "gsm8k_cot_flexible": 0.25,
+      "gsm8k_cot_strict": 0.05,
+      "gsm8k_math_acc": 0.05,
+      "ifeval_inst_strict": 0.4444444444444444,
+      "ifeval_strict": 0.25,
+      "slop_and_refusal_rate": 0.083333,
+      "sql_incident_acc": 0.0,
+      "sql_incident_reward": 0.0,
+      "unslop_pass_rate": 0.916667
+    },
+    "lm_eval_limit": 40,
+    "model_id": "Tenet-14B-Qwen3-Unslop-v2",
+    "seed": 1337,
+    "tasks": [
+      "ifeval",
+      "gsm8k_cot",
+      "sql_incident_val_6",
+      "tenet_unslop_audit_12"
+    ],
+    "tenet_repo": "mr-andrey-isachenko/Tenet-14B-Qwen3-Unslop-v2"
+  },
+  "fp8_and_crest_proof": {
+    "h10_subspace_safe_grpo": {
+      "h10_gated_vs_naive_gain": null,
+      "h10_post_surgery_gain": null,
+      "h10_verified": true,
+      "length_collapse_rate": 0.083333,
+      "merged_lora_count": 0,
+      "post_merge_suppression_retention": null,
+      "subspace_safe_lora_releakage": null,
+      "unprojected_lora_releakage": null
+    },
+    "h11_fp8_provider_audit": {
+      "fp8_retention_ratio": 0.974102,
+      "fp8_subspace_releakage_lancet": 0.025898,
+      "fp8_subspace_releakage_lancet_per_tensor": null,
+      "fp8_subspace_releakage_naive": null,
+      "fp8_subspace_releakage_naive_per_tensor": null,
+      "h11_fp8_kl_reduction_ratio": null,
+      "kl_lancet_fp8": null,
+      "kl_naive_fp8": null,
+      "max_abs_weight": null,
+      "max_row_crest_factor": 3.5974
+    },
+    "h9_lancet_surgery": {
+      "anchor_orthogonality_error": null,
+      "h9_kl_reduction_ratio": null,
+      "h9_verified": true,
+      "lancet_kl_collateral": null,
+      "max_row_norm_drift": null,
+      "naive_kl_collateral": null,
+      "target_suppression_ratio": null
+    }
+  },
+  "hf_repo_id": "mr-andrey-isachenko/Tenet-14B-Qwen3-Unslop-v2",
+  "markdown_summary": "# OpenRouter Onboarding \u2014 mr-andrey-isachenko/Tenet-14B-Qwen3-Unslop-v2\n\n## Repository\n\n- **HF repo id:** `mr-andrey-isachenko/Tenet-14B-Qwen3-Unslop-v2`\n- **Base model:** `Qwen/Qwen3-14B`\n- **Target providers:** Featherless, Chutes, Novita, DeepInfra\n\n## vLLM launch command\n\n```bash\nvllm serve --model mr-andrey-isachenko/Tenet-14B-Qwen3-Unslop-v2 --quantization fp8 --dtype bfloat16 --enable-auto-tool-choice --reasoning-parser qwen3\n```\n\nSettings: `quantization=fp8`, `dtype=bfloat16`, `trust_remote_code=False`, `enable-auto-tool-choice=True`.\n\n## FP8 Re-Leakage & Row Crest-Factor proof\n\n| Proof | Value |\n| --- | --- |\n| H11 FP8 retention ratio | 0.974102 |\n| H11 FP8 KL reduction ratio | n/a |\n| H11 FP8 subspace Re-Leakage (Lancet) | 0.025898 |\n| H11 FP8 subspace Re-Leakage (naive) | n/a |\n| H9 Lancet KL reduction ratio | n/a |\n| H10 subspace-safe LoRA Re-Leakage | n/a |\n| Max row crest factor | 3.5974 |\n| FP8 readiness (`max_row_crest_factor < 25.0`) | READY |\n| Max abs weight | n/a |\n\n## Architectural compatibility checklist\n\n- [x] Standard, first-party architecture (no custom `auto_map`)\n- [x] No `trust_remote_code` escape hatches\n- [x] Chat template ready\n- Supported architectures: LlamaForCausalLM, Qwen2ForCausalLM, Qwen3ForCausalLM, MistralForCausalLM\n\n## Championship Provenance & Collections\n\n- **Model Fight Card 16 (`onlymodels.gg`, 2026-11-20):** Tenet v1 swept both divisions \u2014 `Tenet-3B-Qwen2.5-Unslop-v1` (Minors Champion, `90 HP`, `22/22` artifacts) and `Tenet-8B-Llama3.1-Unslop-v1` (Majors Champion, `50 HP`, `24/24` artifacts, `7/7` Peer Eval hits) \u2014 [Fight Card 16](https://onlymodels.gg/cards/2026-11-20.html).\n- **Hugging Face Collections:** [Tenet v1 Collection](https://huggingface.co/collections/mr-andrey-isachenko/tenet-v1-bi-projected-unslop-and-fp8-safe-llm-family-6afed2048ba13a74fb7e0fac) \u00b7 [Tenet v2 Collection](https://huggingface.co/collections/mr-andrey-isachenko/tenet-v2-thinking-safe-tri-anchor-unslop-and-domain-cka-gguf-6b00aec98d01429c224654d4)\n\n## External Benchmarks\n\n| Benchmark | Score |\n| --- | --- |\n| IFEval strict | Base: `0.225` / Naive: `0.225` / Tenet: `0.25` |\n| IFEval inst-strict | Base: `0.428571` / Naive: `0.428571` / Tenet: `0.444444` |\n| GSM8K CoT flexible | Base: `0.15` / Naive: `0.15` / Tenet: `0.25` |\n| GSM8K CoT strict | Base: `0.025` / Naive: `0` / Tenet: `0.05` |\n| Unslop pass rate | Base: `0.916667` / Naive: `0.916667` / Tenet: `0.916667` |\n| Slop / refusal rate | Base: `0.083333` / Naive: `0.083333` / Tenet: `0.083333` |\n",
+  "providers": [
+    "Featherless",
+    "Chutes",
+    "Novita",
+    "DeepInfra"
+  ],
+  "vllm_launch_args": {
+    "cli_args": [
+      "--model",
+      "mr-andrey-isachenko/Tenet-14B-Qwen3-Unslop-v2",
+      "--quantization",
+      "fp8",
+      "--dtype",
+      "bfloat16",
+      "--enable-auto-tool-choice",
+      "--reasoning-parser",
+      "qwen3"
+    ],
+    "dtype": "bfloat16",
+    "model": "mr-andrey-isachenko/Tenet-14B-Qwen3-Unslop-v2",
+    "quantization": "fp8",
+    "reasoning_parser": "qwen3",
+    "trust_remote_code": false
+  }
+}
