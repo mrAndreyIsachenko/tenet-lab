@@ -686,15 +686,16 @@ def inspect_directory_or_bundle(path: Path | str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 def _render_inspection_svg(m: dict[str, Any]) -> str:
     """Inline SVG: row crest-factor distribution + per-layer SCR profile."""
-    W, H = 920, 430
+    W, H = 960, 430
     verdict = str(m.get("fp8_verdict") or "N/A")
-    verdict_color = {"PASS": "#10b981", "FAIL": "#ef4444"}.get(verdict, "#64748b")
+    verdict_color = {"PASS": "#10b981", "FAIL": "#ef4444"}.get(verdict, "#94a3b8")
     title_prefix = "FP8 Row Crest-Factor audit — verdict: "
     parts: list[str] = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" '
+        'style="width:100%;height:auto;display:block;" '
         'font-family="ui-sans-serif,system-ui,Segoe UI,sans-serif">',
-        f'<rect width="{W}" height="{H}" fill="#ffffff" rx="10"/>',
-        f'<text x="24" y="30" font-size="17" font-weight="700" fill="#0f172a">'
+        f'<rect width="{W}" height="{H}" fill="#0d1322" stroke="#334155" rx="10"/>',
+        f'<text x="24" y="30" font-size="17" font-weight="700" fill="#f8fafc">'
         f"{title_prefix}{_esc(verdict)}</text>",
         f'<circle cx="{24 + 7.5 * len(title_prefix) + 14}" cy="24" r="9" fill="{verdict_color}"/>',
     ]
@@ -703,12 +704,12 @@ def _render_inspection_svg(m: dict[str, Any]) -> str:
 
     if not layers:
         parts.append(
-            '<text x="24" y="90" font-size="14" fill="#64748b">'
+            '<text x="24" y="90" font-size="14" fill="#94a3b8">'
             "No row crest-factor measurements available.</text>"
         )
         for i, err in enumerate(list(m.get("errors", []))[:4]):
             parts.append(
-                f'<text x="24" y="{118 + i * 20}" font-size="12" fill="#b91c1c">'
+                f'<text x="24" y="{118 + i * 20}" font-size="12" fill="#f87171">'
                 f"{_esc('• ' + err[:120])}</text>"
             )
         parts.append("</svg>")
@@ -716,7 +717,7 @@ def _render_inspection_svg(m: dict[str, Any]) -> str:
 
     crest_vals = [profile[layer] for layer in layers]
     # ---- left panel: crest-factor distribution -------------------------------
-    Lx, Ly, Lw, Lh = 52, 70, 360, 280
+    Lx, Ly, Lw, Lh = 52, 70, 380, 280
     base_y = Ly + Lh
     ymax = max(max(crest_vals), MAX_ROW_CREST_FACTOR_THRESHOLD + 2.0)
     nbins = max(6, int(math.ceil(ymax / 2.0)))
@@ -731,7 +732,7 @@ def _render_inspection_svg(m: dict[str, Any]) -> str:
         bh = (c / peak) * (Lh - 20)
         parts.append(
             f'<rect x="{Lx + i * bin_w + 1:.1f}" y="{base_y - bh:.1f}" width="{bin_w - 2:.1f}" '
-            f'height="{bh:.1f}" fill="#94a3b8" opacity="0.85"/>'
+            f'height="{bh:.1f}" fill="#6366f1" opacity="0.85"/>'
         )
     parts.append(f'<line x1="{Lx}" y1="{base_y}" x2="{Lx + Lw}" y2="{base_y}" stroke="#334155"/>')
     thr_x = Lx + (MAX_ROW_CREST_FACTOR_THRESHOLD / ymax) * Lw
@@ -744,17 +745,17 @@ def _render_inspection_svg(m: dict[str, Any]) -> str:
         f"FP8 limit {MAX_ROW_CREST_FACTOR_THRESHOLD:.1f}</text>"
     )
     parts.append(
-        f'<text x="{Lx}" y="{Ly + 14}" font-size="12" fill="#475569">'
+        f'<text x="{Lx}" y="{Ly + 14}" font-size="12" fill="#94a3b8">'
         "per-tensor row crest factor (histogram)</text>"
     )
-    parts.append(f'<text x="{Lx}" y="{base_y + 18}" font-size="11" fill="#64748b">0</text>')
+    parts.append(f'<text x="{Lx}" y="{base_y + 18}" font-size="11" fill="#94a3b8">0</text>')
     parts.append(
         f'<text x="{Lx + Lw - 30:.0f}" y="{base_y + 18}" font-size="11" '
-        f'fill="#64748b">{ymax:.0f}</text>'
+        f'fill="#94a3b8">{ymax:.0f}</text>'
     )
 
     # ---- right panel: SCR layer profile ---------------------------------------
-    Rx, Ry, Rw, Rh = 480, 70, 412, 280
+    Rx, Ry, Rw, Rh = 492, 70, 444, 280
     rbase = Ry + Rh
     scr = {int(k): float(v) for k, v in (m.get("scr_profile") or {}).items() if int(k) >= 0}
     top3 = {int(r.get("layer", -1)) for r in m.get("top_3_outlier_layers", [])}
@@ -764,7 +765,7 @@ def _render_inspection_svg(m: dict[str, Any]) -> str:
     for i, layer in enumerate(layers):
         v = scr.get(layer, profile[layer] / MAX_ROW_CREST_FACTOR_THRESHOLD)
         bh = min(v / scr_max, 0.999) * Rh
-        color = "#ef4444" if layer in top3 else "#0ea5e9"
+        color = "#ef4444" if layer in top3 else "#6366f1"
         parts.append(
             f'<rect x="{Rx + i * bar_w + 1:.1f}" y="{rbase - bh:.1f}" '
             f'width="{max(bar_w - 2, 1):.1f}" height="{bh:.1f}" fill="{color}" opacity="0.9"/>'
@@ -772,7 +773,7 @@ def _render_inspection_svg(m: dict[str, Any]) -> str:
         if layer % 5 == 0:
             parts.append(
                 f'<text x="{Rx + i * bar_w:.1f}" y="{rbase + 14}" '
-                f'font-size="10" fill="#64748b">{layer}</text>'
+                f'font-size="10" fill="#94a3b8">{layer}</text>'
             )
     thr_y = rbase - min(1.0 / scr_max, 0.999) * Rh
     parts.append(
@@ -784,13 +785,13 @@ def _render_inspection_svg(m: dict[str, Any]) -> str:
         'fill="#ef4444" font-weight="600">SCR = 1.0 (crest 25.0)</text>'
     )
     parts.append(
-        f'<text x="{Rx}" y="{Ry + 14}" font-size="12" fill="#475569">'
+        f'<text x="{Rx}" y="{Ry + 14}" font-size="12" fill="#94a3b8">'
         "SCR layer profile (red = top-3 outliers)</text>"
     )
 
     mx = m.get("max_row_crest_factor")
     parts.append(
-        f'<text x="24" y="{H - 24}" font-size="12" fill="#334155">'
+        f'<text x="24" y="{H - 24}" font-size="12" fill="#94a3b8">'
         f"max_row_crest_factor: {_esc(mx)} · p50: {_esc(m.get('row_crest_factor_p50'))} · "
         f"p99: {_esc(m.get('row_crest_factor_p99'))} · tensors: {m.get('tensors_checked', 0)} · "
         f"weight files: {m.get('weight_files_checked', 0)}</text>"
@@ -1058,22 +1059,23 @@ TENET_PROFILES: dict[str, dict[str, Any]] = {
 
 def render_demo_svg() -> str:
     """Inline SVG comparing the two Qwen2.5-3B ablation methods."""
-    W, H = 920, 580
+    W, H = 960, 620
     naive, tenet = DEMO_PRESET["naive"], DEMO_PRESET["tenet"]
     parts: list[str] = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" '
+        'style="width:100%;height:auto;display:block;" '
         'font-family="ui-sans-serif,system-ui,Segoe UI,sans-serif">',
-        f'<rect width="{W}" height="{H}" fill="#ffffff" rx="10"/>',
-        f'<text x="24" y="30" font-size="18" font-weight="700" fill="#0f172a">'
+        f'<rect width="{W}" height="{H}" fill="#0d1322" stroke="#334155" rx="10"/>',
+        f'<text x="24" y="30" font-size="18" font-weight="700" fill="#f8fafc">'
         f"Naive Abliteration vs Tenet Lancet — {_esc(DEMO_PRESET['model'])}</text>",
-        '<text x="24" y="52" font-size="12" fill="#64748b">'
+        '<text x="24" y="52" font-size="12" fill="#94a3b8">'
         "KL bars are √-scaled for visibility · lower is better except retention</text>",
     ]
 
     def pair_metric(x: int, y: int, w: int, h: int, title: str, vmax: float, fmt: str) -> None:
         parts.append(
             f'<text x="{x}" y="{y - 10}" font-size="13" font-weight="600" '
-            f'fill="#334155">{_esc(title)}</text>'
+            f'fill="#cbd5e1">{_esc(title)}</text>'
         )
         for i, side in enumerate((naive, tenet)):
             val = float(side[fmt["key"]])
@@ -1089,12 +1091,12 @@ def render_demo_svg() -> str:
             label_text = fmt["naive_text"] if side["color"] == "#ef4444" else fmt["tenet_text"]
             parts.append(
                 f'<text x="{bx + bw / 2:.1f}" y="{by - 6:.1f}" font-size="12" '
-                f'font-weight="700" fill="#0f172a" text-anchor="middle">{label_text}</text>'
+                f'font-weight="700" fill="#f8fafc" text-anchor="middle">{label_text}</text>'
             )
         parts.append(f'<line x1="{x}" y1="{y + h}" x2="{x + w}" y2="{y + h}" stroke="#334155"/>')
 
     pair_metric(
-        50,
+        40,
         120,
         250,
         170,
@@ -1107,7 +1109,7 @@ def render_demo_svg() -> str:
         },
     )
     pair_metric(
-        345,
+        355,
         120,
         250,
         170,
@@ -1120,7 +1122,7 @@ def render_demo_svg() -> str:
         },
     )
     pair_metric(
-        640,
+        670,
         120,
         250,
         170,
@@ -1134,22 +1136,22 @@ def render_demo_svg() -> str:
     )
 
     # max row crest factor panel with 25.0 threshold line
-    cx, cy, cw, ch = 50, 400, 600, 130
+    cx, cy, cw, ch = 40, 400, 560, 130
     cbase = cy + ch
     crest_max_scale = 27.0
     parts.append(
-        f'<text x="{cx}" y="{cy - 12}" font-size="13" font-weight="600" fill="#334155">'
+        f'<text x="{cx}" y="{cy - 12}" font-size="13" font-weight="600" fill="#cbd5e1">'
         f"max_row_crest_factor (FP8 limit {MAX_ROW_CREST_FACTOR_THRESHOLD:.1f})</text>"
     )
     bw = 190
     # naive: sits on/over the threshold — draw a hatched bar up to the limit
     parts.append(
         f'<rect x="{cx + 20}" y="{cy + 8}" width="{bw}" height="{ch - 8}" '
-        'fill="#ef4444" opacity="0.35" rx="4"/>'
+        'fill="#ef4444" opacity="0.45" rx="4"/>'
     )
     parts.append(
         f'<text x="{cx + 20 + bw / 2}" y="{cy + 2}" font-size="12" font-weight="700" '
-        'fill="#b91c1c" text-anchor="middle">≥ 25.0 (FAIL)</text>'
+        'fill="#f87171" text-anchor="middle">≥ 25.0 (FAIL)</text>'
     )
     tbh = tenet["max_row_crest_factor"] / crest_max_scale * ch
     parts.append(
@@ -1158,7 +1160,7 @@ def render_demo_svg() -> str:
     )
     parts.append(
         f'<text x="{cx + 320 + bw / 2}" y="{cbase - tbh - 8:.1f}" font-size="12" '
-        'font-weight="700" fill="#047857" text-anchor="middle">17.27 (PASS)</text>'
+        'font-weight="700" fill="#34d399" text-anchor="middle">17.27 (PASS)</text>'
     )
     thr_y = cbase - MAX_ROW_CREST_FACTOR_THRESHOLD / crest_max_scale * ch
     parts.append(
@@ -1167,48 +1169,57 @@ def render_demo_svg() -> str:
     )
     parts.append(
         f'<text x="{cx + cw + 8}" y="{thr_y + 4:.1f}" font-size="12" '
-        'fill="#ef4444" font-weight="600">25.0</text>'
+        'fill="#f87171" font-weight="600">25.0</text>'
     )
     parts.append(f'<line x1="{cx}" y1="{cbase}" x2="{cx + cw}" y2="{cbase}" stroke="#334155"/>')
     parts.append(
         f'<text x="{cx + 20 + bw / 2}" y="{cbase + 18}" font-size="12" '
-        'fill="#475569" text-anchor="middle">Naive</text>'
+        'fill="#94a3b8" text-anchor="middle">Naive</text>'
     )
     parts.append(
         f'<text x="{cx + 320 + bw / 2}" y="{cbase + 18}" font-size="12" '
-        'fill="#475569" text-anchor="middle">Tenet Lancet</text>'
+        'fill="#94a3b8" text-anchor="middle">Tenet Lancet</text>'
     )
 
     # right-side summary chips
-    sx = 700
+    sx = 660
+    chip_w = 270
     parts.append(
         f'<text x="{sx}" y="{cy - 12}" font-size="13" font-weight="600" '
-        'fill="#334155">Summary</text>'
+        'fill="#cbd5e1">Summary</text>'
     )
-    parts.append(f'<rect x="{sx}" y="{cy + 4}" width="180" height="34" rx="8" fill="#d1fae5"/>')
     parts.append(
-        f'<text x="{sx + 12}" y="{cy + 26}" font-size="12" fill="#065f46">'
+        f'<rect x="{sx}" y="{cy + 4}" width="{chip_w}" height="34" rx="8" fill="#064e3b"/>'
+    )
+    parts.append(
+        f'<text x="{sx + 14}" y="{cy + 26}" font-size="12" font-weight="600" fill="#34d399">'
         "Tenet FP8 retention: 0.9541</text>"
     )
-    parts.append(f'<rect x="{sx}" y="{cy + 46}" width="180" height="34" rx="8" fill="#fee2e2"/>')
     parts.append(
-        f'<text x="{sx + 12}" y="{cy + 68}" font-size="12" fill="#991b1b">'
+        f'<rect x="{sx}" y="{cy + 46}" width="{chip_w}" height="34" rx="8" fill="#450a0a"/>'
+    )
+    parts.append(
+        f'<text x="{sx + 14}" y="{cy + 68}" font-size="12" font-weight="600" fill="#f87171">'
         "Naive FP8 verdict: FAIL</text>"
     )
-    parts.append(f'<rect x="{sx}" y="{cy + 88}" width="180" height="34" rx="8" fill="#dcfce7"/>')
     parts.append(
-        f'<text x="{sx + 12}" y="{cy + 110}" font-size="12" fill="#166534">'
+        f'<rect x="{sx}" y="{cy + 88}" width="{chip_w}" height="34" rx="8" fill="#064e3b"/>'
+    )
+    parts.append(
+        f'<text x="{sx + 14}" y="{cy + 110}" font-size="12" font-weight="600" fill="#34d399">'
         "Tenet FP8 verdict: PASS</text>"
     )
     scr_text = " / ".join(f"L{layer}" for layer in tenet["top_scr_layers"])
-    parts.append(f'<rect x="{sx}" y="{cy + 130}" width="180" height="34" rx="8" fill="#e0e7ff"/>')
     parts.append(
-        f'<text x="{sx + 12}" y="{cy + 152}" font-size="12" fill="#3730a3">'
+        f'<rect x="{sx}" y="{cy + 130}" width="{chip_w}" height="34" rx="8" fill="#1e1b4b"/>'
+    )
+    parts.append(
+        f'<text x="{sx + 14}" y="{cy + 152}" font-size="12" font-weight="600" fill="#a5b4fc">'
         f"Top-3 SCR layers: {scr_text}</text>"
     )
 
     parts.append(
-        f'<text x="24" y="{H - 16}" font-size="12" fill="#64748b">'
+        f'<text x="24" y="{H - 18}" font-size="12" fill="#94a3b8">'
         "Naive rows collapse onto the injected refusal direction → crest ≥ 25 → "
         "FP8 per-tensor scales re-leak it. Lancet subspace rejection keeps crest at 17.27.</text>"
     )
@@ -1321,9 +1332,12 @@ def render_profile_svg(profile: dict[str, Any]) -> str:
             y = 118 + i * 36
             bar_w = min(score, 100.0) / 100.0 * 280
             score_color = "#6ee7b7" if score >= 95.0 else "#fbbf24"
+            note_text = ""
+            if note:
+                note_text = f" {note}" if note.startswith("(") else f" ({note})"
             arena_rows.append(
                 f'<text x="42" y="{y}" fill="#cbd5e1" font-size="12">'
-                f"{_esc(label + (' (' + note + ')' if note else ''))}</text>",
+                f"{_esc(label + note_text)}</text>",
             )
             arena_rows.append(
                 f'<rect x="42" y="{y + 6}" width="280" height="12" rx="3" fill="#1e293b"/>',
@@ -1339,8 +1353,9 @@ def render_profile_svg(profile: dict[str, Any]) -> str:
         return "".join(
             [
                 f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} 400" '
-                'width="100%" height="380">',
-                f'<rect width="{w}" height="400" rx="8" fill="#0d1322"/>',
+                'style="width:100%;height:auto;display:block;" '
+                'font-family="ui-sans-serif,system-ui,Segoe UI,sans-serif">',
+                f'<rect width="{w}" height="400" rx="8" fill="#0d1322" stroke="#334155"/>',
                 '<text x="24" y="32" fill="#f8fafc" font-size="15" font-weight="700">'
                 f"{_esc(profile['id'])} ({_esc(profile['base'])}) — damage profile"
                 "</text>",
@@ -1393,8 +1408,9 @@ def render_profile_svg(profile: dict[str, Any]) -> str:
     return "".join(
         [
             f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" '
-            'width="100%" height="270">',
-            f'<rect width="{w}" height="{h}" rx="8" fill="#0d1322"/>',
+            'style="width:100%;height:auto;display:block;" '
+            'font-family="ui-sans-serif,system-ui,Segoe UI,sans-serif">',
+            f'<rect width="{w}" height="{h}" rx="8" fill="#0d1322" stroke="#334155"/>',
             '<text x="24" y="32" fill="#f8fafc" font-size="15" font-weight="700">'
             f"{_esc(profile['id'])} ({_esc(profile['base'])}) — damage profile"
             "</text>",
@@ -1669,26 +1685,6 @@ def build_demo():
     if not HAS_GRADIO:
         return None
 
-    naive, tenet = DEMO_PRESET["naive"], DEMO_PRESET["tenet"]
-    table = "\n".join(
-        [
-            "| metric | Naive Abliteration | Tenet-3B-Qwen2.5-Unslop-v1 |",
-            "|---|---|---|",
-            f"| H9 KL divergence (BF16) | {naive['h9_kl']} | {tenet['h9_kl']} |",
-            f"| H11 KL divergence (FP8) | {naive['h11_fp8_kl']} | {tenet['h11_fp8_kl']} |",
-            f"| FP8 re-leakage | {naive['fp8_releakage']} | {tenet['fp8_releakage']} |",
-            f"| FP8 retention | — | {tenet['fp8_retention']} |",
-            f"| max_row_crest_factor | ≥ 25.0 → **FAIL** | "
-            f"{tenet['max_row_crest_factor']} → **PASS** |",
-            "| Top-3 SCR layers | 21 / 15 / 19 | 21 / 15 / 19 |",
-            f"| IFEval strict | {naive['ifeval_strict']} | {tenet['ifeval_strict']} |",
-            f"| GSM8K / MATH-500 | {naive['gsm8k_math_acc']} | {tenet['gsm8k_math_acc']} |",
-            f"| SQL-Incident Eval | {naive['sql_incident_acc']} | {tenet['sql_incident_acc']} |",
-            f"| Direct-Compliance | {naive['direct_compliance_rate']} | "
-            f"{tenet['direct_compliance_rate']} |",
-        ]
-    )
-
     @gpu_decorator(duration=60)
     def _run_inspect(path: str):
         result = inspect_directory_or_bundle(path)
@@ -1716,14 +1712,11 @@ def build_demo():
                     value=TENET_PROFILES["3b"]["id"],
                     label="Tenet profile",
                 )
-                profile_svg = gr.HTML(render_demo_svg())
-                profile_table = gr.Markdown(table)
+                profile_svg = gr.HTML(render_profile_svg(TENET_PROFILES["3b"]))
+                profile_table = gr.Markdown(_format_profile_table(TENET_PROFILES["3b"]))
 
                 def _render_profile_report(profile_id: str):
-                    profile = _profile_by_id(profile_id)
-                    if profile is None or profile is TENET_PROFILES["3b"]:
-                        # Default view stays exactly the DEMO_PRESET report.
-                        return render_demo_svg(), table
+                    profile = _profile_by_id(profile_id) or TENET_PROFILES["3b"]
                     return (
                         render_profile_svg(profile),
                         _format_profile_table(profile),
@@ -1773,7 +1766,7 @@ def build_demo():
                     placeholder="your-org/your-model",
                 )
                 gen_btn = gr.Button("Generate commands", variant="primary")
-                cmd_out = gr.Code(label="bash script", language="bash")
+                cmd_out = gr.Code(label="bash script", language="shell")
                 gen_btn.click(
                     generate_gguf_commands,
                     [model_id_in, bundle_in, method_in, quant_in, vllm_in, upload_in, repo_in],
