@@ -173,6 +173,31 @@ def test_build_openrouter_onboarding_manifest_keys_and_proof():
     assert "FP8 Re-Leakage & Row Crest-Factor proof" in summary
     assert "vllm serve" in summary
     assert "Tenet-3B-Qwen2.5-Unslop-v1" in summary
+    assert "Qwen3ForCausalLM" in manifest["architectural_compatibility"]["supported_architectures"]
+    assert manifest["architectural_compatibility"]["fp8_ready"] is True
+    assert "onlymodels.gg/cards/2026-11-20.html" in summary
+
+
+def test_build_openrouter_onboarding_manifest_qwen3_three_way():
+    manifest = build_openrouter_onboarding_manifest(
+        hf_repo_id="mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2",
+        base_model="Qwen/Qwen3-32B",
+        h9_metrics=H9_METRICS,
+        h10_metrics=H10_METRICS,
+        h11_metrics={"max_row_crest_factor": 4.3593, "fp8_subspace_releakage_lancet": 0.025579},
+        external_benchmarks={
+            "arms": {
+                "base": {"ifeval_strict": 0.25, "gsm8k_cot_flexible": 0.175},
+                "naive": {"ifeval_strict": 0.30, "gsm8k_cot_flexible": 0.125},
+                "tenet": {"ifeval_strict": 0.225, "gsm8k_cot_flexible": 0.175},
+            }
+        },
+    )
+    cli_args = manifest["vllm_launch_args"]["cli_args"]
+    assert "--reasoning-parser" in cli_args
+    assert "qwen3" in cli_args
+    assert manifest["vllm_launch_args"]["reasoning_parser"] == "qwen3"
+    assert "Base: `0.25` / Naive: `0.3` / Tenet: `0.225`" in manifest["markdown_summary"]
 
 
 def test_build_tenet_release_bundle_nano(tmp_path: Path):

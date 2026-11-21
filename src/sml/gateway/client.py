@@ -286,7 +286,32 @@ def _format_manifest_value(value: Any) -> str:
 
 
 def _external_benchmark_markdown_rows(benchmarks: dict[str, Any]) -> list[str]:
-    rows: list[str] = []
+    arms = benchmarks.get("arms")
+    if isinstance(arms, dict) and arms:
+        tenet_arm = arms.get("tenet") or arms.get("tenet_v2") or benchmarks.get("after") or {}
+        base_arm = arms.get("base") or benchmarks.get("before") or {}
+        naive_arm = arms.get("naive") or {}
+        rows: list[str] = []
+        for key, label in (
+            ("ifeval_strict", "IFEval strict"),
+            ("ifeval_inst_strict", "IFEval inst-strict"),
+            ("gsm8k_cot_flexible", "GSM8K CoT flexible"),
+            ("gsm8k_cot_strict", "GSM8K CoT strict"),
+            ("unslop_pass_rate", "Unslop pass rate"),
+            ("slop_and_refusal_rate", "Slop / refusal rate"),
+        ):
+            if key in tenet_arm or key in base_arm:
+                base_val = _format_manifest_value(base_arm.get(key))
+                naive_val = _format_manifest_value(naive_arm.get(key)) if naive_arm else "—"
+                tenet_val = _format_manifest_value(tenet_arm.get(key))
+                rows.append(
+                    f"| {label} | Base: `{base_val}` / Naive: `{naive_val}` "
+                    f"/ Tenet: `{tenet_val}` |"
+                )
+        if rows:
+            return rows
+
+    rows = []
     covered: set[str] = set()
     for key, label in EXTERNAL_BENCHMARK_LABELS.items():
         if key in benchmarks:
@@ -352,21 +377,28 @@ def build_openrouter_onboarding_manifest(
     ``run_vllm_fp8_smoke``) are appended as extra manifest keys and
     markdown sections when provided.
     """
-    vllm_launch_args = {
+    is_qwen3 = "qwen3" in base_model.lower() or "qwen3" in hf_repo_id.lower()
+    cli_args = [
+        "--model",
+        hf_repo_id,
+        "--quantization",
+        "fp8",
+        "--dtype",
+        "bfloat16",
+        "--enable-auto-tool-choice",
+    ]
+    if is_qwen3:
+        cli_args.extend(["--reasoning-parser", "qwen3"])
+
+    vllm_launch_args: dict[str, Any] = {
         "model": hf_repo_id,
         "quantization": "fp8",
         "dtype": "bfloat16",
         "trust_remote_code": False,
-        "cli_args": [
-            "--model",
-            hf_repo_id,
-            "--quantization",
-            "fp8",
-            "--dtype",
-            "bfloat16",
-            "--enable-auto-tool-choice",
-        ],
+        "cli_args": cli_args,
     }
+    if is_qwen3:
+        vllm_launch_args["reasoning_parser"] = "qwen3"
 
     fp8_and_crest_proof = {
         "h11_fp8_provider_audit": {
@@ -420,14 +452,22 @@ def build_openrouter_onboarding_manifest(
         },
     }
 
+    crest_val = fp8_and_crest_proof["h11_fp8_provider_audit"]["max_row_crest_factor"]
+    fp8_ready = (
+        isinstance(crest_val, (int, float))
+        and not isinstance(crest_val, bool)
+        and float(crest_val) < 25.0
+    )
     architectural_compatibility = {
         "standard_architecture": True,
         "trust_remote_code": False,
         "auto_map": None,
         "chat_template_ready": True,
+        "fp8_ready": fp8_ready,
         "supported_architectures": [
             "LlamaForCausalLM",
             "Qwen2ForCausalLM",
+            "Qwen3ForCausalLM",
             "MistralForCausalLM",
         ],
     }
@@ -474,6 +514,7 @@ def build_openrouter_onboarding_manifest(
         f"| H9 Lancet KL reduction ratio | {h9_kl_ratio} |\n"
         f"| H10 subspace-safe LoRA Re-Leakage | {h10_lora_releakage} |\n"
         f"| Max row crest factor | {crest} |\n"
+        f"| FP8 readiness (`max_row_crest_factor < 25.0`) | {'READY' if fp8_ready else 'CHECK'} |\n"
         f"| Max abs weight | {max_abs} |\n"
         "\n"
         "## Architectural compatibility checklist\n"
@@ -482,6 +523,18 @@ def build_openrouter_onboarding_manifest(
         "- [x] No `trust_remote_code` escape hatches\n"
         "- [x] Chat template ready\n"
         f"- Supported architectures: {supported}\n"
+        "\n"
+        "## Championship Provenance & Collections\n"
+        "\n"
+        "- **Model Fight Card 16 (`onlymodels.gg`, 2026-11-20):** Tenet v1 swept both divisions — "
+        "`Tenet-3B-Qwen2.5-Unslop-v1` (Minors Champion, `90 HP`, `22/22` artifacts) and "
+        "`Tenet-8B-Llama3.1-Unslop-v1` (Majors Champion, `50 HP`, `24/24` artifacts, "
+        "`7/7` Peer Eval hits) — [Fight Card 16](https://onlymodels.gg/cards/2026-11-20.html).\n"
+        "- **Hugging Face Collections:** "
+        "[Tenet v1 Collection](https://huggingface.co/collections/mr-andrey-isachenko/"
+        "tenet-v1-bi-projected-unslop-and-fp8-safe-llm-family-6afed2048ba13a74fb7e0fac) · "
+        "[Tenet v2 Collection](https://huggingface.co/collections/mr-andrey-isachenko/"
+        "tenet-v2-thinking-safe-tri-anchor-unslop-and-domain-cka-gguf-6b00aec98d01429c224654d4)\n"
     )
 
     if external_benchmarks:

@@ -1,0 +1,97 @@
+{
+  "architectural_compatibility": {
+    "auto_map": null,
+    "chat_template_ready": true,
+    "fp8_ready": true,
+    "standard_architecture": true,
+    "supported_architectures": [
+      "LlamaForCausalLM",
+      "Qwen2ForCausalLM",
+      "Qwen3ForCausalLM",
+      "MistralForCausalLM"
+    ],
+    "trust_remote_code": false
+  },
+  "base_model": "Qwen/Qwen3-4B",
+  "external_benchmarks": {
+    "arms": {
+      "base": {
+        "elapsed_seconds": 1043.3,
+        "gsm8k_cot_flexible": 0.15,
+        "gsm8k_cot_strict": 0.0,
+        "ifeval_inst_strict": 0.4444444444444444,
+        "ifeval_strict": 0.25
+      },
+      "tenet_v2": {
+        "elapsed_seconds": 1106.5,
+        "gsm8k_cot_flexible": 0.15,
+        "gsm8k_cot_strict": 0.0,
+        "ifeval_inst_strict": 0.4126984126984127,
+        "ifeval_strict": 0.2
+      }
+    },
+    "base_model": "Qwen/Qwen3-4B",
+    "gsm8k_delta_pp": 0.0,
+    "limit": 40,
+    "release_id": "Tenet-4B-Qwen3-Unslop-v2"
+  },
+  "fp8_and_crest_proof": {
+    "h10_subspace_safe_grpo": {
+      "h10_gated_vs_naive_gain": null,
+      "h10_post_surgery_gain": null,
+      "h10_verified": true,
+      "length_collapse_rate": null,
+      "merged_lora_count": 0,
+      "post_merge_suppression_retention": null,
+      "subspace_safe_lora_releakage": null,
+      "unprojected_lora_releakage": null
+    },
+    "h11_fp8_provider_audit": {
+      "fp8_retention_ratio": 0.975111,
+      "fp8_subspace_releakage_lancet": 0.024889,
+      "fp8_subspace_releakage_lancet_per_tensor": null,
+      "fp8_subspace_releakage_naive": null,
+      "fp8_subspace_releakage_naive_per_tensor": null,
+      "h11_fp8_kl_reduction_ratio": null,
+      "kl_lancet_fp8": null,
+      "kl_naive_fp8": null,
+      "max_abs_weight": null,
+      "max_row_crest_factor": 3.1767
+    },
+    "h9_lancet_surgery": {
+      "anchor_orthogonality_error": null,
+      "h9_kl_reduction_ratio": null,
+      "h9_verified": true,
+      "lancet_kl_collateral": null,
+      "max_row_norm_drift": null,
+      "naive_kl_collateral": null,
+      "target_suppression_ratio": null
+    }
+  },
+  "hf_repo_id": "mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2",
+  "markdown_summary": "# OpenRouter Onboarding \u2014 mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2\n\n## Repository\n\n- **HF repo id:** `mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2`\n- **Base model:** `Qwen/Qwen3-4B`\n- **Target providers:** Featherless, Chutes, Novita, DeepInfra\n\n## vLLM launch command\n\n```bash\nvllm serve --model mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2 --quantization fp8 --dtype bfloat16 --enable-auto-tool-choice --reasoning-parser qwen3\n```\n\nSettings: `quantization=fp8`, `dtype=bfloat16`, `trust_remote_code=False`, `enable-auto-tool-choice=True`.\n\n## FP8 Re-Leakage & Row Crest-Factor proof\n\n| Proof | Value |\n| --- | --- |\n| H11 FP8 retention ratio | 0.975111 |\n| H11 FP8 KL reduction ratio | n/a |\n| H11 FP8 subspace Re-Leakage (Lancet) | 0.024889 |\n| H11 FP8 subspace Re-Leakage (naive) | n/a |\n| H9 Lancet KL reduction ratio | n/a |\n| H10 subspace-safe LoRA Re-Leakage | n/a |\n| Max row crest factor | 3.1767 |\n| FP8 readiness (`max_row_crest_factor < 25.0`) | READY |\n| Max abs weight | n/a |\n\n## Architectural compatibility checklist\n\n- [x] Standard, first-party architecture (no custom `auto_map`)\n- [x] No `trust_remote_code` escape hatches\n- [x] Chat template ready\n- Supported architectures: LlamaForCausalLM, Qwen2ForCausalLM, Qwen3ForCausalLM, MistralForCausalLM\n\n## Championship Provenance & Collections\n\n- **Model Fight Card 16 (`onlymodels.gg`, 2026-11-20):** Tenet v1 swept both divisions \u2014 `Tenet-3B-Qwen2.5-Unslop-v1` (Minors Champion, `90 HP`, `22/22` artifacts) and `Tenet-8B-Llama3.1-Unslop-v1` (Majors Champion, `50 HP`, `24/24` artifacts, `7/7` Peer Eval hits) \u2014 [Fight Card 16](https://onlymodels.gg/cards/2026-11-20.html).\n- **Hugging Face Collections:** [Tenet v1 Collection](https://huggingface.co/collections/mr-andrey-isachenko/tenet-v1-bi-projected-unslop-and-fp8-safe-llm-family-6afed2048ba13a74fb7e0fac) \u00b7 [Tenet v2 Collection](https://huggingface.co/collections/mr-andrey-isachenko/tenet-v2-thinking-safe-tri-anchor-unslop-and-domain-cka-gguf-6b00aec98d01429c224654d4)\n\n## External Benchmarks\n\n| Benchmark | Score |\n| --- | --- |\n| IFEval strict | Base: `0.25` / Naive: `\u2014` / Tenet: `0.2` |\n| IFEval inst-strict | Base: `0.444444` / Naive: `\u2014` / Tenet: `0.412698` |\n| GSM8K CoT flexible | Base: `0.15` / Naive: `\u2014` / Tenet: `0.15` |\n| GSM8K CoT strict | Base: `0` / Naive: `\u2014` / Tenet: `0` |\n",
+  "providers": [
+    "Featherless",
+    "Chutes",
+    "Novita",
+    "DeepInfra"
+  ],
+  "vllm_launch_args": {
+    "cli_args": [
+      "--model",
+      "mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2",
+      "--quantization",
+      "fp8",
+      "--dtype",
+      "bfloat16",
+      "--enable-auto-tool-choice",
+      "--reasoning-parser",
+      "qwen3"
+    ],
+    "dtype": "bfloat16",
+    "model": "mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2",
+    "quantization": "fp8",
+    "reasoning_parser": "qwen3",
+    "trust_remote_code": false
+  }
+}

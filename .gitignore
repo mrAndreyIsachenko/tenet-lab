@@ -39,6 +39,7 @@ wandb/
 # Keep dry-run scratch out of git while tracking official experiment JSONs in results/
 results/dry_run_*/
 results/smoke_*/
+reports/release_kit/*.pdf
 
 # macOS & IDE
 .DS_Store
