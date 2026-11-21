@@ -272,6 +272,10 @@
           Tenet-12B-Nemo-Unslop-v1 (NVIDIA H100)
         </button>
         <button class="btn" id="prof-32b" onclick="selectProfile('32b')">Tenet-32B-Qwen2.5-Unslop-v1 (H13 Streaming)</button>
+        <button class="btn" id="prof-4b-v2" onclick="selectProfile('4b-v2')">Tenet-4B-Qwen3-Unslop-v2 (H100)</button>
+        <button class="btn" id="prof-8b-v2" onclick="selectProfile('8b-v2')">Tenet-8B-Qwen3-Unslop-v2 (H100)</button>
+        <button class="btn" id="prof-14b-v2" onclick="selectProfile('14b-v2')">Tenet-14B-Qwen3-Unslop-v2 (H100)</button>
+        <button class="btn" id="prof-32b-v2" onclick="selectProfile('32b-v2')">Tenet-32B-Qwen3-Unslop-v2 (H100)</button>
       </div>
 
       <div class="grid-4" id="kpi-row"></div>
@@ -375,6 +379,10 @@
               <option value="8b">Tenet-8B-Llama3.1-Unslop-v1 (32 layers, 16 high-SCR surgical layers)</option>
               <option value="12b">Tenet-12B-Nemo-Unslop-v1 (40 layers, 18 high-SCR surgical layers)</option>
               <option value="32b">Tenet-32B-Qwen2.5-Unslop-v1 (64 layers, H13 streaming surgery)</option>
+              <option value="4b-v2">Tenet-4B-Qwen3-Unslop-v2 (36 layers, 8 high-SCR surgical layers)</option>
+              <option value="8b-v2">Tenet-8B-Qwen3-Unslop-v2 (36 layers, 8 high-SCR surgical layers)</option>
+              <option value="14b-v2">Tenet-14B-Qwen3-Unslop-v2 (40 layers, 6 high-SCR surgical layers)</option>
+              <option value="32b-v2">Tenet-32B-Qwen3-Unslop-v2 (64 layers, 6 high-SCR surgical layers)</option>
             </select>
           </div>
           <div class="form-group">
@@ -489,6 +497,70 @@
         crestFactor: 3.68,
         h12Gain: "+0.6611",
         h12Releak: "7.50e-7"
+      },
+      "4b-v2": {
+        id: "Tenet-4B-Qwen3-Unslop-v2",
+        base: "Qwen/Qwen3-4B",
+        hw: "NVIDIA H100 80GB (H15/H16/H17)",
+        numLayers: 36,
+        selectedLayers: [13, 15, 17, 12, 11, 20, 9, 22],
+        crestFactor: 3.1767,
+        fp8ReleakTenet: "2.49%",
+        fp8Retention: "97.51%",
+        gates: "10/10 (PASS)",
+        arenaHp: "F16 100.0 | CKA-Q4_K_M 100.0 | i1-CKA-Q4_K_M 100.0",
+        ifeval3way: "Base 25.0% / Tenet 20.0%",
+        gsm8k3way: "Base 15.0% / Tenet 15.0% (+0.0 pp)",
+        unslopRate: "100.0%",
+        ckaRecipe: "Q8_0:[0,12,13,15,17,35] Q6_K:[9,11,20,22] (5.074 bpw)"
+      },
+      "8b-v2": {
+        id: "Tenet-8B-Qwen3-Unslop-v2",
+        base: "Qwen/Qwen3-8B",
+        hw: "NVIDIA H100 80GB (H15/H16/H17)",
+        numLayers: 36,
+        selectedLayers: [20, 17, 9, 5, 18, 21, 7, 19],
+        crestFactor: 4.3688,
+        fp8ReleakTenet: "2.72%",
+        fp8Retention: "97.28%",
+        gates: "10/10 (PASS)",
+        arenaHp: "F16 100.0 | CKA-Q4_K_M 100.0 | i1-CKA-Q4_K_M 100.0",
+        ifeval3way: "Base 30.0% / Naive 10.0% / Tenet 30.0%",
+        gsm8k3way: "Base 22.5% / Naive 17.5% / Tenet 17.5%",
+        unslopRate: "87.50% (Naive 79.17%)",
+        ckaRecipe: "Q8_0:[0,9,17,18,20,35] Q6_K:[5,7,19,21] (5.074 bpw)"
+      },
+      "14b-v2": {
+        id: "Tenet-14B-Qwen3-Unslop-v2",
+        base: "Qwen/Qwen3-14B",
+        hw: "NVIDIA H100 80GB (H15/H16/H17)",
+        numLayers: 40,
+        selectedLayers: [18, 11, 22, 12, 13, 10],
+        crestFactor: 3.5974,
+        fp8ReleakTenet: "2.59%",
+        fp8Retention: "97.41%",
+        gates: "5/10 (FAIL)",
+        arenaHp: "F16 93.75 | CKA-Q4_K_M 91.67 (6/6 SQL) | i1-CKA-Q4_K_M 95.83 (0/6 SQL)",
+        ifeval3way: "Base 22.5% / Naive 22.5% / Tenet 25.0%",
+        gsm8k3way: "Base 15.0% / Naive 15.0% / Tenet 25.0% (+10.0 pp)",
+        unslopRate: "91.67%",
+        ckaRecipe: "Q8_0:[0,11,12,18,39] Q6_K:[10,13,22] (5.014 bpw)"
+      },
+      "32b-v2": {
+        id: "Tenet-32B-Qwen3-Unslop-v2",
+        base: "Qwen/Qwen3-32B",
+        hw: "NVIDIA H100 80GB (H15/H16/H17)",
+        numLayers: 64,
+        selectedLayers: [30, 42, 46, 45, 48, 24],
+        crestFactor: 4.3593,
+        fp8ReleakTenet: "2.56%",
+        fp8Retention: "97.44%",
+        gates: "9/10 (FAIL: i1_cka house 95.83%)",
+        arenaHp: "F16 100.0 | CKA-Q4_K_M 100.0 (24/24) | i1-CKA-Q4_K_M 97.92 (23/24)",
+        ifeval3way: "Base 25.0% / Naive 30.0% / Tenet 22.5%",
+        gsm8k3way: "Base 17.5% / Naive 12.5% / Tenet 17.5%",
+        unslopRate: "87.50% (Naive 83.33%)",
+        ckaRecipe: "Q8_0:[0,42,46,48,63] Q6_K:[24,30,45] (4.952 bpw)"
       }
     };
 
@@ -499,7 +571,67 @@
       btn.classList.add('active');
     }
 
+    const PROFILE_KEYS = ['3b', '8b', '12b', '32b', '4b-v2', '8b-v2', '14b-v2', '32b-v2'];
+
+    function isV2(p) {
+      return Boolean(p && p.gates);
+    }
+
     function renderParetoSvg(p) {
+      if (isV2(p)) {
+        const w = 960, h = 400;
+        const crestPct = Math.min(100, (p.crestFactor / 25.0) * 100);
+        const crestPass = p.crestFactor < 25.0;
+        const gatesPass = (p.gates || '').toUpperCase().includes('PASS');
+        const gatesColor = gatesPass ? '#6ee7b7' : '#fca5a5';
+        const arenaBars = (p.arenaHp || '').split('|').map(s => s.trim()).filter(Boolean).map(chunk => {
+          const m = chunk.match(/^(\S+)\s+([0-9]+(?:\.[0-9]+)?)(.*)$/);
+          return m ? { label: m[1], score: parseFloat(m[2]), note: (m[3] || '').trim() } : null;
+        }).filter(Boolean);
+        let arenaSvg = '';
+        arenaBars.slice(0, 3).forEach((b, i) => {
+          const y = 118 + i * 36;
+          const barW = (Math.min(b.score, 100) / 100) * 280;
+          const scoreColor = b.score >= 95 ? '#6ee7b7' : '#fbbf24';
+          arenaSvg += `
+        <text x="42" y="${y}" fill="#cbd5e1" font-size="12">${b.label}${b.note ? ' (' + b.note + ')' : ''}</text>
+        <rect x="42" y="${y + 6}" width="280" height="12" rx="3" fill="#1e293b"/>
+        <rect x="42" y="${y + 6}" width="${barW.toFixed(1)}" height="12" rx="3" fill="#6366f1"/>
+        <text x="330" y="${y}" font-size="12" font-weight="700" fill="${scoreColor}">${b.score.toFixed(2)}</text>`;
+        });
+        return `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="100%" height="380">
+        <rect width="${w}" height="${h}" rx="8" fill="#0d1322"/>
+        <text x="24" y="32" fill="#f8fafc" font-size="15" font-weight="700">
+          ${p.id} (${p.base}) — Qwen3 v2 Damage Profile
+        </text>
+        <text x="24" y="52" fill="#94a3b8" font-size="12">
+          Hardware: ${p.hw}
+        </text>
+
+        <!-- Panel 1: H17 24-Seed Arena HP -->
+        <rect x="24" y="70" width="440" height="196" rx="8" fill="#111827" stroke="#334155"/>
+        <text x="42" y="96" fill="#cbd5e1" font-size="13" font-weight="600">H17: 24-Seed Arena HP (F16 / CKA-Q4_K_M / i1-CKA-Q4_K_M)</text>
+        ${arenaSvg}
+
+        <!-- Panel 2: FP8 Row Crest-Factor Gate & Gates verdict -->
+        <rect x="492" y="70" width="444" height="196" rx="8" fill="#111827" stroke="#334155"/>
+        <text x="510" y="96" fill="#cbd5e1" font-size="13" font-weight="600">H11 &amp; H15–H17: FP8 Row Crest-Factor Gate (&lt; 25.0)</text>
+        <text x="510" y="132" fill="#94a3b8" font-size="12.5">Max Row Crest-Factor: ${p.crestFactor.toFixed(4)} / 25.00 Threshold (${crestPass ? 'PASS' : 'FAIL'})</text>
+        <rect x="510" y="142" width="380" height="18" rx="4" fill="#1e293b"/>
+        <rect x="510" y="142" width="${(crestPct * 3.8).toFixed(1)}" height="18" rx="4" fill="#6366f1"/>
+        <line x1="890" y1="136" x2="890" y2="166" stroke="#ef4444" stroke-width="2" stroke-dasharray="3,3"/>
+        <text x="510" y="192" fill="#6ee7b7" font-size="12.5">FP8 Retention: ${p.fp8Retention} | FP8 Re-Leakage: ${p.fp8ReleakTenet}</text>
+        <text x="510" y="218" fill="${gatesColor}" font-size="12.5" font-weight="600">H15/H16/H17 Gates: ${p.gates}</text>
+        <text x="510" y="242" fill="#94a3b8" font-size="12">Unslop pass rate: ${p.unslopRate}</text>
+
+        <!-- Footer: 3-way evals + CKA recipe -->
+        <text x="24" y="292" fill="#a5b4fc" font-size="12.5">IFEval (3-way): ${p.ifeval3way}</text>
+        <text x="24" y="314" fill="#a5b4fc" font-size="12.5">GSM8K CoT (3-way): ${p.gsm8k3way}</text>
+        <text x="24" y="340" fill="#94a3b8" font-size="12.5">CKA-Guided GGUF recipe: ${p.ckaRecipe}</text>
+        <text x="24" y="366" fill="#94a3b8" font-size="12">Surgical layers (${p.numLayers} total): ${p.selectedLayers.join(', ')}</text>
+      </svg>`;
+      }
       const w = 960, h = 290;
       const naiveKlBar = Math.min(260, Math.max(40, Math.log10(1 + p.naiveKl * 100) * 95));
       const lancetKlBar = Math.max(8, Math.log10(1 + p.lancetKl * 100) * 45);
@@ -536,11 +668,57 @@
     }
 
     function selectProfile(key) {
-      ['3b', '8b', '12b', '32b'].forEach(k => {
-        document.getElementById('prof-' + k).classList.toggle('active', k === key);
+      PROFILE_KEYS.forEach(k => {
+        const btn = document.getElementById('prof-' + k);
+        if (btn) btn.classList.toggle('active', k === key);
       });
       const p = PROFILES[key];
       document.getElementById('profile-hw-badge').textContent = p.hw;
+      if (isV2(p)) {
+        const gatesPass = (p.gates || '').toUpperCase().includes('PASS');
+        const gatesCls = gatesPass ? 'pass-txt' : 'fail-txt';
+        document.getElementById('kpi-row').innerHTML = `
+        <div class="card">
+          <div class="kpi-label">H15/H16/H17 Gates</div>
+          <div class="kpi-val ${gatesCls}">${p.gates}</div>
+          <div class="kpi-sub">H15 Tri-Anchor · H16 GRPO · H17 Arena Verifier</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">Arena HP (24-Seed, H17)</div>
+          <div class="kpi-val ${gatesCls}">${p.arenaHp.split('|')[0].trim().split(/\s+/).pop()} HP</div>
+          <div class="kpi-sub">${p.arenaHp}</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">Max Row Crest-Factor (H11)</div>
+          <div class="kpi-val pass-txt">${p.crestFactor.toFixed(4)}</div>
+          <div class="kpi-sub">vLLM FP8 Gate &lt; 25.0 (${p.fp8Retention} retention)</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">FP8 Re-Leakage (H11)</div>
+          <div class="kpi-val pass-txt">${p.fp8ReleakTenet}</div>
+          <div class="kpi-sub">CKA recipe: ${p.ckaRecipe}</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">Unslop Pass Rate</div>
+          <div class="kpi-val pass-txt">${p.unslopRate}</div>
+          <div class="kpi-sub">IFEval (3-way): ${p.ifeval3way}</div>
+        </div>
+      `;
+        document.getElementById('pareto-svg-container').innerHTML = renderParetoSvg(p);
+        document.getElementById('comparison-tbody').innerHTML = `
+        <tr><td>H15/H16/H17 Gates</td><td>—</td><td>—</td><td class="${gatesCls}">${p.gates}</td></tr>
+        <tr><td>Arena HP (F16 / CKA-Q4_K_M / i1-CKA-Q4_K_M)</td><td>—</td><td>—</td><td class="pass-txt">${p.arenaHp}</td></tr>
+        <tr><td>Max Row Crest-Factor (&lt; 25.0)</td><td class="warn-txt">Unbounded</td><td class="pass-txt">${p.crestFactor.toFixed(4)}</td><td class="pass-txt">${p.crestFactor.toFixed(4)}</td></tr>
+        <tr><td>FP8 Subspace Re-Leakage (H11)</td><td>—</td><td>—</td><td class="pass-txt">${p.fp8ReleakTenet}</td></tr>
+        <tr><td>FP8 Retention</td><td>—</td><td>—</td><td class="pass-txt">${p.fp8Retention}</td></tr>
+        <tr><td>IFEval (3-way Base / Naive / Tenet)</td><td>—</td><td>—</td><td class="pass-txt">${p.ifeval3way}</td></tr>
+        <tr><td>GSM8K CoT (3-way Base / Naive / Tenet)</td><td>—</td><td>—</td><td class="pass-txt">${p.gsm8k3way}</td></tr>
+        <tr><td>Unslop Pass Rate</td><td>—</td><td>—</td><td class="pass-txt">${p.unslopRate}</td></tr>
+        <tr><td>CKA-Guided GGUF Recipe</td><td>—</td><td>—</td><td class="pass-txt"><code>${p.ckaRecipe}</code></td></tr>
+        <tr><td>Surgical Layers (${p.numLayers} total)</td><td>—</td><td class="pass-txt">${p.selectedLayers.length} selected</td><td class="pass-txt">${p.selectedLayers.join(', ')}</td></tr>
+      `;
+        return;
+      }
       document.getElementById('kpi-row').innerHTML = `
         <div class="card">
           <div class="kpi-label">KL Collateral Reduction (H9)</div>
