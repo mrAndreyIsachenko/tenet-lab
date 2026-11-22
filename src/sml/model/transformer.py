@@ -156,14 +156,30 @@ class Transformer(nn.Module):
             pos_ids = torch.arange(offset, offset + seq_len, device=input_ids.device)
             h = h + self.pos_embed(pos_ids).unsqueeze(0)
 
-        for layer in self.layers:
-            h = layer(
-                h,
-                rotary_emb=self.rotary_emb,
-                kv_cache=kv_cache,
-                doc_ids=doc_ids,
-                attn_backend=attn_backend,
-            )
+        def run_layers(layer_list, h: torch.Tensor) -> torch.Tensor:
+            for layer in layer_list:
+                h = layer(
+                    h,
+                    rotary_emb=self.rotary_emb,
+                    kv_cache=kv_cache,
+                    doc_ids=doc_ids,
+                    attn_backend=attn_backend,
+                )
+            return h
+
+        k = self.config.num_loop_repeats
+        loop_range = self.config.loop_layer_range
+
+        if k == 1:
+            h = run_layers(self.layers, h)
+        else:
+            # Depth-recurrent (looped) execution: prefix, k looped passes, suffix.
+            start, end = (0, len(self.layers) - 1) if loop_range is None else loop_range
+            h = run_layers(self.layers[:start], h)
+            looped_layers = self.layers[start : end + 1]
+            for _ in range(k):
+                h = run_layers(looped_layers, h)
+            h = run_layers(self.layers[end + 1 :], h)
 
         h = self.norm(h)
         logits = self.lm_head(h)

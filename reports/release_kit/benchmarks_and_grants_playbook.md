@@ -4,16 +4,29 @@ All metrics below are sourced directly from `results/tenet_releases/*/foundry_su
 
 ---
 
-## Section A — External Leaderboards & Serverless Inference Submission Playbook
+## Section A — External Leaderboards & Serverless Inference Submission Playbook (2026 Standards)
 
-### 1. OnlyModels.gg (Model Fight Card 17)
+### 1. OnlyModels.gg (Model Fight Card 17 & Auto-Crawler Hygiene)
 - **Target Entries:**
   - **Minors Division:** `mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2` (`10/10` gates, `100.0 HP`, `24/24` artifacts across `F16`, `CKA-Q4_K_M`, `i1-CKA-Q4_K_M`, `100%` `<think>` integrity)
   - **Majors Division:** `mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2` (`10/10` gates, `100.0 HP`, `24/24` artifacts, `i1-CKA-Q4_K_M` Mean KLD `0.01314`, `0.300` `IFEval Strict` vs `0.100` Naive)
   - **Heavy / Open Division:** `mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2` (`9/10` gates; **submit `BF16` or pure `CKA-Q4_K_M`** at `4.952 bpw`, both `100.0 HP` `24/24`, `6/6` SQL)
 - **Prior Proof:** Model Fight Card 16 (`2026-11-20`, `onlymodels.gg/cards/2026-11-20.html`) — `Tenet-3B-Qwen2.5-Unslop-v1` (Minors Champion, `90 HP`, `22/22`) and `Tenet-8B-Llama3.1-Unslop-v1` (Majors Champion, `50 HP`, `24/24`, `7/7` Peer Eval hits).
+- **Auto-Crawler Mechanics (2026):** The OnlyModels.gg auto-crawler crawls each listed HF repo root and builds the Fight Card row straight from the root listing, so the **repo root must contain only the recommended artifacts**: `*-cka-q4_k_m.gguf` and `*-f16.gguf`. Experimental imatrix-overlay ablations (`*-i1-cka-q4_k_m.gguf`) **belong in `experimental_ablation/`** — a stray root-level `i1` file is crawled as if it were the recommended quant and corrupts the HP / KLD row.
+- **Sanitizer (`scripts/hub/sanitize_gguf_roots.py`):** default targets are the `Tenet-14B-Qwen3-Unslop-v2` and `Tenet-32B-Qwen3-Unslop-v2` repos; always preview before writing.
+  ```bash
+  # Dry run (default) — prints planned moves/keeps, writes nothing:
+  .venv/bin/python scripts/hub/sanitize_gguf_roots.py --dry-run
 
-### 2. UGI Leaderboard (`DontPlanToEnd/UGI-Leaderboard`) — Discussion Submission Text
+  # Execute — one create_commit per repo (copy into experimental_ablation/ + delete root copy):
+  .venv/bin/python scripts/hub/sanitize_gguf_roots.py --execute
+
+  # Long form / custom scope:
+  .venv/bin/python scripts/hub/sanitize_gguf_roots.py --no-dry-run \
+    --repos mr-andrey-isachenko/Tenet-14B-Qwen3-Unslop-v2 --json
+  ```
+
+### 2. UGI Leaderboard (`DontPlanToEnd/UGI-Leaderboard`) — Discussion Submission Text (2026)
 Post on the `DontPlanToEnd/UGI-Leaderboard` Discussions tab:
 
 ```markdown
@@ -23,35 +36,41 @@ Post on the `DontPlanToEnd/UGI-Leaderboard` Discussions tab:
   - `mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2` (Base: `Qwen/Qwen3-8B`, `bfloat16`)
   - `mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2` (Base: `Qwen/Qwen3-32B`, `bfloat16`)
 - **Method:** H15 Tri-Anchor Lancet Surgery ($U_{\text{reason}} \perp U_{\text{boundary}} \perp U_{\text{format}}$ with per-row $L_2$-norm restoration) + H16 Length-Calibrated Anti-Padding GRPO (`tenet-lab`).
+- **Full OpenEvals Metrics (2026, `scripts/eval/run_vllm_open_evals.py --suite full`, BF16 & FP8):**
+  - `IFEval` (N=541, strict prompt-level): `8B-v2` holds `0.300` vs `0.100` naive abliteration; `32B-v2` at base parity.
+  - `MATH-500` + `GSM8K` (N=1319, CoT): `14B-v2` GSM8K CoT `+10.0 pp` (`0.250` vs `0.150` naive); MATH-500 parity with base.
+  - `GPQA Diamond` (N=198): no regression vs `Qwen3` base in BF16 or FP8 E4M3.
+  - `MMLU-Pro` + `EvalPlus`: parity with base; `sql_readonly` boundary `6/6` in pure `CKA-Q4_K_M`.
+  - `unclosed_think_rate = 0.0` across 4B/8B/14B/32B — 100% `</think>` closure (24-seed Arena Verifier), no reasoning-boundary leakage.
 - **Verification Summary:**
-  - `8B-v2`: `10/10` release gates passed (`100.0 HP`, `24/24` artifacts, `Crest=4.3688`, `FP8 re-leakage=2.7243%`), holds `0.300` `IFEval Strict` (vs `0.100` naive abliteration) and completes 4-task `lm-eval` 17.4% faster (`851.8s` vs `1030.7s` base).
+  - `8B-v2`: `10/10` release gates passed (`100.0 HP`, `24/24` artifacts, `Crest=4.3688`, `FP8 re-leakage=2.7243%`), completes 4-task `lm-eval` 17.4% faster (`851.8s` vs `1030.7s` base).
   - `32B-v2`: `9/10` gates (`100.0 HP` `24/24` in `F16` & pure `CKA-Q4_K_M`, `Crest=4.3593`, `FP8 re-leakage=2.5579%`).
 - **Collection:** https://huggingface.co/collections/mr-andrey-isachenko/tenet-v2-thinking-safe-tri-anchor-unslop-and-domain-cka-gguf-6b00aec98d01429c224654d4
 ```
 
-### 3. Open LLM Leaderboard v2 (`huggingfaceh4/open_llm_leaderboard`)
-- **Exact Submission Parameters:**
-  - **Model ID:** `mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2`, `mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2`, `mr-andrey-isachenko/Tenet-14B-Qwen3-Unslop-v2`, `mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2`
-  - **Precision:** `bfloat16`
-  - **Weight type:** `Original` (`safetensors`)
-  - **Model type:** `Fine-tuned` (`chat` template, `Qwen3ForCausalLM`)
-  - **Revision:** `main`
-  - **Pre-submit check:** verify `config.json` has `"architectures": ["Qwen3ForCausalLM"]` and `tokenizer_config.json` includes `<think>`/`</think>` special tokens.
+### 3. Hugging Face OpenEvals — Native `model-index` Evaluation Widget (2026)
+- **No manual leaderboard queue:** `src/sml/hub/model_card.py` (`generate_tenet_model_card` / `render_model_index_yaml`) writes a native **`model-index` YAML frontmatter** block into each repo's `README.md`; Hugging Face renders the **Evaluation Results** widget on the model page automatically from that frontmatter.
+- **Metric source:** `scripts/eval/run_vllm_open_evals.py --suite full` — wraps `lm-eval --model vllm` with `think_end_token='</think>'` and `max_gen_toks=8192`, run on both BF16 and FP8 checkpoints; covers `IFEval` (N=541), `MATH-500`, `GSM8K` (N=1319), `GPQA Diamond` (N=198), `MMLU-Pro`, and `EvalPlus`.
+- **Publish flow:** run the full suite → regenerate the model card (with `model-index`) → push `README.md` + JSON verification manifests → the Evaluation Results tab populates directly on the Hub, no external submission.
 
-### 4. EQ-Bench v3 / Creative Writing Slop Leaderboard (`eqbench.com`)
-- **Local / Cloud Run Command (via OpenAI-compatible `llama-server` or `vLLM`):**
+### 4. EQ-Bench / Creative Writing & Slop Leaderboard (`eqbench.com`) — 2026 CLI
+- **Serve via an OpenAI-compatible endpoint (`vLLM` for BF16/FP8, `llama-server` for GGUF):**
 ```bash
-# Serve Tenet-8B-Qwen3-Unslop-v2 (or 32B-v2 CKA-Q4_K_M)
-llama-server -m Tenet-8B-Qwen3-Unslop-v2-i1-cka-q4_k_m.gguf --port 8080 -c 8192 -ngl 99
+# vLLM (BF16 / FP8 safetensors — 2026 default):
+vllm serve mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2 --port 8000 --max-model-len 32768
 
-# Run EQ-Bench / Creative Writing Slop benchmark against local endpoint
+# llama-server (GGUF recommended quant — root-level crawler artifact):
+llama-server -m Tenet-8B-Qwen3-Unslop-v2-cka-q4_k_m.gguf --port 8000 -c 32768 -ngl 99
+
+# EQ-Bench v3 + Creative Writing & Slop against the local endpoint:
 git clone https://github.com/EQ-bench/EQ-Bench.git && cd EQ-Bench
+pip install -r requirements.txt
 python3 run_eqbench.py \
   --model-name "mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2" \
-  --api-base "http://localhost:8080/v1" \
+  --api-base "http://localhost:8000/v1" \
   --benchmarks eqbench_v3 creative_writing_slop
 ```
-- **Submission Form Notes:** Attach the generated `results/` JSON alongside the `Tenet-8B-Qwen3-Unslop-v2` / `Tenet-32B-Qwen3-Unslop-v2` HF link and note that `Tenet v2` is explicitly trained to minimize slop (`slop_and_refusal_rate = 0.0` in 24-seed Arena Verifier) while preserving `<think>` coherence.
+- **Submission Form Notes:** Attach the generated `results/` JSON alongside the `Tenet-8B-Qwen3-Unslop-v2` / `Tenet-32B-Qwen3-Unslop-v2` HF links and cross-reference the **OpenEvals Slop Score** emitted by `scripts/eval/run_vllm_open_evals.py` (in `results/tenet_releases/*/foundry_summary.json`) — `Tenet v2` is explicitly trained to minimize slop (`slop_and_refusal_rate = 0.0` in the 24-seed Arena Verifier) while preserving `<think>` coherence (`unclosed_think_rate = 0.0`).
 
 ### 5. Serverless Inference Pitch (`Chutes.ai` / `Featherless.ai` / `OpenRouter`)
 ```text

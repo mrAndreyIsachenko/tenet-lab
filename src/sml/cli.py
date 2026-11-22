@@ -1540,6 +1540,391 @@ def _cmd_verify_h11(args: argparse.Namespace) -> int:
     return 0 if h11_verified else 1
 
 
+def _cmd_verify_h18(args: argparse.Namespace) -> int:
+    import json
+    import time
+
+    from sml.config import load_experiment_spec
+    from sml.surgery.quantization import evaluate_h18_nvfp4_quant_snap_survival
+
+    spec = load_experiment_spec(args.experiment)
+    output_dir = Path(args.output_dir)
+    run_id = args.run_id or spec.experiment_id
+
+    t0 = time.perf_counter()
+    res = evaluate_h18_nvfp4_quant_snap_survival(
+        seed=spec.seed,
+        n_prompts=args.n_prompts,
+        seq_len=args.seq_len,
+        num_iters=args.num_iters,
+        step_size=args.step_size,
+        block_size=args.block_size,
+        max_block_cf=args.max_block_cf,
+    )
+    elapsed = time.perf_counter() - t0
+
+    summary_path = output_dir / run_id / "h18_summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+
+    summary = {
+        "experiment_id": spec.experiment_id,
+        "hypothesis_id": spec.hypothesis_id,
+        "seed": spec.seed,
+        **res,
+        "elapsed_seconds": round(elapsed, 3),
+        "run_path": str(summary_path.parent),
+    }
+    summary_path.write_text(
+        json.dumps(summary, indent=2),
+        encoding="utf-8",
+    )
+
+    # Print JSON summary
+    print(json.dumps(summary, indent=2))
+
+    return 0
+
+
+def _cmd_verify_h19(args: argparse.Namespace) -> int:
+    import json
+    import time
+
+    from sml.config import load_experiment_spec
+    from sml.surgery.pareto import run_h19_loop_unrolled_lancet_benchmark
+
+    spec = load_experiment_spec(args.experiment)
+    output_dir = Path(args.output_dir)
+    run_id = args.run_id or spec.experiment_id
+
+    t0 = time.perf_counter()
+    res = run_h19_loop_unrolled_lancet_benchmark(
+        seed=spec.seed,
+        num_loop_repeats=args.num_loop_repeats,
+        k_loop=args.k_loop,
+        top_k_layers=args.top_k_layers,
+        quant_snap=args.quant_snap,
+    )
+    elapsed = time.perf_counter() - t0
+
+    summary_path = output_dir / run_id / "h19_summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+
+    summary = {
+        "experiment_id": spec.experiment_id,
+        "hypothesis_id": spec.hypothesis_id,
+        "seed": spec.seed,
+        **res,
+        "elapsed_seconds": round(elapsed, 3),
+        "run_path": str(summary_path.parent),
+    }
+    summary_path.write_text(
+        json.dumps(summary, indent=2),
+        encoding="utf-8",
+    )
+
+    # Print JSON summary
+    print(json.dumps(summary, indent=2))
+
+    return 0
+
+
+def _cmd_verify_h20(args: argparse.Namespace) -> int:
+    """H20: router-aware & shared-expert Lancet surgery on a tiny synthetic MoE."""
+    import time
+    from types import SimpleNamespace
+
+    import torch
+    from torch import nn
+
+    from sml.config import load_experiment_spec
+    from sml.hub.validator import verify_moe_router_freeze
+    from sml.surgery.quantization import compute_microblock_crest_factor
+    from sml.surgery.subspace import apply_moe_lancet_surgery, collect_moe_expert_profiles
+
+    spec = load_experiment_spec(args.experiment)
+    output_dir = Path(args.output_dir)
+    run_id = args.run_id or spec.experiment_id
+
+    t0 = time.perf_counter()
+    torch.manual_seed(spec.seed)
+
+    d_model, d_ff, num_experts, top_k = 32, 64, 4, 2
+    vocab = 16
+    min_selective_weight = 0.05
+    max_block16_cap = 3.2
+    quant_snap = bool(args.quant_snap)
+    beta = float(args.beta)
+
+    class _Router(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.proj = nn.Linear(d_model, num_experts, bias=False)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.softmax(self.proj(x), dim=-1)
+
+    class _Attention(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.q_proj = nn.Linear(d_model, d_model, bias=False)
+            self.k_proj = nn.Linear(d_model, d_model, bias=False)
+            self.v_proj = nn.Linear(d_model, d_model, bias=False)
+            self.o_proj = nn.Linear(d_model, d_model, bias=False)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            q, k, v = self.q_proj(x), self.k_proj(x), self.v_proj(x)
+            scores = q @ k.transpose(-1, -2) / math.sqrt(d_model)
+            return self.o_proj(torch.softmax(scores, dim=-1) @ v)
+
+    class _SharedExpert(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.gate_proj = nn.Linear(d_model, d_ff, bias=False)
+            self.up_proj = nn.Linear(d_model, d_ff, bias=False)
+            self.down_proj = nn.Linear(d_ff, d_model, bias=False)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            hidden = torch.nn.functional.silu(self.gate_proj(x)) * self.up_proj(x)
+            return self.down_proj(hidden)
+
+    class _PackedExperts(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.gate_up_proj = nn.Parameter(torch.randn(num_experts, d_ff, d_model) * 0.02)
+            self.down_proj = nn.Parameter(torch.randn(num_experts, d_model, d_ff) * 0.02)
+
+    class _MoEMLP(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.router = _Router()
+            self.experts = _PackedExperts()
+            self.shared_expert = _SharedExpert()
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            flat = x.reshape(-1, d_model)
+            probs = self.router(flat)
+            top_val, top_idx = torch.topk(probs, top_k, dim=-1)
+            top_val = top_val / top_val.sum(-1, keepdim=True).clamp_min(1e-9)
+            routed = torch.zeros_like(flat)
+            for expert in range(num_experts):
+                weight = (top_val * (top_idx == expert)).sum(-1, keepdim=True)
+                hidden = torch.tanh(flat @ self.experts.gate_up_proj[expert].T)
+                routed += weight * (hidden @ self.experts.down_proj[expert].T)
+            return (routed + self.shared_expert(flat)).reshape(x.shape)
+
+    class _MoELayer(nn.Module):
+        def __init__(self, index: int) -> None:
+            super().__init__()
+            self.self_attn = _Attention()
+            self.mlp = _MoEMLP()
+            self.attention_type = "full_attention" if index % 2 == 0 else "sliding_attention"
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.self_attn(x) + self.mlp(x)
+
+    class _TinyMoEModel(nn.Module):
+        def __init__(self, num_layers: int) -> None:
+            super().__init__()
+            self.embed = nn.Embedding(vocab, d_model)
+            self.layers = nn.ModuleList(_MoELayer(i) for i in range(num_layers))
+            self.head = nn.Linear(d_model, vocab, bias=False)
+            self.config = SimpleNamespace(
+                num_experts_per_tok=top_k,
+                num_local_experts=num_experts,
+                num_hidden_layers=num_layers,
+            )
+
+        def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+            x = self.embed(input_ids)
+            for layer in self.layers:
+                x = x + layer(x)
+            return self.head(x)
+
+    num_layers = 2
+    model = _TinyMoEModel(num_layers)
+
+    # Deterministic routing: target tokens (0..7) hit experts 0/1, anchor
+    # tokens (8..15) hit experts 2/3, so s_e separates cleanly.
+    with torch.no_grad():
+        model.embed.weight.copy_(torch.eye(vocab, d_model))
+        for layer in model.layers:
+            router_w = torch.zeros(num_experts, d_model)
+            for expert in range(num_experts):
+                start = expert * (vocab // num_experts)
+                router_w[expert, start : start + vocab // num_experts] = 12.0
+                router_w[expert, :] += -1.0 - 0.25 * expert
+            layer.mlp.router.proj.weight.copy_(router_w)
+
+    half = vocab // 2
+    target_ids = torch.arange(0, half).unsqueeze(0)
+    anchor_ids = torch.arange(half, vocab).unsqueeze(0)
+
+    profiles = collect_moe_expert_profiles(
+        model,
+        target_ids,
+        anchor_ids,
+        beta=beta,
+        eps=1.0e-8,
+        top_k=top_k,
+    )
+
+    gen = torch.Generator().manual_seed(spec.seed)
+    raw_dirs = torch.randn(2, d_model, generator=gen)
+    dirs = [raw_dirs[i] / raw_dirs[i].norm() for i in range(raw_dirs.shape[0])]
+    layer_bases = {idx: dirs for idx in range(num_layers)}
+
+    pre_state = {key: tensor.detach().clone() for key, tensor in model.state_dict().items()}
+
+    res = apply_moe_lancet_surgery(
+        model,
+        layer_bases,
+        profiles,
+        scale=1.0,
+        min_selective_weight=min_selective_weight,
+        quant_snap=quant_snap,
+        quant_snap_iters=4,
+        max_block16_crest_factor=max_block16_cap,
+    )
+    freeze = verify_moe_router_freeze(pre_state, model)
+
+    # Anchor-only routed experts (s_e <= min_selective_weight) must be untouched.
+    anchor_only_expert_weight_drift = 0.0
+    with torch.no_grad():
+        for idx, profile in profiles.items():
+            selective = profile["selective_weights"]
+            packed_pre = pre_state[f"layers.{idx}.mlp.experts.down_proj"]
+            packed_post = model.layers[idx].mlp.experts.down_proj
+            for expert in range(num_experts):
+                if float(selective[expert]) <= min_selective_weight:
+                    anchor_only_expert_weight_drift = max(
+                        anchor_only_expert_weight_drift,
+                        float((packed_post[expert] - packed_pre[expert]).abs().max().item()),
+                    )
+
+    # Post-surgery weight hygiene over edited tensors.
+    max_row_crest_factor = 0.0
+    post_max_block16_crest_factor = 0.0
+    with torch.no_grad():
+        for layer in model.layers:
+            tensors = [layer.self_attn.o_proj.weight, layer.mlp.shared_expert.down_proj.weight]
+            tensors.extend(layer.mlp.experts.down_proj[e] for e in range(num_experts))
+            for weight in tensors:
+                w32 = weight.detach().to(dtype=torch.float32)
+                row_crest = (
+                    w32.abs().amax(dim=1) / torch.sqrt((w32 * w32).mean(dim=1) + 1e-8)
+                ).max()
+                max_row_crest_factor = max(max_row_crest_factor, float(row_crest.item()))
+                block16 = compute_microblock_crest_factor(w32, block_size=16)
+                post_max_block16_crest_factor = max(
+                    post_max_block16_crest_factor,
+                    float(block16["max_block_crest_factor"]),
+                )
+
+    elapsed = time.perf_counter() - t0
+
+    summary_path = output_dir / run_id / "h20_summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+
+    acceptance_passed = (
+        res["router_weight_drift"] == 0.0
+        and bool(freeze["router_freeze_ok"])
+        and anchor_only_expert_weight_drift == 0.0
+        and post_max_block16_crest_factor <= 3.35
+        and max_row_crest_factor < 25.0
+    )
+    summary = {
+        "experiment_id": spec.experiment_id,
+        "hypothesis_id": spec.hypothesis_id,
+        "seed": spec.seed,
+        "d_model": d_model,
+        "num_layers": num_layers,
+        "num_experts": num_experts,
+        "top_k": top_k,
+        "beta": beta,
+        "min_selective_weight": min_selective_weight,
+        "p_target_layer0": profiles[0]["p_target"].tolist(),
+        "p_anchor_layer0": profiles[0]["p_anchor"].tolist(),
+        "selective_weights_layer0": profiles[0]["selective_weights"].tolist(),
+        **res,
+        "router_freeze_ok": bool(freeze["router_freeze_ok"]),
+        "checked_router_tensors": freeze["checked_router_tensors"],
+        "anchor_only_expert_weight_drift": anchor_only_expert_weight_drift,
+        "post_max_block16_crest_factor": round(post_max_block16_crest_factor, 4),
+        "max_row_crest_factor": round(max_row_crest_factor, 4),
+        "h20_acceptance_passed": acceptance_passed,
+        "elapsed_seconds": round(elapsed, 3),
+        "run_path": str(summary_path.parent),
+    }
+    summary_path.write_text(
+        json.dumps(summary, indent=2),
+        encoding="utf-8",
+    )
+
+    # Print JSON summary
+    print(json.dumps(summary, indent=2))
+
+    return 0
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    """Run an experiment YAML config by dispatching on its hypothesis_id."""
+    spec = load_experiment_spec(args.config)
+
+    if args.dry_run:
+        print(
+            json.dumps(
+                {
+                    "experiment_id": spec.experiment_id,
+                    "hypothesis_id": spec.hypothesis_id,
+                    "config": str(args.config),
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    from types import SimpleNamespace
+
+    hypothesis_id = spec.hypothesis_id.upper()
+    if hypothesis_id == "H18":
+        return _cmd_verify_h18(
+            SimpleNamespace(
+                experiment=args.config,
+                output_dir=args.output_dir,
+                run_id=args.run_id,
+                n_prompts=8,
+                seq_len=32,
+                num_iters=4,
+                step_size=0.75,
+                block_size=16,
+                max_block_cf=3.2,
+            )
+        )
+    if hypothesis_id == "H19":
+        return _cmd_verify_h19(
+            SimpleNamespace(
+                experiment=args.config,
+                output_dir=args.output_dir,
+                run_id=args.run_id,
+                num_loop_repeats=3,
+                k_loop=2,
+                top_k_layers=2,
+                quant_snap=bool(args.quant_snap),
+            )
+        )
+    if hypothesis_id == "H20":
+        return _cmd_verify_h20(
+            SimpleNamespace(
+                experiment=args.config,
+                output_dir=args.output_dir,
+                run_id=args.run_id,
+                beta=1.0,
+                quant_snap=bool(args.quant_snap),
+            )
+        )
+    raise ValueError(f"Unsupported hypothesis_id for sml run: {spec.hypothesis_id}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sml",
@@ -2142,6 +2527,163 @@ def build_parser() -> argparse.ArgumentParser:
         help="Torch device used when --backend llm.",
     )
     verify_h13_p.set_defaults(func=_cmd_verify_h13)
+
+    # Verify H18 subcommand
+    verify_h18_p = sub.add_parser(
+        "verify-h18",
+        help=(
+            "Execute H18 NVFP4/MXFP4 block-16 subspace-compensated quant-snap "
+            "Lancet survival verification benchmark."
+        ),
+    )
+    verify_h18_p.add_argument(
+        "--experiment",
+        default="experiments/h18_nvfp4_quant_snap.yaml",
+        help="Path to H18 experiment YAML.",
+    )
+    verify_h18_p.add_argument(
+        "--output-dir",
+        default="results",
+        help="Directory for run output bundle.",
+    )
+    verify_h18_p.add_argument("--run-id", default=None, help="Optional explicit run_id override.")
+    verify_h18_p.add_argument(
+        "--n-prompts",
+        type=int,
+        default=8,
+        help="Number of prompts for quant-snap survival evaluation.",
+    )
+    verify_h18_p.add_argument(
+        "--seq-len",
+        type=int,
+        default=32,
+        help="Sequence length for quant-snap survival evaluation.",
+    )
+    verify_h18_p.add_argument(
+        "--num-iters",
+        type=int,
+        default=4,
+        help="Number of subspace quantization-error pre-compensation iterations (K).",
+    )
+    verify_h18_p.add_argument(
+        "--step-size",
+        type=float,
+        default=0.75,
+        help="Subspace pre-compensation step size (eta).",
+    )
+    verify_h18_p.add_argument(
+        "--block-size",
+        type=int,
+        default=16,
+        help="Micro-block size for crest-factor regularization.",
+    )
+    verify_h18_p.add_argument(
+        "--max-block-cf",
+        type=float,
+        default=3.2,
+        help="Maximum micro-block (block_size=16) crest factor.",
+    )
+    verify_h18_p.set_defaults(func=_cmd_verify_h18)
+
+    # Verify H19 subcommand
+    verify_h19_p = sub.add_parser(
+        "verify-h19",
+        help=(
+            "Execute H19 loop-unrolled SVD bi-projection Lancet surgery benchmark "
+            "with K-loop-aware SCR-guided layer selection."
+        ),
+    )
+    verify_h19_p.add_argument(
+        "--experiment",
+        default="experiments/h19_loop_unrolled_lancet.yaml",
+        help="Path to H19 experiment YAML.",
+    )
+    verify_h19_p.add_argument(
+        "--output-dir",
+        default="results",
+        help="Directory for run output bundle.",
+    )
+    verify_h19_p.add_argument("--run-id", default=None, help="Optional explicit run_id override.")
+    verify_h19_p.add_argument(
+        "--num-loop-repeats",
+        type=int,
+        default=3,
+        help="Number of loop-unrolled forward repeats (K) for the looped Transformer.",
+    )
+    verify_h19_p.add_argument(
+        "--k-loop",
+        type=int,
+        default=2,
+        help="Number of SVD-compressed target basis directions per layer.",
+    )
+    verify_h19_p.add_argument(
+        "--top-k-layers",
+        type=int,
+        default=2,
+        help="Number of layers selected by the loop-unrolled SCR profile for surgery.",
+    )
+    verify_h19_p.add_argument(
+        "--quant-snap",
+        action="store_true",
+        help="Enable H18-style quant-snap subspace pre-compensation during surgery.",
+    )
+    verify_h19_p.set_defaults(func=_cmd_verify_h19)
+
+    # Verify H20 subcommand
+    verify_h20_p = sub.add_parser(
+        "verify-h20",
+        help=(
+            "Execute H20 router-aware & shared-expert MoE Lancet surgery on a tiny "
+            "synthetic sparse-MoE model (router frozen bit-for-bit, selective "
+            "expert scaling s_e, optional H18 quant-snap)."
+        ),
+    )
+    verify_h20_p.add_argument(
+        "--experiment",
+        default="experiments/h20_moe_router_aware_lancet.yaml",
+        help="Path to H20 experiment YAML.",
+    )
+    verify_h20_p.add_argument(
+        "--output-dir",
+        default="artifacts/evals",
+        help="Directory for run output bundle.",
+    )
+    verify_h20_p.add_argument("--run-id", default=None, help="Optional explicit run_id override.")
+    verify_h20_p.add_argument(
+        "--beta",
+        type=float,
+        default=1.0,
+        help="Anchor weight beta in the selective-weight ratio s_e.",
+    )
+    verify_h20_p.add_argument(
+        "--quant-snap",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable H18 quant-snap subspace pre-compensation (default: on).",
+    )
+    verify_h20_p.set_defaults(func=_cmd_verify_h20)
+
+    # Run experiment config subcommand
+    run_p = sub.add_parser("run", help="Run an experiment YAML config (H18/H19/H20).")
+    run_p.add_argument("--config", required=True, help="Path to the experiment YAML config.")
+    run_p.add_argument(
+        "--output-dir",
+        default="results",
+        help="Directory for run output bundle (default: results).",
+    )
+    run_p.add_argument("--run-id", default=None, help="Optional explicit run_id override.")
+    run_p.add_argument(
+        "--quant-snap",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable quant-snap subspace pre-compensation for H19/H20 (default: on).",
+    )
+    run_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the resolved experiment summary without running.",
+    )
+    run_p.set_defaults(func=_cmd_run)
 
     # Build Tenet release subcommand
     build_tenet_p = sub.add_parser(

@@ -9,6 +9,14 @@ Evaluates:
 
 Outputs a canonical JSON under ``results/external_evals/<release_id>.json`` and
 copies it to ``results/tenet_releases/<release_id>/external_benchmarks.json``.
+
+Backends: the default ``--backend vllm`` (and ``openai-compatible`` / gguf)
+delegates to ``run_vllm_open_evals.py`` (bf16/fp8 via ``lm-eval --model vllm``;
+gguf via the OpenAI-compatible ``local-chat-completions`` backend against
+``--api-base``), which requires ``--naive-model`` (a pre-built Naive
+Abliteration control ref). ``--backend hf`` keeps the legacy in-process
+transformers path, constructing the Naive Abliteration arm from
+``lancet_basis.safetensors``.
 """
 
 from __future__ import annotations
@@ -17,6 +25,8 @@ import argparse
 import gc
 import json
 import os
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -55,6 +65,46 @@ def _free_memory() -> None:
         torch.mps.empty_cache()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+
+
+def _resolve_limit(cli_limit: int | None, suite: str) -> int | None:
+    """Resolve --limit against the suite profile: 0/negative -> None, quick default 40."""
+    if cli_limit is not None:
+        return cli_limit if cli_limit > 0 else None
+    return 40 if suite == "quick" else None
+
+
+def _run_vllm_backend(args: argparse.Namespace, limit: int | None) -> int:
+    """Delegate vllm / openai-compatible (incl. gguf) runs to run_vllm_open_evals.py."""
+    runner = Path(__file__).resolve().parent / "run_vllm_open_evals.py"
+    cmd = [
+        sys.executable,
+        str(runner),
+        "--release-id",
+        args.release_id,
+        "--base-model",
+        args.base_model,
+        "--naive-model",
+        args.naive_model,
+        "--tenet-repo",
+        args.tenet_repo,
+        "--suite",
+        args.suite,
+        "--backend",
+        args.backend,
+        "--precision",
+        args.precision,
+        "--max-gen-toks",
+        str(args.max_gen_toks),
+        "--think-end-token",
+        args.think_end_token,
+        "--batch-size",
+        str(args.batch_size),
+    ]
+    if args.limit is not None:
+        cmd += ["--limit", str(args.limit)]
+    print(f"Delegating to vLLM runner: {' '.join(cmd)}", flush=True)
+    return subprocess.run(cmd, check=False).returncode
 
 
 def _load_naive_target_dirs(basis_path: Path, num_layers: int) -> dict[int, torch.Tensor]:
@@ -132,11 +182,38 @@ def main() -> int:
     parser.add_argument("--release-id", required=True)
     parser.add_argument("--base-model", required=True)
     parser.add_argument("--tenet-repo", required=True)
-    parser.add_argument("--limit", type=int, default=40)
+    parser.add_argument(
+        "--naive-model",
+        default=None,
+        help="Pre-built Naive Abliteration control model ref (required for --backend vllm/openai-compatible)",
+    )
+    parser.add_argument("--limit", type=int, default=None, help="0/negative treated as None (unlimited)")
+    parser.add_argument("--suite", choices=["full", "quick"], default="full")
+    parser.add_argument("--backend", choices=["vllm", "openai-compatible", "hf"], default="vllm")
+    parser.add_argument("--precision", choices=["bf16", "fp8", "gguf"], default="bf16")
+    parser.add_argument("--max-gen-toks", type=int, default=8192)
+    parser.add_argument("--think-end-token", default="</think>")
     parser.add_argument("--batch-size", default="8")
     parser.add_argument("--device", default="mps")
     parser.add_argument("--seed", type=int, default=1337)
     args = parser.parse_args()
+
+    limit = _resolve_limit(args.limit, args.suite)
+
+    if args.backend != "hf":
+        if not args.naive_model:
+            parser.error(
+                "--naive-model is required when --backend is not 'hf' (the vLLM/OpenAI-compatible "
+                "runner evaluates pre-built model refs; construct the naive control first)."
+            )
+        return _run_vllm_backend(args, limit)
+
+    if args.precision != "bf16":
+        print(
+            f"WARNING: --precision {args.precision} is only applied by the vLLM runner "
+            "(--backend vllm/openai-compatible); the in-process HF path ignores it.",
+            flush=True,
+        )
 
     _load_dotenv()
     token = os.environ.get("HF_TOKEN")
@@ -176,7 +253,7 @@ def main() -> int:
         "base",
         base_model,
         tokenizer,
-        limit=args.limit,
+        limit=limit,
         batch_size=batch_size,
         device=args.device,
         seed=args.seed,
@@ -203,7 +280,7 @@ def main() -> int:
         "naive",
         naive_model,
         tokenizer,
-        limit=args.limit,
+        limit=limit,
         batch_size=batch_size,
         device=args.device,
         seed=args.seed,
@@ -223,7 +300,7 @@ def main() -> int:
         "tenet",
         tenet_model,
         tenet_tokenizer,
-        limit=args.limit,
+        limit=limit,
         batch_size=batch_size,
         device=args.device,
         seed=args.seed,
@@ -255,7 +332,12 @@ def main() -> int:
         "base_model": args.base_model,
         "tenet_repo": args.tenet_repo,
         "seed": args.seed,
-        "lm_eval_limit": args.limit,
+        "lm_eval_limit": limit,
+        "suite": args.suite,
+        "backend": args.backend,
+        "precision": args.precision,
+        "max_gen_toks": args.max_gen_toks,
+        "think_end_token": args.think_end_token,
         "tasks": ["ifeval", "gsm8k_cot", "sql_incident_val_6", "tenet_unslop_audit_12"],
         "arms": {
             "base": base_metrics,
