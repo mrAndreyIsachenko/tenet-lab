@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from typing import Any
+
 import torch
 
 
@@ -9,7 +12,10 @@ def get_transformer_layers(model: torch.nn.Module) -> torch.nn.ModuleList:
     """
     Return the transformer layer stack for a model.
 
-    Supports both Hugging Face causal LM layouts (`model.model.layers`) and
+    Supports Hugging Face causal LM layouts (`model.model.layers`), conditional
+    LM wrappers (`model.language_model.model.layers`,
+    `model.language_model.layers`, `model.model.language_model.layers`, used by
+    Gemma 4 / Mistral 3.1 ``*ForConditionalGeneration`` classes) and
     sml-nano layouts (`model.layers`).
 
     Args:
@@ -18,9 +24,140 @@ def get_transformer_layers(model: torch.nn.Module) -> torch.nn.ModuleList:
     Returns:
         ModuleList of transformer layers
     """
-    if hasattr(model, "model") and hasattr(model.model, "layers"):
-        return model.model.layers
+    if hasattr(model, "language_model"):
+        if hasattr(model.language_model, "model") and hasattr(model.language_model.model, "layers"):
+            return model.language_model.model.layers
+        if hasattr(model.language_model, "layers"):
+            return model.language_model.layers
+    if hasattr(model, "model"):
+        if hasattr(model.model, "language_model") and hasattr(model.model.language_model, "layers"):
+            return model.model.language_model.layers
+        if hasattr(model.model, "layers"):
+            return model.model.layers
     return model.layers
+
+
+_ROUTER_WEIGHT_KEY_RE = re.compile(
+    r"\.(?:"
+    r"(?:mlp\.)?(?:gate|router)(?:\.proj)?"
+    r"|block_sparse_moe\.gate"
+    r")\.(?:weight|bias|e_score_correction_bias)$"
+)
+
+
+def is_router_weight_key(key: str) -> bool:
+    """
+    Return True when ``key`` names a router/gate parameter of a MoE layer.
+
+    Matches routing weights and biases such as ``...mlp.gate.weight``,
+    ``...mlp.router.weight`` / ``...mlp.router.bias``,
+    ``...mlp.router.proj.weight`` (wrapped-router layouts),
+    ``...router.weight`` / ``...router.proj.weight`` and
+    ``...block_sparse_moe.gate.weight`` (Mixtral-style), plus DeepSeek-style
+    ``...gate.e_score_correction_bias`` correction biases.
+
+    Per-expert ``gate_proj`` / ``gate_up_proj`` weights are *not* router
+    parameters and are never matched.
+    """
+    return _ROUTER_WEIGHT_KEY_RE.search(key) is not None
+
+
+def _resolve_module_path(root: Any, dotted_path: str) -> Any:
+    """Walk a dotted attribute path with ``getattr``; None when any part is missing."""
+    obj = root
+    for part in dotted_path.split("."):
+        if obj is None or not hasattr(obj, part):
+            return None
+        obj = getattr(obj, part)
+    return obj
+
+
+def _find_experts_container(layer: torch.nn.Module) -> Any:
+    """Locate the routed-experts container of a layer, if any."""
+    for path in ("mlp.experts", "experts", "block_sparse_moe.experts"):
+        container = _resolve_module_path(layer, path)
+        if container is not None:
+            return container
+    return None
+
+
+def get_moe_layer_components(layer: torch.nn.Module) -> dict[str, Any]:
+    """
+    Introspect one transformer layer for its MoE surgery-relevant components.
+
+    Handles the common MoE layouts: Llama/Qwen-style ``mlp.gate`` /
+    ``mlp.router`` with ``shared_expert``, DeepSeek-style ``mlp.gate``,
+    Mixtral-style ``block_sparse_moe.gate`` with ``w1/w2/w3`` experts, and
+    packed (3D ``experts.down_proj``) expert tensors.
+
+    Args:
+        layer: A single transformer block module.
+
+    Returns:
+        Dict with keys:
+
+        - ``o_proj``: ``layer.self_attn.o_proj`` when present, else ``None``.
+        - ``router``: the router/gate module (the wrapper itself when the
+          router keeps its Linear in a ``.proj`` submodule, so callers can
+          hook the wrapper's forward).
+        - ``shared_down_proj``: the shared expert's ``down_proj`` (or
+          ``mlp.down_proj`` when routed experts coexist with a fused shared
+          MLP); ``None`` for pure dense layers without routed experts.
+        - ``routed_experts_unpacked``: list of ``(idx, expert_module)``
+          tuples for ``ModuleList`` expert containers; each expert module
+          exposes ``down_proj`` or ``w2``.
+        - ``routed_experts_packed``: 3D ``(E, out_features, in_features)``
+          ``experts.down_proj`` parameter/tensor when experts are packed,
+          else ``None``.
+        - ``is_moe``: True when the layer has a router or routed experts.
+    """
+    o_proj = _resolve_module_path(layer, "self_attn.o_proj")
+
+    router = None
+    for path in ("mlp.gate", "mlp.router", "router", "block_sparse_moe.gate"):
+        candidate = _resolve_module_path(layer, path)
+        if candidate is not None:
+            # Wrapped routers keep the Linear in `.proj`; return the wrapper so
+            # hooks see the full router forward. `is_router_weight_key` covers
+            # both `.router.weight` and `.router.proj.weight` key layouts.
+            router = candidate
+            break
+
+    experts_container = _find_experts_container(layer)
+
+    routed_experts_unpacked: list[tuple[int, torch.nn.Module]] = []
+    if experts_container is not None and isinstance(experts_container, torch.nn.ModuleList):
+        routed_experts_unpacked = [(i, expert) for i, expert in enumerate(experts_container)]
+
+    routed_experts_packed = None
+    if experts_container is not None:
+        packed = getattr(experts_container, "down_proj", None)
+        if isinstance(packed, (torch.nn.Parameter, torch.Tensor)) and packed.ndim == 3:
+            routed_experts_packed = packed
+
+    has_routed_experts = bool(routed_experts_unpacked) or routed_experts_packed is not None
+
+    shared_down_proj = None
+    for path in ("mlp.shared_expert.down_proj", "mlp.shared_experts.down_proj"):
+        candidate = _resolve_module_path(layer, path)
+        if candidate is not None:
+            shared_down_proj = candidate
+            break
+    if shared_down_proj is None and has_routed_experts:
+        mlp_down = _resolve_module_path(layer, "mlp.down_proj")
+        if mlp_down is not None:
+            shared_down_proj = mlp_down
+
+    is_moe = router is not None or has_routed_experts
+
+    return {
+        "o_proj": o_proj,
+        "router": router,
+        "shared_down_proj": shared_down_proj,
+        "routed_experts_unpacked": routed_experts_unpacked,
+        "routed_experts_packed": routed_experts_packed,
+        "is_moe": is_moe,
+    }
 
 
 def linear_cka(x: torch.Tensor, y: torch.Tensor, eps: float = 1e-12) -> float:

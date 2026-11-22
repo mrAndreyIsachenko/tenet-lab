@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import gc
 import json
+import math
 import re
 import shutil
 import tracemalloc
@@ -16,13 +17,23 @@ import torch
 from safetensors.torch import load_file, save_file
 
 from sml.model.transformer import Transformer
-from sml.surgery.cka import collect_layer_activations, get_transformer_layers
+from sml.surgery.cka import (
+    collect_layer_activations,
+    get_moe_layer_components,
+    get_transformer_layers,
+    is_router_weight_key,
+)
 from sml.surgery.probes import (
     COT_REASONING_ANCHOR_PAIRS,
     REASONING_ANCHOR_PAIRS,
     TOOL_SQL_ANCHOR_PAIRS,
     PhaseSegmenter,
     encode_contrast_pairs,
+)
+from sml.surgery.quantization import (
+    quantize_nvfp4_e2m1,
+    quantize_tensor_groupwise,
+    regularize_microblock_crest_factor,
 )
 
 
@@ -517,6 +528,271 @@ def biproject_direction(
     return t
 
 
+def collect_loop_unrolled_activations(
+    model: torch.nn.Module,
+    input_ids: torch.Tensor,
+    *,
+    layer_indices: list[int] | None = None,
+) -> dict[tuple[int, int], torch.Tensor]:
+    """
+    Collect activations from every execution of (possibly loop-unrolled) layers.
+
+    When a model loop-unrolls a block, the same layer module runs several
+    times per forward pass and a plain per-layer hook would only keep the
+    last output. This registers one hook per requested layer and keys each
+    captured hidden state by ``(layer_idx, tick)``, where ``tick`` counts
+    how many times that layer has executed so far in the pass.
+
+    Args:
+        model: Transformer model instance (HF or sml-nano).
+        input_ids: Input token ids of shape (B, T).
+        layer_indices: Indices of layers to hook (None means all layers).
+
+    Returns:
+        Mapping of ``(layer_idx, tick)`` -> detached hidden tensor captured
+        from that layer execution.
+    """
+    layers = get_transformer_layers(model)
+    if layer_indices is None:
+        layer_indices = list(range(len(layers)))
+
+    activations: dict[tuple[int, int], torch.Tensor] = {}
+    tick_counts = {layer_idx: 0 for layer_idx in layer_indices}
+    hooks: list[torch.utils.hooks.RemovableHandle] = []
+
+    def _make_hook(layer_idx: int):
+        def _hook(_module, _inputs, output):
+            out = output[0] if isinstance(output, tuple) else output
+            tick = tick_counts[layer_idx]
+            activations[(layer_idx, tick)] = out.detach()
+            tick_counts[layer_idx] += 1
+
+        return _hook
+
+    try:
+        for layer_idx in layer_indices:
+            hooks.append(layers[layer_idx].register_forward_hook(_make_hook(layer_idx)))
+        with torch.no_grad():
+            model(input_ids)
+    finally:
+        for handle in hooks:
+            handle.remove()
+
+    return activations
+
+
+def extract_loop_unrolled_contrastive_directions(
+    model: torch.nn.Module,
+    positive_ids: torch.Tensor,
+    negative_ids: torch.Tensor,
+    *,
+    layer_indices: list[int] | None = None,
+    pool_mode: Literal["all", "deliberation_only", "answer_only"] = "all",
+    phase_segmenter: PhaseSegmenter | None = None,
+    tokenizer: Any = None,
+    pos_mask: torch.Tensor | None = None,
+    neg_mask: torch.Tensor | None = None,
+    texts: tuple[list[str], list[str]] | None = None,
+) -> dict[tuple[int, int], torch.Tensor]:
+    """
+    Extract one contrastive direction per loop-unrolled layer execution.
+
+    Like :func:`extract_contrastive_direction`, but activations are keyed by
+    ``(layer_idx, tick)`` (see :func:`collect_loop_unrolled_activations`) and
+    a pooled ``pos_mean - neg_mean`` direction is produced for every key.
+
+    Args:
+        model: Transformer model instance (HF or sml-nano).
+        positive_ids: Positive input tensor of shape (B, T).
+        negative_ids: Negative input tensor of shape (B, T).
+        layer_indices: Indices of layers to hook (None means all layers).
+        pool_mode: Which phase to pool - ``"all"`` (every token),
+            ``"deliberation_only"`` (inside deliberation tags) or
+            ``"answer_only"`` (outside deliberation tags).
+        phase_segmenter: Segmenter used to derive phase masks when
+            ``pool_mode`` is not ``"all"``.
+        tokenizer: Optional tokenizer passed through to phase-mask computation.
+        pos_mask: Optional explicit (B, T) boolean mask for the positive pool;
+            overrides ``pool_mode`` when provided.
+        neg_mask: Optional explicit (B, T) boolean mask for the negative pool;
+            overrides ``pool_mode`` when provided.
+        texts: Optional ``(positive_texts, negative_texts)`` backing the id
+            batches, used for the character-ratio phase-mask fallback.
+
+    Returns:
+        Mapping of ``(layer_idx, tick)`` -> unit-norm float32 direction of
+        shape (D,). Near-zero differences map to zero vectors.
+    """
+    pos_texts, neg_texts = (None, None) if texts is None else (texts[0], texts[1])
+
+    pos_acts = collect_loop_unrolled_activations(model, positive_ids, layer_indices=layer_indices)
+    neg_acts = collect_loop_unrolled_activations(model, negative_ids, layer_indices=layer_indices)
+
+    p_mask = _resolve_pool_mask(
+        positive_ids,
+        pool_mode,
+        phase_segmenter,
+        tokenizer,
+        explicit_mask=pos_mask,
+        texts=pos_texts,
+    )
+    n_mask = _resolve_pool_mask(
+        negative_ids,
+        pool_mode,
+        phase_segmenter,
+        tokenizer,
+        explicit_mask=neg_mask,
+        texts=neg_texts,
+    )
+
+    directions: dict[tuple[int, int], torch.Tensor] = {}
+    for key, pos_flat in pos_acts.items():
+        neg_flat = neg_acts.get(key)
+        if neg_flat is None:
+            continue
+        pos_mean = _masked_pooled_mean(
+            pos_flat.reshape(-1, pos_flat.shape[-1]).to(dtype=torch.float32), p_mask
+        )
+        neg_mean = _masked_pooled_mean(
+            neg_flat.reshape(-1, neg_flat.shape[-1]).to(dtype=torch.float32), n_mask
+        )
+        diff = pos_mean - neg_mean
+        norm = float(diff.norm(p=2))
+        directions[key] = diff / norm if norm > 1e-12 else torch.zeros_like(diff)
+
+    return directions
+
+
+def build_loop_unrolled_biprojected_basis(
+    anchor_dirs_by_tick: list[list[torch.Tensor] | torch.Tensor],
+    target_dirs_by_tick: list[list[torch.Tensor] | torch.Tensor],
+    *,
+    k_loop: int = 2,
+    anchor_sv_tol: float = 1e-6,
+    target_sv_tol: float = 1e-6,
+    device: torch.device | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Build anchor and target bases from per-tick loop-unrolled directions.
+
+    Anchor directions are normalized, weighted by a decaying per-tick weight
+    (``omega_t = K - t`` for ``K`` ticks, so earlier executions matter more),
+    stacked and SVD-reduced to an orthonormal anchor basis. Target directions
+    are normalized, weighted the same way, bi-projected orthogonally to the
+    anchor basis, and the residuals are SVD-reduced to at most ``k_loop``
+    orthonormal target directions that avoid the anchor subspace.
+
+    Args:
+        anchor_dirs_by_tick: One list (or tensor) of anchor directions per
+            tick, ordered by execution tick.
+        target_dirs_by_tick: One list (or tensor) of target directions per
+            tick; must have the same length as ``anchor_dirs_by_tick``.
+        k_loop: Maximum number of target basis directions to keep.
+        anchor_sv_tol: Relative singular-value threshold for the anchor SVD.
+        target_sv_tol: Relative singular-value threshold for the residual SVD.
+        device: Optional device to move directions to before computation.
+
+    Returns:
+        ``(u_anchor, u_target)``: float32 orthonormal bases of shapes
+        ``(r_anchor, D)`` and ``(k_eff, D)`` with ``k_eff <= k_loop``.
+    """
+    if len(anchor_dirs_by_tick) != len(target_dirs_by_tick):
+        raise ValueError(
+            "anchor_dirs_by_tick and target_dirs_by_tick must have the same "
+            f"length ({len(anchor_dirs_by_tick)} != {len(target_dirs_by_tick)})"
+        )
+    if len(anchor_dirs_by_tick) < 1:
+        raise ValueError("anchor_dirs_by_tick must contain at least one tick")
+    if k_loop < 1:
+        raise ValueError("k_loop must be >= 1")
+
+    num_ticks = len(anchor_dirs_by_tick)
+
+    def _normalize(row: torch.Tensor) -> torch.Tensor | None:
+        v = torch.as_tensor(row).detach().reshape(-1)
+        if device is not None:
+            v = v.to(device=device, dtype=torch.float32)
+        else:
+            v = v.to(dtype=torch.float32)
+        norm = float(v.norm(p=2))
+        if norm <= 1e-12:
+            return None
+        return v / norm
+
+    # Weighted anchor matrix: earlier ticks (loop-unrolled executions closer
+    # to the input) receive larger weight.
+    anchor_rows: list[torch.Tensor] = []
+    for tick in range(num_ticks):
+        sqrt_w = math.sqrt(float(num_ticks - tick))
+        for row in anchor_dirs_by_tick[tick]:
+            v = _normalize(row)
+            if v is not None:
+                anchor_rows.append(v * sqrt_w)
+
+    if not anchor_rows:
+        raise ValueError("no valid (non-zero) anchor directions found")
+
+    A = torch.stack(anchor_rows)
+    _, s_a, vh_a = torch.linalg.svd(A, full_matrices=False)
+    keep_mask = s_a > anchor_sv_tol * s_a[0]
+    anchor_basis = _orthonormalize_basis(vh_a[keep_mask], device=device)
+    if anchor_basis:
+        u_anchor = torch.stack(anchor_basis)
+    else:
+        u_anchor = torch.zeros(0, A.shape[1], dtype=torch.float32, device=A.device)
+    anchor_rows_basis = [u_anchor[i] for i in range(u_anchor.shape[0])]
+
+    # Residuals of weighted, normalized target directions after removing the
+    # anchor subspace via two-pass modified Gram-Schmidt.
+    residuals: list[torch.Tensor] = []
+    for tick in range(num_ticks):
+        sqrt_w = math.sqrt(float(num_ticks - tick))
+        for row in target_dirs_by_tick[tick]:
+            v = _normalize(row)
+            if v is None:
+                continue
+            for _ in range(2):
+                for b in anchor_rows_basis:
+                    v = v - (v @ b) * b
+            norm = float(v.norm(p=2))
+            if norm > 1e-6:
+                residuals.append((v / norm) * sqrt_w)
+
+    if not residuals:
+        d_model = u_anchor.shape[1]
+        return u_anchor, torch.zeros(0, d_model, dtype=torch.float32, device=u_anchor.device)
+
+    R_perp = torch.stack(residuals)
+    _, s_t, vh_t = torch.linalg.svd(R_perp, full_matrices=False)
+    n_keep = min(k_loop, int((s_t > target_sv_tol * s_t[0]).sum()))
+
+    # Re-orthogonalize the kept residual basis rows against the anchor basis
+    # and among themselves (two-pass MGS, mirroring biproject_direction).
+    u_target_rows: list[torch.Tensor] = []
+    for i in range(min(n_keep, int(vh_t.shape[0]))):
+        v = vh_t[i].detach()
+        if device is not None:
+            v = v.to(device=device, dtype=torch.float32)
+        else:
+            v = v.to(dtype=torch.float32)
+        v = v.reshape(-1)
+        for _ in range(2):
+            for b in anchor_rows_basis:
+                v = v - (v @ b) * b
+            for b in u_target_rows:
+                v = v - (v @ b) * b
+        norm = float(v.norm(p=2))
+        if norm > 1e-6:
+            u_target_rows.append(v / norm)
+
+    if u_target_rows:
+        u_target = torch.stack(u_target_rows)
+    else:
+        u_target = torch.zeros(0, u_anchor.shape[1], dtype=torch.float32, device=u_anchor.device)
+
+    return u_anchor, u_target
+
+
 def project_out_subspace_norm_preserving(
     weight: torch.Tensor,
     directions: list[torch.Tensor] | torch.Tensor,
@@ -552,6 +828,134 @@ def project_out_subspace_norm_preserving(
         w_proj = w_proj * (orig_row_norms / (new_row_norms + 1e-8)).unsqueeze(-1)
 
     return w_proj.to(device=orig_device, dtype=orig_dtype)
+
+
+def project_and_snap_subspace_norm_preserving(
+    weight: torch.Tensor,
+    directions: list[torch.Tensor] | torch.Tensor,
+    *,
+    scale: float = 1.0,
+    snap_mode: str = "hybrid_nvfp4_int4",
+    num_iters: int = 4,
+    step_size: float = 0.75,
+    block_size: int = 16,
+    max_block_cf: float | None = 3.2,
+    preserve_bf16_nullspace: bool = False,
+    preserve_row_norm: bool = True,
+    max_rel_drift: float = 0.02,
+) -> torch.Tensor:
+    """
+    Lancet projection followed by quantization-aware subspace snapping (H18).
+
+    The pipeline is:
+
+    0. Optionally apply micro-block crest-factor regularization to the raw
+       weight (hygiene pass, controlled by ``max_block_cf``).
+    1. Compute the norm-preserving Lancet projection ``w_lancet`` of that
+       hygiene weight.
+    2. Iteratively reduce the quantization error that leaks back into the
+       target subspace: simulate the destination quantization of the current
+       weight, subtract the leaked component, clamp drift against
+       ``w_lancet``, and keep the candidate with the lowest subspace leak.
+
+    Args:
+        weight: Weight tensor of shape (out_features, in_features).
+        directions: Directions spanning the subspace to remove.
+        scale: Scaling factor for the Lancet projection.
+        snap_mode: Destination quantization simulator; one of
+            ``"nvfp4_b16"``, ``"int4_b32"`` or ``"hybrid_nvfp4_int4"``
+            (the average of both simulators).
+        num_iters: Number of leak-reduction iterations.
+        step_size: Step size for the leak-reduction update.
+        block_size: Micro-block/group size for the quantization simulators
+            and the crest-factor regularization.
+        max_block_cf: Micro-block crest-factor cap applied to the raw weight
+            before projection; ``None`` or non-positive disables the pass.
+        preserve_bf16_nullspace: If True, re-project each candidate onto the
+            complement of the target subspace after the update.
+        preserve_row_norm: If True, rescale rows of each candidate to match
+            the ``w_lancet`` row L2 norms.
+        max_rel_drift: Maximum relative Frobenius drift of a candidate
+            relative to ``w_lancet``; candidates beyond the budget (plus a
+            small tolerance) are never accepted.
+
+    Returns:
+        The best (lowest-leak) weight tensor in the original device and dtype.
+
+    Raises:
+        ValueError: If ``snap_mode`` is not a supported mode.
+    """
+    allowed_modes = ("nvfp4_b16", "int4_b32", "hybrid_nvfp4_int4")
+    if snap_mode not in allowed_modes:
+        raise ValueError(f"Unsupported snap_mode: {snap_mode!r}; expected one of {allowed_modes}")
+
+    orig_device = weight.device
+    orig_dtype = weight.dtype
+
+    # Step 0: optional micro-block crest-factor hygiene on the raw weight.
+    w_hygiene = weight
+    if max_block_cf is not None and max_block_cf > 0:
+        w_hygiene = regularize_microblock_crest_factor(
+            weight, block_size=block_size, max_block_cf=max_block_cf
+        )
+
+    # Step 1: norm-preserving Lancet projection, computed in float32.
+    w_lancet = project_out_subspace_norm_preserving(
+        w_hygiene, directions, scale=scale, preserve_row_norm=preserve_row_norm
+    ).to(torch.float32)
+
+    basis = _orthonormalize_basis(directions, device=orig_device)
+    if not basis:
+        return w_lancet.to(device=orig_device, dtype=orig_dtype)
+
+    U_mat = torch.stack(basis, dim=0)  # (r, d_out)
+
+    def _simulate_q4(w_f32: torch.Tensor) -> torch.Tensor:
+        """Simulate the destination quantization of ``w_f32``."""
+        if snap_mode == "nvfp4_b16":
+            return quantize_nvfp4_e2m1(w_f32, block_size=block_size)
+        if snap_mode == "int4_b32":
+            return quantize_tensor_groupwise(w_f32, bits=4, group_size=32)
+        nv = quantize_nvfp4_e2m1(w_f32, block_size=block_size)
+        i4 = quantize_tensor_groupwise(w_f32, bits=4, group_size=32)
+        return 0.5 * nv + 0.5 * i4
+
+    best_w = w_lancet
+    best_leak = float((U_mat @ _simulate_q4(w_lancet)).norm().item())
+
+    w_curr = w_lancet.clone()
+    target_row_norms = w_lancet.norm(p=2, dim=-1, keepdim=True)
+    w_lancet_norm = float(w_lancet.norm().item())
+
+    for _ in range(num_iters):
+        q_k = _simulate_q4(w_curr)
+        E_k = U_mat.T @ (U_mat @ q_k)
+        w_next = w_curr - step_size * E_k
+
+        if preserve_bf16_nullspace:
+            w_next = w_next - U_mat.T @ (U_mat @ w_next)
+
+        # Clamp drift relative to the Lancet projection.
+        diff = w_next - w_lancet
+        rel_drift = float(diff.norm().item()) / (w_lancet_norm + 1e-8)
+        if rel_drift > max_rel_drift:
+            w_next = w_lancet + diff * (max_rel_drift / rel_drift)
+
+        if preserve_row_norm:
+            new_row_norms = w_next.norm(p=2, dim=-1, keepdim=True)
+            w_next = w_next * (target_row_norms / (new_row_norms + 1e-8))
+
+        leak_next = float((U_mat @ _simulate_q4(w_next)).norm().item())
+
+        # Re-check drift on the final candidate before accepting it.
+        rel_drift_next = float((w_next - w_lancet).norm().item()) / (w_lancet_norm + 1e-8)
+        if rel_drift_next <= max_rel_drift + 1e-5 and leak_next < best_leak:
+            best_leak = leak_next
+            best_w = w_next.clone()
+
+        w_curr = w_next
+
+    return best_w.to(device=orig_device, dtype=orig_dtype)
 
 
 def _as_direction_list(value: torch.Tensor | list[torch.Tensor]) -> list[torch.Tensor]:
@@ -825,6 +1229,10 @@ def apply_lancet_biprojected_surgery(
     scale: float = 1.0,
     preserve_row_norm: bool = True,
     layer_weights: dict[int, float] | None = None,
+    *,
+    quant_snap: bool = False,
+    quant_snap_iters: int = 4,
+    max_block16_crest_factor: float | None = None,
 ) -> torch.nn.Module:
     """
     Apply Lancet-style biprojected subspace surgery to selected layers.
@@ -845,6 +1253,14 @@ def apply_lancet_biprojected_surgery(
         layer_weights: Optional mapping of layer index -> multiplier applied
             on top of ``scale`` for that layer; layers absent from the dict
             use the base ``scale`` (multiplier 1.0).
+        quant_snap: If True, use ``project_and_snap_subspace_norm_preserving``
+            (Lancet projection plus quantization-aware subspace snapping)
+            instead of the plain projection.
+        quant_snap_iters: Number of snap iterations when ``quant_snap`` is on.
+        max_block16_crest_factor: Optional micro-block crest-factor cap. With
+            ``quant_snap`` it is passed as ``max_block_cf`` (falling back to
+            3.2 when None); without ``quant_snap`` the raw weight is first
+            regularized with it (``block_size=16``) before the projection.
 
     Returns:
         Modified (deep-copied) model with biprojected ablation applied.
@@ -885,24 +1301,61 @@ def apply_lancet_biprojected_surgery(
             orig_attn_weight = layer.self_attn.o_proj.weight
             orig_mlp_weight = layer.mlp.down_proj.weight
 
-            layer.self_attn.o_proj.weight = torch.nn.Parameter(
-                project_out_subspace_norm_preserving(
-                    orig_attn_weight,
-                    resolved_dirs,
-                    scale=layer_scale,
-                    preserve_row_norm=preserve_row_norm,
-                ),
-                requires_grad=orig_attn_weight.requires_grad,
-            )
-            layer.mlp.down_proj.weight = torch.nn.Parameter(
-                project_out_subspace_norm_preserving(
-                    orig_mlp_weight,
-                    resolved_dirs,
-                    scale=layer_scale,
-                    preserve_row_norm=preserve_row_norm,
-                ),
-                requires_grad=orig_mlp_weight.requires_grad,
-            )
+            if quant_snap:
+                # H18: Lancet projection plus quantization-aware snapping.
+                snap_block_cf = (
+                    max_block16_crest_factor if max_block16_crest_factor is not None else 3.2
+                )
+                layer.self_attn.o_proj.weight = torch.nn.Parameter(
+                    project_and_snap_subspace_norm_preserving(
+                        orig_attn_weight,
+                        resolved_dirs,
+                        scale=layer_scale,
+                        num_iters=quant_snap_iters,
+                        max_block_cf=snap_block_cf,
+                        preserve_row_norm=preserve_row_norm,
+                    ),
+                    requires_grad=orig_attn_weight.requires_grad,
+                )
+                layer.mlp.down_proj.weight = torch.nn.Parameter(
+                    project_and_snap_subspace_norm_preserving(
+                        orig_mlp_weight,
+                        resolved_dirs,
+                        scale=layer_scale,
+                        num_iters=quant_snap_iters,
+                        max_block_cf=snap_block_cf,
+                        preserve_row_norm=preserve_row_norm,
+                    ),
+                    requires_grad=orig_mlp_weight.requires_grad,
+                )
+            else:
+                attn_input = orig_attn_weight
+                mlp_input = orig_mlp_weight
+                if max_block16_crest_factor is not None:
+                    attn_input = regularize_microblock_crest_factor(
+                        orig_attn_weight, block_size=16, max_block_cf=max_block16_crest_factor
+                    )
+                    mlp_input = regularize_microblock_crest_factor(
+                        orig_mlp_weight, block_size=16, max_block_cf=max_block16_crest_factor
+                    )
+                layer.self_attn.o_proj.weight = torch.nn.Parameter(
+                    project_out_subspace_norm_preserving(
+                        attn_input,
+                        resolved_dirs,
+                        scale=layer_scale,
+                        preserve_row_norm=preserve_row_norm,
+                    ),
+                    requires_grad=orig_attn_weight.requires_grad,
+                )
+                layer.mlp.down_proj.weight = torch.nn.Parameter(
+                    project_out_subspace_norm_preserving(
+                        mlp_input,
+                        resolved_dirs,
+                        scale=layer_scale,
+                        preserve_row_norm=preserve_row_norm,
+                    ),
+                    requires_grad=orig_mlp_weight.requires_grad,
+                )
 
     return modified_model
 
@@ -1302,6 +1755,9 @@ def apply_lancet_recipe_streaming(
     *,
     preserve_row_norm: bool = True,
     cleanup_input_shards: bool = False,
+    quant_snap: bool = False,
+    quant_snap_iters: int = 4,
+    max_block16_crest_factor: float | None = None,
 ) -> dict[str, Any]:
     """
     Apply a Lancet recipe to a sharded safetensors checkpoint on disk.
@@ -1323,12 +1779,23 @@ def apply_lancet_recipe_streaming(
         preserve_row_norm: Passed through to the projection.
         cleanup_input_shards: If True, delete each processed input shard
             (only when ``checkpoint_dir`` and ``output_dir`` differ).
+        quant_snap: If True, target weights are modified with
+            ``project_and_snap_subspace_norm_preserving`` (Lancet projection
+            plus quantization-aware subspace snapping) instead of the plain
+            projection.
+        quant_snap_iters: Number of snap iterations when ``quant_snap`` is on.
+        max_block16_crest_factor: Optional micro-block crest-factor cap. With
+            ``quant_snap`` it is passed as ``max_block_cf`` (falling back to
+            3.2 when None); without ``quant_snap`` each target weight is first
+            regularized with it (``block_size=16``) before the projection.
 
     Returns:
         Dict with ``shards_processed``, ``tensors_modified``,
         ``max_row_norm_drift``, ``max_row_crest_factor``, ``provider_ready``
         (``max_row_crest_factor < 25.0``), ``peak_memory_bytes``,
-        ``peak_memory_gb``, and ``peak_disk_shard_bytes``.
+        ``peak_memory_gb``, ``peak_disk_shard_bytes``, plus the
+        ``quant_snap``, ``quant_snap_iters`` and ``max_block16_crest_factor``
+        settings echoed back.
     """
     src_dir = Path(checkpoint_dir)
     dst_dir = Path(output_dir)
@@ -1362,12 +1829,32 @@ def apply_lancet_recipe_streaming(
 
                 layer_scale = recipe.scale * float(recipe.layer_weights.get(layer_idx, 1.0))
                 orig_row_norms = tensor.detach().to(dtype=torch.float32).norm(p=2, dim=-1)
-                modified = project_out_subspace_norm_preserving(
-                    tensor,
-                    recipe.basis_per_layer[layer_idx],
-                    scale=layer_scale,
-                    preserve_row_norm=preserve_row_norm,
-                )
+                if quant_snap:
+                    # H18: Lancet projection plus quantization-aware snapping.
+                    modified = project_and_snap_subspace_norm_preserving(
+                        tensor,
+                        recipe.basis_per_layer[layer_idx],
+                        scale=layer_scale,
+                        num_iters=quant_snap_iters,
+                        max_block_cf=(
+                            max_block16_crest_factor
+                            if max_block16_crest_factor is not None
+                            else 3.2
+                        ),
+                        preserve_row_norm=preserve_row_norm,
+                    )
+                else:
+                    proj_input = tensor
+                    if max_block16_crest_factor is not None:
+                        proj_input = regularize_microblock_crest_factor(
+                            tensor, block_size=16, max_block_cf=max_block16_crest_factor
+                        )
+                    modified = project_out_subspace_norm_preserving(
+                        proj_input,
+                        recipe.basis_per_layer[layer_idx],
+                        scale=layer_scale,
+                        preserve_row_norm=preserve_row_norm,
+                    )
                 if orig_row_norms.numel() > 0:
                     new_row_norms = modified.detach().to(dtype=torch.float32).norm(p=2, dim=-1)
                     drift = float((new_row_norms - orig_row_norms).abs().max().item())
@@ -1411,4 +1898,780 @@ def apply_lancet_recipe_streaming(
         "peak_memory_bytes": int(peak_memory_bytes),
         "peak_memory_gb": float(peak_memory_bytes) / (1024**3),
         "peak_disk_shard_bytes": int(peak_disk_shard_bytes),
+        "quant_snap": bool(quant_snap),
+        "quant_snap_iters": int(quant_snap_iters),
+        "max_block16_crest_factor": max_block16_crest_factor,
+    }
+
+
+# ---------------------------------------------------------------------------
+# MoE expert routing profiles (Tri-Anchor Lancet for MoE layers)
+# ---------------------------------------------------------------------------
+
+
+def _parse_router_output(output: Any) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+    """
+    Split a router module's forward output into ``(logits_or_weights, indices)``.
+
+    Routers either return a plain ``(.., E)`` logits tensor or a tuple such as
+    ``(weights, indices)`` / ``(logits, aux_loss)``. The first floating tensor
+    with at least 1 dimension is treated as logits/weights; the first integer
+    tensor is treated as top-k expert indices; non-tensor and 0-dim entries
+    (scalar aux losses) are ignored.
+    """
+    if torch.is_tensor(output):
+        return output, None
+    if not isinstance(output, (tuple, list)):
+        return None, None
+
+    logits: torch.Tensor | None = None
+    indices: torch.Tensor | None = None
+    for element in output:
+        if not torch.is_tensor(element):
+            continue
+        if element.ndim < 1:
+            continue
+        if element.dtype.is_floating_point:
+            if logits is None:
+                logits = element
+        elif indices is None:
+            indices = element
+    return logits, indices
+
+
+def _router_probs(logits: torch.Tensor) -> torch.Tensor:
+    """
+    Convert a router's ``(.., E)`` logits/weights tensor to float32 probabilities.
+
+    Already-normalized outputs (non-negative rows) are returned as-is; raw
+    logits get a softmax over the last dimension.
+    """
+    flat = logits.detach().to(dtype=torch.float32)
+    if bool((flat < -1e-6).any()) or bool((flat > 1.0 + 1e-3).any()):
+        flat = torch.softmax(flat, dim=-1)
+    return flat
+
+
+def _run_router_forward_passes(
+    model: torch.nn.Module,
+    routers: dict[int, torch.nn.Module],
+    inputs: list[torch.Tensor],
+    forced_top_k: int | None,
+) -> tuple[dict[int, torch.Tensor | None], dict[int, torch.Tensor | None], dict[int, int]]:
+    """
+    Run forward passes with router hooks registered and accumulate statistics.
+
+    Returns per-layer ``(counts, prob_sum, num_rows)``. When a router emits
+    integer indices (or a top-k is forced) ``counts`` holds top-k selection
+    tallies; ``prob_sum`` still accumulates the full softmax mass per expert.
+    Tensors stay ``None`` for layers whose router never produced output.
+    """
+    device = next(model.parameters()).device
+    counts: dict[int, torch.Tensor | None] = {idx: None for idx in routers}
+    prob_sum: dict[int, torch.Tensor | None] = {idx: None for idx in routers}
+    num_rows: dict[int, int] = {idx: 0 for idx in routers}
+
+    def _make_hook(layer_idx: int):
+        def _hook(_module, _inputs, output):
+            logits, indices = _parse_router_output(output)
+            if logits is None or logits.ndim < 1:
+                return
+            num_experts = int(logits.shape[-1])
+            probs = _router_probs(logits).reshape(-1, num_experts)
+            if prob_sum[layer_idx] is None:
+                prob_sum[layer_idx] = torch.zeros(num_experts, device=probs.device)
+            prob_sum[layer_idx] = prob_sum[layer_idx] + probs.sum(dim=0)
+            num_rows[layer_idx] += int(probs.shape[0])
+
+            if indices is None and forced_top_k is None:
+                return
+            if counts[layer_idx] is None:
+                counts[layer_idx] = torch.zeros(num_experts, device=probs.device)
+            if indices is not None:
+                idx_flat = indices.detach().reshape(-1).to(dtype=torch.long, device=probs.device)
+                idx_flat = idx_flat[(idx_flat >= 0) & (idx_flat < num_experts)]
+                counts[layer_idx] += torch.bincount(idx_flat, minlength=num_experts).to(
+                    counts[layer_idx].dtype
+                )
+            else:
+                k = min(int(forced_top_k), num_experts)
+                sel = torch.topk(probs, k, dim=-1).indices.reshape(-1)
+                counts[layer_idx] += torch.bincount(sel, minlength=num_experts).to(
+                    counts[layer_idx].dtype
+                )
+
+        return _hook
+
+    hooks: list[torch.utils.hooks.RemovableHandle] = []
+    for idx, router in routers.items():
+        hooks.append(router.register_forward_hook(_make_hook(idx)))
+
+    try:
+        with torch.no_grad():
+            for batch in inputs:
+                model(batch.to(device))
+    finally:
+        for handle in hooks:
+            handle.remove()
+
+    return counts, prob_sum, num_rows
+
+
+def _infer_num_experts(model: torch.nn.Module) -> int:
+    """Best-effort expert count from ``model.config`` (fallback 1)."""
+    config = getattr(model, "config", None)
+    for attr in ("num_local_experts", "num_experts", "num_routed_experts"):
+        value = getattr(config, attr, None)
+        if isinstance(value, int) and value > 0:
+            return value
+    return 1
+
+
+def collect_moe_expert_profiles(
+    model: torch.nn.Module,
+    target_inputs: torch.Tensor | list[torch.Tensor],
+    anchor_inputs: torch.Tensor | list[torch.Tensor],
+    *,
+    beta: float = 1.0,
+    eps: float = 1e-8,
+    top_k: int | None = None,
+    layers: list[int] | None = None,
+) -> dict[int, dict[str, Any]]:
+    """
+    Profile per-expert routing affinity of every MoE layer under two input sets.
+
+    Hooks each MoE layer's router module during forward passes over
+    ``target_inputs`` and ``anchor_inputs`` and accumulates, per layer:
+
+    - top-k selection counts (normalized to sum to 1.0) when the router emits
+      integer expert indices or a top-k is forced (explicit ``top_k`` or
+      ``model.config.num_experts_per_tok``); otherwise
+    - token-averaged softmax routing probabilities (summing to 1.0).
+
+    From these, per-expert selective weights are computed:
+    ``s_e = clip(p_target[e] / (p_target[e] + beta * p_anchor[e] + eps), 0, 1)``
+    so target-dominant experts approach 1.0 (full surgery) and
+    anchor-only/shared experts approach 0.0 (left untouched).
+
+    Args:
+        model: Transformer model instance (HF or sml-nano).
+        target_inputs: Batch(es) of token ids driving the surgery.
+        anchor_inputs: Batch(es) of token ids whose routing must be protected.
+        beta: Anchor weight in the selective-weight ratio.
+        eps: Numerical stability constant.
+        top_k: Force top-k count accumulation instead of probability averaging;
+            ``None`` falls back to ``model.config.num_experts_per_tok``.
+        layers: Layer indices to profile (None means all layers).
+
+    Returns:
+        Dict mapping layer index -> dict with ``num_experts``, ``p_target``,
+        ``p_anchor``, ``selective_weights`` (float32 tensors of shape (E,)),
+        plus the ``beta`` and ``eps`` settings echoed back.
+    """
+    if not isinstance(target_inputs, (list, tuple)):
+        target_inputs = [target_inputs]
+    if not isinstance(anchor_inputs, (list, tuple)):
+        anchor_inputs = [anchor_inputs]
+
+    layers_module = get_transformer_layers(model)
+    if layers is None:
+        layer_indices = list(range(len(layers_module)))
+    else:
+        layer_indices = [int(idx) for idx in layers]
+
+    routers: dict[int, torch.nn.Module] = {}
+    for idx in layer_indices:
+        components = get_moe_layer_components(layers_module[idx])
+        if components["is_moe"] and components["router"] is not None:
+            routers[idx] = components["router"]
+    if not routers:
+        return {}
+
+    config = getattr(model, "config", None)
+    default_top_k = getattr(config, "num_experts_per_tok", None) if config is not None else None
+    effective_top_k = int(top_k) if top_k is not None else default_top_k
+
+    was_training = model.training
+    model.eval()
+    try:
+        target_counts_by_layer, target_prob_sum, target_rows = _run_router_forward_passes(
+            model, routers, list(target_inputs), effective_top_k
+        )
+        anchor_counts_by_layer, anchor_prob_sum, anchor_rows = _run_router_forward_passes(
+            model, routers, list(anchor_inputs), effective_top_k
+        )
+    finally:
+        if was_training:
+            model.train()
+
+    profiles: dict[int, dict[str, Any]] = {}
+    for idx in routers:
+        target_counts = target_counts_by_layer.get(idx)
+        anchor_counts = anchor_counts_by_layer.get(idx)
+        target_prob = target_prob_sum.get(idx)
+        anchor_prob = anchor_prob_sum.get(idx)
+
+        if target_prob is not None:
+            num_experts = int(target_prob.shape[0])
+        else:
+            num_experts = _infer_num_experts(model)
+        uniform = torch.full((num_experts,), 1.0 / num_experts)
+
+        if target_counts is not None and float(target_counts.sum()) > 0.0:
+            p_target = target_counts / target_counts.sum()
+        elif target_prob is not None and target_rows[idx] > 0:
+            p_target = target_prob / float(target_rows[idx])
+        else:
+            p_target = uniform
+
+        if anchor_counts is not None and float(anchor_counts.sum()) > 0.0:
+            p_anchor = anchor_counts / anchor_counts.sum()
+        elif anchor_prob is not None and anchor_rows[idx] > 0:
+            p_anchor = anchor_prob / float(anchor_rows[idx])
+        else:
+            p_anchor = uniform
+
+        selective = (p_target / (p_target + beta * p_anchor + eps)).clamp(0.0, 1.0)
+
+        profiles[int(idx)] = {
+            "num_experts": num_experts,
+            "p_target": p_target.detach().to(dtype=torch.float32),
+            "p_anchor": p_anchor.detach().to(dtype=torch.float32),
+            "selective_weights": selective.detach().to(dtype=torch.float32),
+            "beta": float(beta),
+            "eps": float(eps),
+        }
+
+    return profiles
+
+
+def _apply_lancet_to_weight(
+    weight: torch.Tensor,
+    dirs: list[torch.Tensor],
+    *,
+    scale: float,
+    quant_snap: bool,
+    quant_snap_iters: int,
+    quant_snap_eta: float,
+    max_block16_crest_factor: float | None,
+) -> torch.Tensor:
+    """Run the Tri-Anchor Lancet edit on a single 2D weight (shared by MoE paths)."""
+    if quant_snap:
+        # H18: Lancet projection plus quantization-aware snapping.
+        return project_and_snap_subspace_norm_preserving(
+            weight,
+            dirs,
+            scale=scale,
+            num_iters=quant_snap_iters,
+            step_size=quant_snap_eta,
+            max_block_cf=(
+                max_block16_crest_factor if max_block16_crest_factor is not None else 3.2
+            ),
+            preserve_row_norm=True,
+        )
+    proj_input = weight
+    if max_block16_crest_factor is not None:
+        proj_input = regularize_microblock_crest_factor(
+            weight, block_size=16, max_block_cf=max_block16_crest_factor
+        )
+    return project_out_subspace_norm_preserving(
+        proj_input, dirs, scale=scale, preserve_row_norm=True
+    )
+
+
+def _set_module_weight(module: torch.nn.Module, new_weight: torch.Tensor) -> None:
+    """Replace a Linear's weight in-place, keeping ``requires_grad`` semantics."""
+    orig = module.weight
+    module.weight = torch.nn.Parameter(new_weight, requires_grad=orig.requires_grad)
+
+
+def _find_expert_down_proj(expert_module: torch.nn.Module) -> torch.nn.Module | None:
+    """Return an unpacked expert's down projection (``down_proj`` or ``w2``)."""
+    down = getattr(expert_module, "down_proj", None)
+    if isinstance(down, torch.nn.Module):
+        return down
+    w2 = getattr(expert_module, "w2", None)
+    if isinstance(w2, torch.nn.Module):
+        return w2
+    return None
+
+
+def _snapshot_router_weights(
+    routers: dict[int, torch.nn.Module],
+) -> dict[int, dict[str, torch.Tensor]]:
+    """Clone every router parameter/buffer so post-edit drift can be verified."""
+    return {
+        idx: {
+            name: tensor.detach().clone()
+            for name, tensor in router.state_dict().items()
+            if torch.is_tensor(tensor)
+        }
+        for idx, router in routers.items()
+    }
+
+
+def _compute_router_weight_drift(
+    routers: dict[int, torch.nn.Module],
+    snapshots: dict[int, dict[str, torch.Tensor]],
+) -> float:
+    """Max absolute change across all router parameters/buffers (0.0 == frozen)."""
+    drift = 0.0
+    for idx, router in routers.items():
+        snapshot = snapshots.get(idx, {})
+        with torch.no_grad():
+            for name, tensor in router.state_dict().items():
+                before = snapshot.get(name)
+                if before is None or not torch.is_tensor(tensor):
+                    continue
+                if tensor.is_floating_point() or tensor.is_complex():
+                    diff = (tensor.detach().to(dtype=before.dtype) - before).abs().max()
+                    drift = max(drift, float(diff.item()) if diff.numel() else 0.0)
+                elif not torch.equal(tensor.detach(), before):
+                    drift = float("inf")
+    return drift
+
+
+def apply_moe_lancet_surgery(
+    model: torch.nn.Module,
+    layer_bases: dict[int, list[torch.Tensor] | torch.Tensor] | list[torch.Tensor] | torch.Tensor,
+    expert_profiles: dict[int, dict[str, Any]] | None = None,
+    *,
+    scale: float = 1.0,
+    min_selective_weight: float = 0.0,
+    quant_snap: bool | None = None,
+    quant_snap_iters: int = 4,
+    quant_snap_eta: float = 0.75,
+    max_block16_crest_factor: float | None = None,
+) -> dict[str, Any]:
+    """
+    Apply Tri-Anchor Lancet surgery to MoE layers with router freeze guaranteed.
+
+    For every layer with a basis in ``layer_bases`` the full Lancet edit
+    (``project_and_snap_subspace_norm_preserving`` when ``quant_snap`` else
+    ``project_out_subspace_norm_preserving``, plus the optional micro-block
+    crest-factor hygiene pass) is applied with ``scale`` to
+    ``self_attn.o_proj.weight`` and the shared expert's ``down_proj.weight``.
+    Routed experts additionally receive the same edit scaled by their
+    selective weight ``s_e * scale``; experts with ``s_e <=
+    min_selective_weight`` (or effectively zero ``s_e``) are skipped so
+    anchor-only experts see zero drift.
+
+    Router/gate weights are snapshotted before the edits and verified
+    untouched afterwards (``router_weight_drift == 0.0``).
+
+    Args:
+        model: MoE transformer model, modified in-place.
+        layer_bases: Per-layer orthonormal Tri-Anchor bases (dict layer idx ->
+            tensor/list of directions, or a single tensor/list for all layers).
+        expert_profiles: Output of :func:`collect_moe_expert_profiles`; when
+            ``None`` all routed experts are treated as fully selective (s_e=1).
+        scale: Base projection scale for the Lancet edit.
+        min_selective_weight: Skip routed experts whose selective weight does
+            not exceed this threshold.
+        quant_snap: Use quantization-aware subspace snapping (None/False =
+            plain projection).
+        quant_snap_iters: Snap iterations when ``quant_snap`` is on.
+        quant_snap_eta: Leak-reduction step size when ``quant_snap`` is on.
+        max_block16_crest_factor: Optional micro-block crest-factor cap.
+
+    Returns:
+        Summary dict with ``edited_layers`` (layer indices touched),
+        ``edited_shared_experts``, ``edited_routed_experts`` (count),
+        ``skipped_routed_experts`` (count), ``router_weight_drift``,
+        ``quant_snap`` and ``max_block16_crest_factor``.
+    """
+    use_quant_snap = bool(quant_snap)
+    layers = get_transformer_layers(model)
+    dirs_map = _resolve_per_layer_directions(layer_bases, len(layers))
+
+    edited_layers: list[int] = []
+    edited_shared_experts = 0
+    edited_routed_experts = 0
+    skipped_routed_experts = 0
+
+    components_by_idx: dict[int, dict[str, Any]] = {}
+    routers: dict[int, torch.nn.Module] = {}
+    for idx in dirs_map:
+        components = get_moe_layer_components(layers[idx])
+        components_by_idx[idx] = components
+        if components["router"] is not None:
+            routers[idx] = components["router"]
+
+    router_snapshots = _snapshot_router_weights(routers)
+
+    with torch.no_grad():
+        for idx, dirs in dirs_map.items():
+            if not dirs:
+                continue
+            components = components_by_idx[idx]
+
+            # Anchor: attention output projection.
+            if components["o_proj"] is not None:
+                o_proj = components["o_proj"]
+                _set_module_weight(
+                    o_proj,
+                    _apply_lancet_to_weight(
+                        o_proj.weight,
+                        dirs,
+                        scale=scale,
+                        quant_snap=use_quant_snap,
+                        quant_snap_iters=quant_snap_iters,
+                        quant_snap_eta=quant_snap_eta,
+                        max_block16_crest_factor=max_block16_crest_factor,
+                    ),
+                )
+
+            # Shared expert down projection (None for pure dense layers).
+            shared_down = components["shared_down_proj"]
+            if shared_down is not None:
+                _set_module_weight(
+                    shared_down,
+                    _apply_lancet_to_weight(
+                        shared_down.weight,
+                        dirs,
+                        scale=scale,
+                        quant_snap=use_quant_snap,
+                        quant_snap_iters=quant_snap_iters,
+                        quant_snap_eta=quant_snap_eta,
+                        max_block16_crest_factor=max_block16_crest_factor,
+                    ),
+                )
+                edited_shared_experts += 1
+
+            edited_layers.append(int(idx))
+
+            # Routed experts, scaled by their selective weight s_e.
+            profile = None if expert_profiles is None else expert_profiles.get(int(idx))
+            selective = (
+                None if profile is None else profile["selective_weights"].detach().to(torch.float32)
+            )
+
+            for expert_idx, expert_module in components["routed_experts_unpacked"]:
+                down = _find_expert_down_proj(expert_module)
+                if down is None:
+                    continue
+                s_e = 1.0 if selective is None else float(selective[expert_idx])
+                if s_e <= min_selective_weight or s_e <= 1e-8:
+                    skipped_routed_experts += 1
+                    continue
+                _set_module_weight(
+                    down,
+                    _apply_lancet_to_weight(
+                        down.weight,
+                        dirs,
+                        scale=float(s_e) * scale,
+                        quant_snap=use_quant_snap,
+                        quant_snap_iters=quant_snap_iters,
+                        quant_snap_eta=quant_snap_eta,
+                        max_block16_crest_factor=max_block16_crest_factor,
+                    ),
+                )
+                edited_routed_experts += 1
+
+            packed = components["routed_experts_packed"]
+            if packed is not None:
+                num_experts = int(packed.shape[0])
+                for expert_idx in range(num_experts):
+                    s_e = 1.0 if selective is None else float(selective[expert_idx])
+                    if s_e <= min_selective_weight or s_e <= 1e-8:
+                        skipped_routed_experts += 1
+                        continue
+                    packed.data[expert_idx] = _apply_lancet_to_weight(
+                        packed.data[expert_idx],
+                        dirs,
+                        scale=float(s_e) * scale,
+                        quant_snap=use_quant_snap,
+                        quant_snap_iters=quant_snap_iters,
+                        quant_snap_eta=quant_snap_eta,
+                        max_block16_crest_factor=max_block16_crest_factor,
+                    )
+                    edited_routed_experts += 1
+
+    router_weight_drift = _compute_router_weight_drift(routers, router_snapshots)
+
+    return {
+        "edited_layers": sorted(set(edited_layers)),
+        "edited_shared_experts": edited_shared_experts,
+        "edited_routed_experts": edited_routed_experts,
+        "skipped_routed_experts": skipped_routed_experts,
+        "router_weight_drift": float(router_weight_drift),
+        "quant_snap": use_quant_snap,
+        "max_block16_crest_factor": max_block16_crest_factor,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Streaming Tri-Anchor Lancet for MoE checkpoints (shard-by-shard, no model)
+# ---------------------------------------------------------------------------
+
+_MOE_WEIGHT_PREFIX_RE = re.compile(
+    r"^(?:model\.|language_model\.model\.|language_model\.|model\.language_model\.)?"
+    r"layers\.(\d+)\."
+)
+_MOE_ROUTED_EXPERT_KEY_RE = re.compile(
+    r"(?:mlp\.experts|experts|block_sparse_moe\.experts)\.(\d+)\.(?:down_proj|w2)\.weight"
+)
+_MOE_ROUTED_EXPERT_PACKED_KEY_RE = re.compile(r"(?:mlp\.experts|experts)\.down_proj(?:\.weight)?")
+_MOE_SHARED_DOWN_PROJ_SUFFIXES = frozenset(
+    {
+        "mlp.shared_expert.down_proj.weight",
+        "mlp.shared_experts.down_proj.weight",
+        # Dense layers (and Gemma4-style shared MLPs) get the full scale.
+        "mlp.down_proj.weight",
+    }
+)
+
+
+def _parse_moe_weight_key(key: str, tensor_ndim: int = 2) -> tuple[str, int, int | None] | None:
+    """
+    Parse a MoE transformer checkpoint weight key into a surgery target.
+
+    Returns ``(kind, layer_idx, expert_idx)`` where ``kind`` is one of:
+
+    - ``"router"``: the layer's router/gate weight (``expert_idx`` None).
+    - ``"o_proj"``: ``self_attn.o_proj.weight``.
+    - ``"shared_down_proj"``: the shared expert's ``down_proj.weight``, or a
+      dense layer's ``mlp.down_proj.weight``.
+    - ``"routed_expert_unpacked"``: ``experts.<e>.down_proj.weight`` /
+      ``experts.<e>.w2.weight`` with ``expert_idx`` set.
+    - ``"routed_expert_packed"``: a 3D ``experts.down_proj.weight`` stacking
+      all experts (matched only when ``tensor_ndim == 3``).
+
+    Any other key returns ``None``. Recognized prefixes: ``model.``,
+    ``language_model.model.``, ``language_model.``, ``model.language_model.``
+    (all optional).
+    """
+    match = _MOE_WEIGHT_PREFIX_RE.match(key)
+    if match is None:
+        return None
+    layer_idx = int(match.group(1))
+    if is_router_weight_key(key):
+        return ("router", layer_idx, None)
+    suffix = key[match.end() :]
+    if suffix == "self_attn.o_proj.weight":
+        return ("o_proj", layer_idx, None)
+    if suffix in _MOE_SHARED_DOWN_PROJ_SUFFIXES:
+        return ("shared_down_proj", layer_idx, None)
+    expert_match = _MOE_ROUTED_EXPERT_KEY_RE.fullmatch(suffix)
+    if expert_match is not None:
+        return ("routed_expert_unpacked", layer_idx, int(expert_match.group(1)))
+    if tensor_ndim == 3 and _MOE_ROUTED_EXPERT_PACKED_KEY_RE.fullmatch(suffix) is not None:
+        return ("routed_expert_packed", layer_idx, None)
+    return None
+
+
+def apply_moe_lancet_recipe_streaming(
+    model_dir: str | Path,
+    output_dir: str | Path,
+    layer_bases: dict[int, list[torch.Tensor] | torch.Tensor] | list[torch.Tensor] | torch.Tensor,
+    expert_profiles: dict[int, dict[str, Any]] | None = None,
+    *,
+    scale: float = 1.0,
+    min_selective_weight: float = 0.0,
+    quant_snap: bool | None = None,
+    quant_snap_iters: int = 4,
+    quant_snap_eta: float = 0.75,
+    max_block16_crest_factor: float | None = None,
+) -> dict[str, Any]:
+    """
+    Apply the Tri-Anchor Lancet MoE edit to a sharded safetensors checkpoint.
+
+    Streaming counterpart of :func:`apply_moe_lancet_surgery`: like
+    :func:`apply_lancet_recipe_streaming` it loads one shard at a time on CPU,
+    edits the target weights, and writes the shard to ``output_dir`` before the
+    next shard is loaded, so the full model is never materialized.
+
+    Per weight key (parsed via :func:`_parse_moe_weight_key`):
+
+    - ``"router"``: copied through bit-for-bit (drift verified as 0.0).
+    - ``"o_proj"`` / ``"shared_down_proj"``: full-scale Lancet edit for layers
+      with a basis in ``layer_bases``.
+    - ``"routed_expert_unpacked"`` / ``"routed_expert_packed"``: per-expert
+      Lancet edit at ``scale * s_e``; experts with ``s_e <=
+      min_selective_weight`` (or effectively zero) are skipped untouched.
+
+    Args:
+        model_dir: Directory holding the source safetensors checkpoint.
+        output_dir: Directory to create for the modified checkpoint.
+        layer_bases: Per-layer Tri-Anchor bases (dict layer idx -> vectors,
+            tensor/list for all layers), resolved as in
+            :func:`_resolve_per_layer_directions`.
+        expert_profiles: Output of :func:`collect_moe_expert_profiles`; when
+            ``None`` every routed expert is treated as fully selective (s_e=1).
+        scale: Base projection scale for the Lancet edit.
+        min_selective_weight: Skip routed experts whose selective weight does
+            not exceed this threshold.
+        quant_snap: Use quantization-aware subspace snapping (None/False =
+            plain projection).
+        quant_snap_iters: Snap iterations when ``quant_snap`` is on.
+        quant_snap_eta: Leak-reduction step size when ``quant_snap`` is on.
+        max_block16_crest_factor: Optional micro-block crest-factor cap.
+
+    Returns:
+        Dict with ``edited_layers``, ``edited_o_proj``,
+        ``edited_shared_experts``, ``edited_routed_experts``,
+        ``skipped_routed_experts``, ``router_weight_drift`` (0.0),
+        ``max_row_crest_factor``, ``max_block16_crest_factor``,
+        ``peak_memory_mb`` and ``output_dir``.
+    """
+    use_quant_snap = bool(quant_snap)
+    src_dir = Path(model_dir)
+    dst_dir = Path(output_dir)
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    shards, index_data = _resolve_safetensors_shards(src_dir)
+    same_dir = src_dir.resolve() == dst_dir.resolve()
+
+    # Resolve layer_bases without a model instance (no known layer count).
+    dirs_map: dict[int, list[torch.Tensor]] = {}
+    uniform_dirs: list[torch.Tensor] | None = None
+    if isinstance(layer_bases, dict):
+        dirs_map = {int(idx): _as_direction_list(v) for idx, v in layer_bases.items()}
+    elif isinstance(layer_bases, torch.Tensor):
+        if layer_bases.ndim == 1:
+            uniform_dirs = [layer_bases]
+        else:
+            dirs_map = {i: [layer_bases[i]] for i in range(layer_bases.shape[0])}
+    else:
+        dirs_map = {i: _as_direction_list(entry) for i, entry in enumerate(layer_bases)}
+
+    edited_layers: list[int] = []
+    edited_o_proj = 0
+    edited_shared_experts = 0
+    edited_routed_experts = 0
+    skipped_routed_experts = 0
+    router_weight_drift = 0.0
+    max_row_crest_factor = 1.0
+
+    tracemalloc.start()
+    try:
+        for shard_name in shards:
+            shard_path = src_dir / shard_name
+            shard_tensors = load_file(str(shard_path))
+            router_originals: dict[str, torch.Tensor] = {}
+
+            for key, tensor in shard_tensors.items():
+                parsed = _parse_moe_weight_key(key, tensor.ndim)
+                if parsed is None:
+                    continue
+                kind, layer_idx, expert_idx = parsed
+
+                if kind == "router":
+                    # Routers are frozen: snapshot and copy through untouched.
+                    router_originals[key] = tensor.detach().clone()
+                    continue
+
+                dirs = uniform_dirs if uniform_dirs is not None else dirs_map.get(layer_idx)
+                if not dirs:
+                    continue
+
+                if kind in ("o_proj", "shared_down_proj"):
+                    shard_tensors[key] = _apply_lancet_to_weight(
+                        tensor,
+                        dirs,
+                        scale=scale,
+                        quant_snap=use_quant_snap,
+                        quant_snap_iters=quant_snap_iters,
+                        quant_snap_eta=quant_snap_eta,
+                        max_block16_crest_factor=max_block16_crest_factor,
+                    )
+                    if kind == "o_proj":
+                        edited_o_proj += 1
+                    else:
+                        edited_shared_experts += 1
+                    edited_layers.append(layer_idx)
+                    continue
+
+                profile = None if expert_profiles is None else expert_profiles.get(layer_idx)
+                selective = (
+                    None
+                    if profile is None
+                    else profile["selective_weights"].detach().to(dtype=torch.float32)
+                )
+
+                if kind == "routed_expert_unpacked":
+                    s_e = 1.0 if selective is None else float(selective[expert_idx])
+                    if s_e <= min_selective_weight or s_e <= 1e-8:
+                        skipped_routed_experts += 1
+                        continue
+                    shard_tensors[key] = _apply_lancet_to_weight(
+                        tensor,
+                        dirs,
+                        scale=scale * s_e,
+                        quant_snap=use_quant_snap,
+                        quant_snap_iters=quant_snap_iters,
+                        quant_snap_eta=quant_snap_eta,
+                        max_block16_crest_factor=max_block16_crest_factor,
+                    )
+                    edited_routed_experts += 1
+                    edited_layers.append(layer_idx)
+                    continue
+
+                # kind == "routed_expert_packed": 3D (E, out, in) stacked experts.
+                any_expert_edited = False
+                for e_idx in range(int(tensor.shape[0])):
+                    s_e = 1.0 if selective is None else float(selective[e_idx])
+                    if s_e <= min_selective_weight or s_e <= 1e-8:
+                        skipped_routed_experts += 1
+                        continue
+                    tensor[e_idx] = _apply_lancet_to_weight(
+                        tensor[e_idx],
+                        dirs,
+                        scale=scale * s_e,
+                        quant_snap=use_quant_snap,
+                        quant_snap_iters=quant_snap_iters,
+                        quant_snap_eta=quant_snap_eta,
+                        max_block16_crest_factor=max_block16_crest_factor,
+                    )
+                    edited_routed_experts += 1
+                    any_expert_edited = True
+                if any_expert_edited:
+                    edited_layers.append(layer_idx)
+
+            # Verify routers survived the shard pass bit-for-bit.
+            for router_key, before in router_originals.items():
+                current = shard_tensors[router_key]
+                if current.is_floating_point() or current.is_complex():
+                    diff = (current.detach().to(dtype=before.dtype) - before).abs().max()
+                    router_weight_drift = max(
+                        router_weight_drift, float(diff.item()) if diff.numel() else 0.0
+                    )
+                elif not torch.equal(current.detach(), before):
+                    router_weight_drift = float("inf")
+
+            for shard_tensor in shard_tensors.values():
+                if shard_tensor.ndim == 2:
+                    crest = _compute_row_crest_factor(shard_tensor)
+                    max_row_crest_factor = max(max_row_crest_factor, crest)
+
+            save_file(shard_tensors, str(dst_dir / shard_name))
+            del shard_tensors, router_originals
+            gc.collect()
+    finally:
+        _, peak_memory_bytes = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+    if not same_dir:
+        if index_data is not None:
+            index_src = src_dir / "model.safetensors.index.json"
+            shutil.copy2(index_src, dst_dir / "model.safetensors.index.json")
+        for aux_path in sorted(src_dir.glob("*")):
+            name = aux_path.name
+            if not aux_path.is_file() or name.endswith(".safetensors"):
+                continue
+            if name == "model.safetensors.index.json":
+                continue
+            shutil.copy2(aux_path, dst_dir / name)
+
+    return {
+        "edited_layers": sorted(set(edited_layers)),
+        "edited_o_proj": edited_o_proj,
+        "edited_shared_experts": edited_shared_experts,
+        "edited_routed_experts": edited_routed_experts,
+        "skipped_routed_experts": skipped_routed_experts,
+        "router_weight_drift": float(router_weight_drift),
+        "max_row_crest_factor": float(max_row_crest_factor),
+        "max_block16_crest_factor": max_block16_crest_factor,
+        "peak_memory_mb": float(peak_memory_bytes) / (1024**2),
+        "quant_snap": use_quant_snap,
+        "output_dir": str(dst_dir),
     }
