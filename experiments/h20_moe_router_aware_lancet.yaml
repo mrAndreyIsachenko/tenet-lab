@@ -1,0 +1,52 @@
+experiment_id: h20_moe_router_aware_lancet
+hypothesis_id: H20
+hypothesis: >
+  Router-Aware & Shared-Expert Lancet Surgery for Sparse MoE — profiling
+  per-expert routing affinity under target vs. anchor inputs
+  (s_e = p_target / (p_target + beta * p_anchor + eps)), freezing the router
+  bit-for-bit, applying the full Tri-Anchor Lancet edit (optionally with H18
+  quant-snap pre-compensation) at full scale to self_attn.o_proj and
+  shared_expert.down_proj, and scaling each routed expert's edit by its
+  selective weight s_e (skipping experts with s_e <= min_selective_weight)
+  improves code/SQL/math behavior without degrading anchor behavior, while
+  keeping FP8-friendly weight hygiene (max_block16_crest_factor <= 3.35 and
+  max_row_crest_factor < 25.0).
+prediction: >
+  router_weight_drift == 0.0, anchor_only_expert_weight_drift == 0.0,
+  selective expert scaling s_e preserves anchor-only (code/SQL/math) experts,
+  edited_o_proj and edited_shared_experts are touched at full scale,
+  max_block16_crest_factor <= 3.35, max_row_crest_factor < 25.0.
+acceptance_criterion: >
+  router_weight_drift == 0.0 AND anchor_only_expert_weight_drift == 0.0 AND
+  selective expert scaling s_e preserves anchor-only experts (s_e <=
+  min_selective_weight skipped) AND max_block16_crest_factor <= 3.35 AND
+  max_row_crest_factor < 25.0
+seed: 2026
+model_config_path: configs/model/sml_nano.yaml
+data_config_path: configs/data/tinystories.yaml
+hardware_config_path: configs/hardware/m4_pro_mps.yaml
+train:
+  batch_size_tokens: 4096
+  micro_batch_size: 2
+  seq_len: 512
+  max_steps: 27
+  lr: 0.0005
+  min_lr_ratio: 0.1
+  weight_decay: 0.05
+  beta1: 0.9
+  beta2: 0.95
+  grad_clip: 1.0
+  schedule: wsd
+  warmup_steps: 2
+  decay_fraction: 0.2
+  precision: bf16
+  compile: false
+surgery:
+  beta: 1.0
+  eps: 1.0e-8
+  top_k: 2
+  min_selective_weight: 0.05
+  quant_snap: true
+  quant_snap_iters: 4
+  max_block16_crest_factor: 3.2
+  target_architectures: [Gemma4ForConditionalGeneration, Qwen3MoeForCausalLM, Mistral3ForConditionalGeneration]

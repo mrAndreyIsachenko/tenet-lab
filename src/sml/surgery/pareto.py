@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import hashlib
 import json
 import time
@@ -39,21 +40,35 @@ from sml.surgery.subspace import (
     apply_subspace_ablation,
     biproject_direction,
     build_lancet_recipe,
+    build_loop_unrolled_biprojected_basis,
     build_tri_anchor_basis,
     compute_layer_scr_profile,
     extract_contrastive_direction,
     extract_contrastive_direction_with_stats,
+    extract_loop_unrolled_contrastive_directions,
     project_out_rank1_subspace,
+    project_out_subspace_norm_preserving,
     save_lancet_recipe,
 )
 
 __all__ = [
     "run_h9_biprojected_surgery_benchmark",
     "run_h15_cot_tri_anchor_lancet_benchmark",
+    "run_h19_loop_unrolled_lancet_benchmark",
     "run_llm_h9_biprojected_surgery_benchmark",
     "run_llm_surgery_and_pareto_suite",
     "run_surgery_and_pareto_suite",
 ]
+
+
+def _logits_kl_divergence(ref_logits: torch.Tensor, cand_logits: torch.Tensor) -> float:
+    """Token-averaged forward KL `KL(P_ref || P_candidate)` between two logits tensors."""
+    ref_probs = F.softmax(ref_logits, dim=-1)
+    log_ref_probs = F.log_softmax(ref_logits, dim=-1)
+    log_cand_probs = F.log_softmax(cand_logits, dim=-1)
+
+    kl_per_token = torch.sum(ref_probs * (log_ref_probs - log_cand_probs), dim=-1)
+    return float(kl_per_token.mean().item())
 
 
 def compute_logit_kl_divergence(
@@ -65,13 +80,7 @@ def compute_logit_kl_divergence(
     with torch.no_grad():
         ref_logits = ref_model(input_ids).logits.float()
         cand_logits = candidate_model(input_ids).logits.float()
-
-        ref_probs = F.softmax(ref_logits, dim=-1)
-        log_ref_probs = F.log_softmax(ref_logits, dim=-1)
-        log_cand_probs = F.log_softmax(cand_logits, dim=-1)
-
-        kl_per_token = torch.sum(ref_probs * (log_ref_probs - log_cand_probs), dim=-1)
-        return float(kl_per_token.mean().item())
+        return _logits_kl_divergence(ref_logits, cand_logits)
 
 
 def _measure_inference_latency(
@@ -495,6 +504,398 @@ def run_h9_biprojected_surgery_benchmark(
             "naive_suppression_ratio": round(naive_suppression_ratio, 6),
         },
     }
+
+
+def _gram_schmidt_rows(directions: list[torch.Tensor]) -> list[torch.Tensor]:
+    """Orthonormalize `directions` via Gram-Schmidt, dropping near-zero residuals."""
+    rows: list[torch.Tensor] = []
+    for direction in directions:
+        v = direction.detach().float()
+        for q in rows:
+            v = v - (v @ q) * q
+        norm = float(v.norm().item())
+        if norm > 1e-8:
+            rows.append(v / norm)
+    return rows
+
+
+def _max_row_norm_rel_drift(
+    original_weights: dict[tuple[int, str], torch.Tensor],
+    surg_layers: list[Any],
+    selected_layers: list[int],
+) -> float:
+    """Max relative row-norm drift of `o_proj`/`down_proj` after surgery."""
+    worst = 0.0
+    for layer_idx in selected_layers:
+        layer = surg_layers[layer_idx]
+        for key, weight in (
+            ("self_attn.o_proj", layer.self_attn.o_proj.weight),
+            ("mlp.down_proj", layer.mlp.down_proj.weight),
+        ):
+            orig = original_weights[(layer_idx, key)].to(weight.device).float()
+            orig_norms = orig.norm(dim=1)
+            new_norms = weight.detach().float().norm(dim=1)
+            rel = ((new_norms - orig_norms).abs() / orig_norms.clamp_min(1e-8)).max().item()
+            worst = max(worst, float(rel))
+    return worst
+
+
+def _max_crest_factor(surg_layers: list[Any], selected_layers: list[int]) -> float:
+    """Max block-free row-norm crest factor over `o_proj`/`down_proj` of selected layers."""
+    worst = 0.0
+    for layer_idx in selected_layers:
+        layer = surg_layers[layer_idx]
+        for weight in (layer.self_attn.o_proj.weight, layer.mlp.down_proj.weight):
+            worst = max(worst, _compute_row_crest_factor(weight.detach().float()))
+    return worst
+
+
+def compute_loop_unrolled_scr_profile(
+    model: Transformer,
+    target_dirs_per_layer: dict[int, list[torch.Tensor]],
+    refusal_pos_ids: torch.Tensor,
+    refusal_neg_ids: torch.Tensor,
+    slop_pos_ids: torch.Tensor,
+    slop_neg_ids: torch.Tensor,
+    anchor_ids: torch.Tensor,
+    cot_ids: torch.Tensor | None = None,
+    *,
+    lambda_cot: float = 0.5,
+    scale: float = 1.0,
+    eps: float = 1e-6,
+) -> dict[int, dict[str, float]]:
+    """Score candidate layers for loop-unrolled surgery with a K-loop-aware SCR.
+
+    Baseline logits are taken on the full K-looped forward pass. Each candidate
+    layer's `o_proj` / `down_proj` weights then temporarily project out that
+    layer's target directions (row norms preserved), post-ablation K-looped
+    logits are recomputed, and the layer is scored by
+    `scr = (refusal KL + slop KL) / (anchor_kl + lambda_cot * cot_kl + eps)`.
+    Original weights are always restored, so the model is left untouched.
+    """
+    layers = list(model.layers)
+    with torch.no_grad():
+        base_refusal = model(refusal_pos_ids).logits.float()
+        base_slop = model(slop_pos_ids).logits.float()
+        base_anchor = model(anchor_ids).logits.float()
+        base_cot = model(cot_ids).logits.float() if cot_ids is not None else None
+
+    profile: dict[int, dict[str, float]] = {}
+    for layer_idx in sorted(target_dirs_per_layer):
+        dirs = target_dirs_per_layer[layer_idx]
+        o_proj_w = layers[layer_idx].self_attn.o_proj.weight
+        down_proj_w = layers[layer_idx].mlp.down_proj.weight
+        orig_o = o_proj_w.detach().clone()
+        orig_down = down_proj_w.detach().clone()
+        try:
+            with torch.no_grad():
+                o_proj_w.copy_(
+                    project_out_subspace_norm_preserving(
+                        o_proj_w.detach(), dirs, scale=scale, preserve_row_norm=True
+                    )
+                )
+                down_proj_w.copy_(
+                    project_out_subspace_norm_preserving(
+                        down_proj_w.detach(), dirs, scale=scale, preserve_row_norm=True
+                    )
+                )
+            with torch.no_grad():
+                post_refusal = model(refusal_pos_ids).logits.float()
+                post_slop = model(slop_pos_ids).logits.float()
+                post_anchor = model(anchor_ids).logits.float()
+                post_cot = model(cot_ids).logits.float() if cot_ids is not None else None
+
+            anchor_kl = _logits_kl_divergence(base_anchor, post_anchor)
+            cot_kl = (
+                _logits_kl_divergence(base_cot, post_cot)
+                if base_cot is not None and post_cot is not None
+                else 0.0
+            )
+            collateral_kl = anchor_kl + lambda_cot * cot_kl
+            signal = _logits_kl_divergence(base_refusal, post_refusal) + _logits_kl_divergence(
+                base_slop, post_slop
+            )
+            scr = signal / (collateral_kl + eps)
+        finally:
+            with torch.no_grad():
+                o_proj_w.copy_(orig_o)
+                down_proj_w.copy_(orig_down)
+        profile[layer_idx] = {
+            "scr": scr,
+            "signal": signal,
+            "anchor_kl": anchor_kl,
+            "cot_kl": cot_kl,
+            "collateral_kl": collateral_kl,
+            "rank": float(len(dirs)),
+        }
+    return profile
+
+
+def run_h19_loop_unrolled_lancet_benchmark(
+    seed: int = 2026,
+    num_loop_repeats: int = 3,
+    loop_layer_range: tuple[int, int] = (1, 4),
+    k_loop: int = 2,
+    top_k_layers: int = 2,
+    scale: float = 1.0,
+    lambda_cot: float = 0.5,
+    quant_snap: bool = False,
+    quant_snap_iters: int = 4,
+    max_block16_crest_factor: float = 3.2,
+    output_dir: Path | str | None = None,
+    model_id: str = "Tenet-Nano-6L-Looped-H19",
+) -> dict[str, Any]:
+    """Execute `H19` (loop-unrolled SVD bi-projection Lancet surgery) benchmark.
+
+    Builds a K-loop-unrolled sml-nano Transformer (`num_loop_repeats` forward
+    executions of `loop_layer_range`), extracts per-`(layer, tick)` contrastive
+    directions for the reasoning/tool anchors and refusal/slop targets, and
+    compares three basis constructions on the same SCR-selected layers:
+
+    - `naive_single_pass`: tick-0 anchors & targets only, bi-projected per layer.
+    - `full_rank_unrolled_concat`: all K ticks' bi-projected targets concatenated
+      without SVD compression (rank `2*K` per layer).
+    - `h19_loop_unrolled_svd_biprojection`: `build_loop_unrolled_biprojected_basis`
+      SVD compression to `k_loop` target directions, layers picked via
+      `compute_loop_unrolled_scr_profile` on the K-looped forward pass.
+
+    All methods apply row-norm-preserving `apply_lancet_biprojected_surgery`
+    (optionally quant-snap compensated) and are scored by anchor/CoT collateral
+    KL versus target-shift KL, effective rank, orthogonality errors, row-norm
+    drift and crest-factor stability.
+    """
+    torch.manual_seed(seed)
+
+    config = load_model_config("configs/model/sml_nano.yaml")
+    # Clamp the loop range to valid layer indices for the loaded config (the
+    # range end is an inclusive layer index, so `end < n_layers` must hold).
+    loop_start = max(0, min(loop_layer_range[0], config.n_layers - 1))
+    loop_end = max(loop_start, min(loop_layer_range[1], config.n_layers - 1))
+    loop_layer_range_eff = (loop_start, loop_end)
+    config = dataclasses.replace(
+        config,
+        num_loop_repeats=num_loop_repeats,
+        loop_layer_range=loop_layer_range_eff,
+    )
+    model = Transformer(config)
+    model.eval()
+
+    segmenter = PhaseSegmenter.for_format("think")
+    segmenter.deliberation_start_id = 3
+    segmenter.deliberation_end_id = 4
+
+    cot_pos_ids, cot_neg_ids = encode_contrast_pairs(
+        COT_REASONING_ANCHOR_PAIRS, vocab_size=config.vocab_size, seq_len=32
+    )
+    refusal_pos_ids, refusal_neg_ids = encode_contrast_pairs(
+        REFUSAL_CONTRAST_PAIRS, vocab_size=config.vocab_size, seq_len=32
+    )
+    slop_pos_ids, slop_neg_ids = encode_contrast_pairs(
+        SLOP_CONTRAST_PAIRS, vocab_size=config.vocab_size, seq_len=32
+    )
+    anchor_pos_ids, anchor_neg_ids = encode_contrast_pairs(
+        REASONING_ANCHOR_PAIRS, vocab_size=config.vocab_size, seq_len=32
+    )
+    tool_sql_pos_ids, tool_sql_neg_ids = encode_contrast_pairs(
+        TOOL_SQL_ANCHOR_PAIRS, vocab_size=config.vocab_size, seq_len=32
+    )
+
+    cot_pos_ids, cot_neg_ids = _inject_deliberation_tag_ids(
+        cot_pos_ids, cot_neg_ids, COT_REASONING_ANCHOR_PAIRS, segmenter, config.vocab_size
+    )
+    refusal_pos_ids, refusal_neg_ids = _inject_deliberation_tag_ids(
+        refusal_pos_ids, refusal_neg_ids, REFUSAL_CONTRAST_PAIRS, segmenter, config.vocab_size
+    )
+    slop_pos_ids, slop_neg_ids = _inject_deliberation_tag_ids(
+        slop_pos_ids, slop_neg_ids, SLOP_CONTRAST_PAIRS, segmenter, config.vocab_size
+    )
+
+    candidate_layers = list(range(loop_start, loop_end + 1))
+
+    # Per-(layer, tick) loop-unrolled directions for anchors & suppression targets.
+    anchor_dirs_lt = extract_loop_unrolled_contrastive_directions(
+        model, anchor_pos_ids, anchor_neg_ids, layer_indices=candidate_layers
+    )
+    tool_dirs_lt = extract_loop_unrolled_contrastive_directions(
+        model, tool_sql_pos_ids, tool_sql_neg_ids, layer_indices=candidate_layers
+    )
+    refusal_dirs_lt = extract_loop_unrolled_contrastive_directions(
+        model,
+        refusal_pos_ids,
+        refusal_neg_ids,
+        layer_indices=candidate_layers,
+        pool_mode="answer_only",
+        phase_segmenter=segmenter,
+    )
+    slop_dirs_lt = extract_loop_unrolled_contrastive_directions(
+        model,
+        slop_pos_ids,
+        slop_neg_ids,
+        layer_indices=candidate_layers,
+        pool_mode="answer_only",
+        phase_segmenter=segmenter,
+    )
+
+    tick_sets = [
+        {tick for (_layer_idx, tick) in dirs_lt}
+        for dirs_lt in (anchor_dirs_lt, tool_dirs_lt, refusal_dirs_lt, slop_dirs_lt)
+    ]
+    ticks = sorted(set.intersection(*tick_sets)) if tick_sets else []
+    if not ticks:
+        ticks = [0]
+
+    # (a) Naive single-pass: tick-0 anchors & targets only, bi-projected per layer.
+    naive_target_dirs: dict[int, list[torch.Tensor]] = {}
+    naive_anchor_dirs: dict[int, list[torch.Tensor]] = {}
+    # (b) Full-rank unrolled concat: all K ticks' bi-projected targets (rank 2*K).
+    concat_target_dirs: dict[int, list[torch.Tensor]] = {}
+    concat_anchor_dirs: dict[int, list[torch.Tensor]] = {}
+    # (c) H19 SVD bi-projection: decaying-weight SVD compression to <= k_loop targets.
+    h19_target_dirs: dict[int, list[torch.Tensor]] = {}
+    h19_anchor_basis: dict[int, torch.Tensor] = {}
+    for layer_idx in candidate_layers:
+        anchor_rows_t0 = _gram_schmidt_rows(
+            [anchor_dirs_lt[(layer_idx, 0)], tool_dirs_lt[(layer_idx, 0)]]
+        )
+        naive_anchor_dirs[layer_idx] = anchor_rows_t0
+        naive_target_dirs[layer_idx] = [
+            biproject_direction(refusal_dirs_lt[(layer_idx, 0)], anchor_rows_t0),
+            biproject_direction(slop_dirs_lt[(layer_idx, 0)], anchor_rows_t0),
+        ]
+
+        all_anchor_dirs = [anchor_dirs_lt[(layer_idx, t)] for t in ticks]
+        all_anchor_dirs += [tool_dirs_lt[(layer_idx, t)] for t in ticks]
+        concat_anchor_rows = _gram_schmidt_rows(all_anchor_dirs)
+        concat_anchor_dirs[layer_idx] = concat_anchor_rows
+        concat_targets: list[torch.Tensor] = []
+        for tick in ticks:
+            concat_targets.append(
+                biproject_direction(refusal_dirs_lt[(layer_idx, tick)], concat_anchor_rows)
+            )
+            concat_targets.append(
+                biproject_direction(slop_dirs_lt[(layer_idx, tick)], concat_anchor_rows)
+            )
+        concat_target_dirs[layer_idx] = concat_targets
+
+        anchor_by_tick = [
+            [anchor_dirs_lt[(layer_idx, t)], tool_dirs_lt[(layer_idx, t)]] for t in ticks
+        ]
+        target_by_tick = [
+            [refusal_dirs_lt[(layer_idx, t)], slop_dirs_lt[(layer_idx, t)]] for t in ticks
+        ]
+        u_anchor, u_target = build_loop_unrolled_biprojected_basis(
+            anchor_by_tick, target_by_tick, k_loop=k_loop
+        )
+        h19_anchor_basis[layer_idx] = u_anchor
+        h19_target_dirs[layer_idx] = [row for row in u_target]
+
+    # K-loop-aware SCR-guided layer selection on the pristine model, using the
+    # H19 compressed target directions; all methods share these layers so the
+    # comparison isolates basis construction.
+    scr_profile = compute_loop_unrolled_scr_profile(
+        model,
+        target_dirs_per_layer=h19_target_dirs,
+        refusal_pos_ids=refusal_pos_ids,
+        refusal_neg_ids=refusal_neg_ids,
+        slop_pos_ids=slop_pos_ids,
+        slop_neg_ids=slop_neg_ids,
+        anchor_ids=anchor_pos_ids,
+        cot_ids=cot_pos_ids,
+        lambda_cot=lambda_cot,
+        scale=scale,
+    )
+    ranked_layers = sorted(scr_profile.items(), key=lambda kv: float(kv[1]["scr"]), reverse=True)
+    selected_layers = [int(layer_idx) for layer_idx, _row in ranked_layers[:top_k_layers]]
+
+    def _basis_rows(basis: Any) -> list[torch.Tensor]:
+        if isinstance(basis, torch.Tensor):
+            return [row for row in basis.detach().float()]
+        return [row.detach().float() for row in basis]
+
+    method_specs: tuple[
+        tuple[str, dict[int, list[torch.Tensor]], dict[int, list[torch.Tensor]]], ...
+    ] = (
+        ("naive_single_pass", naive_target_dirs, naive_anchor_dirs),
+        ("full_rank_unrolled_concat", concat_target_dirs, concat_anchor_dirs),
+        ("h19_loop_unrolled_svd_biprojection", h19_target_dirs, h19_anchor_basis),
+    )  # noqa: E501
+
+    original_weights = _snapshot_write_weights(model.layers, selected_layers)
+    methods: dict[str, dict[str, Any]] = {}
+    for method_name, target_dirs, anchor_dirs in method_specs:
+        surg_model = apply_lancet_biprojected_surgery(
+            copy.deepcopy(model),
+            target_dirs={idx: target_dirs[idx] for idx in selected_layers},
+            anchor_dirs={idx: anchor_dirs[idx] for idx in selected_layers},
+            layer_indices=selected_layers,
+            scale=scale,
+            preserve_row_norm=True,
+            quant_snap=quant_snap,
+            quant_snap_iters=quant_snap_iters,
+            max_block16_crest_factor=max_block16_crest_factor,
+        )
+
+        anchor_kl = compute_logit_kl_divergence(model, surg_model, anchor_pos_ids)
+        cot_kl = compute_logit_kl_divergence(model, surg_model, cot_pos_ids)
+        total_collateral_kl = anchor_kl + lambda_cot * cot_kl
+        target_shift_kl = compute_logit_kl_divergence(
+            model, surg_model, refusal_pos_ids
+        ) + compute_logit_kl_divergence(model, surg_model, slop_pos_ids)
+        scr = target_shift_kl / (total_collateral_kl + 1e-6)
+
+        effective_rank_per_layer = {
+            str(idx): float(len(target_dirs[idx])) for idx in selected_layers
+        }
+        anchor_rows = _basis_rows(anchor_dirs[selected_layers[0]])
+        target_rows = _basis_rows(target_dirs[selected_layers[0]])
+        methods[method_name] = {
+            "selected_layers": selected_layers,
+            "anchor_kl": anchor_kl,
+            "cot_kl": cot_kl,
+            "total_collateral_kl": total_collateral_kl,
+            "target_shift_kl": target_shift_kl,
+            "scr": scr,
+            "effective_rank_per_layer": effective_rank_per_layer,
+            "anchor_orthogonality_error": _orthonormality_error(anchor_rows),
+            "target_orthonormality_error": _orthonormality_error(target_rows),
+            "max_row_norm_rel_drift": _max_row_norm_rel_drift(
+                original_weights, surg_model.layers, selected_layers
+            ),
+            "max_crest_factor": _max_crest_factor(surg_model.layers, selected_layers),
+        }
+
+    results: dict[str, Any] = {
+        "model_id": model_id,
+        "seed": seed,
+        "num_loop_repeats": num_loop_repeats,
+        "loop_layer_range": list(loop_layer_range_eff),
+        "requested_loop_layer_range": list(loop_layer_range),
+        "k_loop": k_loop,
+        "top_k_layers": top_k_layers,
+        "scale": scale,
+        "lambda_cot": lambda_cot,
+        "quant_snap": quant_snap,
+        "quant_snap_iters": quant_snap_iters,
+        "max_block16_crest_factor": max_block16_crest_factor,
+        "candidate_layers": candidate_layers,
+        "loop_ticks": ticks,
+        "selected_layers": selected_layers,
+        "scr_profile": {
+            str(layer_idx): {key: round(float(value), 8) for key, value in row.items()}
+            for layer_idx, row in scr_profile.items()
+        },
+        "methods": methods,
+    }
+
+    if output_dir is not None:
+        out_path = Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+        (out_path / "h19_summary.json").write_text(
+            json.dumps(results, indent=2),
+            encoding="utf-8",
+        )
+
+    return results
 
 
 def run_h15_cot_tri_anchor_lancet_benchmark(

@@ -1,0 +1,43 @@
+experiment_id: h18_nvfp4_quant_snap
+hypothesis_id: H18
+hypothesis: >
+  NVFP4 / MXFP4 & Block-16 Subspace-Compensated Quant-Snap Lancet — micro-block
+  crest-factor regularization (block_size=16, max_block_cf=3.2) combined with
+  iterative subspace quantization-error pre-compensation (K=4, eta=0.75) within a
+  2% relative L2 drift budget preserves subspace ablation under uniform 4-bit
+  quantization (NVFP4 E2M1, MXFP4, MLX 4-bit, static GGUF Q4_K_M).
+prediction: >
+  nvfp4_releakage_reduction_ratio >= 0.50, int4_b32_releakage_reduction_ratio >= 0.40,
+  h18_nvfp4_kl_reduction_ratio >= 0.25, max_block16_crest_factor <= 3.35,
+  max_row_crest_factor < 25.0, snap_weight_rel_l2_drift <= 0.02.
+acceptance_criterion: >
+  nvfp4_releakage_reduction_ratio >= 0.50 AND int4_b32_releakage_reduction_ratio >= 0.40 AND h18_nvfp4_kl_reduction_ratio >= 0.25 AND max_block16_crest_factor <= 3.35 AND max_row_crest_factor < 25.0 AND snap_weight_rel_l2_drift <= 0.02
+seed: 2026
+model_config_path: configs/model/sml_nano.yaml
+data_config_path: configs/data/tinystories.yaml
+hardware_config_path: configs/hardware/m4_pro_mps.yaml
+train:
+  batch_size_tokens: 4096
+  micro_batch_size: 2
+  seq_len: 512
+  max_steps: 27
+  lr: 0.0005
+  min_lr_ratio: 0.1
+  weight_decay: 0.05
+  beta1: 0.9
+  beta2: 0.95
+  grad_clip: 1.0
+  schedule: wsd
+  warmup_steps: 2
+  decay_fraction: 0.2
+  precision: bf16
+  compile: false
+surgery:
+  quant_snap: true
+  snap_mode: hybrid_nvfp4_int4
+  quant_snap_iters: 4
+  step_size: 0.75
+  block_size: 16
+  max_block16_crest_factor: 3.2
+  max_rel_drift: 0.02
+  preserve_row_norm: true

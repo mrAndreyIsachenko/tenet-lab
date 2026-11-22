@@ -19,8 +19,10 @@ from typing import Any
 
 try:
     import torch
+    import torch.nn as nn
 except ImportError:  # pragma: no cover
     torch = None  # type: ignore[assignment]
+    nn = None  # type: ignore[assignment]
 
 try:
     from safetensors.torch import load_file as _safetensors_load_file
@@ -39,6 +41,17 @@ STANDARD_ARCHITECTURES = {
     "Phi3ForCausalLM",
     "MixtralForCausalLM",
 }
+
+# v3 MoE Tenet checkpoints ship packed/fused expert weights under
+# first-party Gemma4 / Mistral3.1 architectures; they are supported
+# alongside the standard set but are not part of the v1 baseline.
+MOE_V3_ARCHITECTURES = {
+    "Gemma4ForCausalLM",
+    "Gemma4ForConditionalGeneration",
+    "Mistral3ForConditionalGeneration",
+}
+
+SUPPORTED_ARCHITECTURES = STANDARD_ARCHITECTURES | MOE_V3_ARCHITECTURES
 
 MAX_ABS_WEIGHT_THRESHOLD = 50.0
 # Pretrained Qwen2.5 down_proj rows reach a crest factor of ~49 and
@@ -172,6 +185,85 @@ def verify_recipe_provenance(checkpoint_dir: Path | str) -> dict[str, Any]:
         _check_config_dimensions(config_path, dimensions, errors)
 
     return {"valid": not errors, "errors": errors, "recipe": recipe}
+
+
+def verify_moe_router_freeze(
+    baseline: Path | str | dict[str, torch.Tensor] | nn.Module,
+    edited: Path | str | dict[str, torch.Tensor] | nn.Module,
+) -> dict[str, Any]:
+    """Verify that MoE router/gate weights are bit-identical after surgery.
+
+    Router (gate) weights must stay frozen during expert-weight surgery so
+    the trained routing behaviour is preserved exactly. Both ``baseline``
+    and ``edited`` may be a plain state dict, an ``nn.Module``, or a
+    ``Path``/``str`` pointing at a checkpoint directory of
+    ``*.safetensors`` files (or a single safetensors file).
+
+    Every key accepted by ``is_router_weight_key`` (from ``sml.surgery.cka``)
+    that is present in both state dicts is compared; the result reports the
+    maximum absolute difference across all router tensors.
+
+    Returns ``{'router_weight_drift': float, 'router_freeze_ok': bool,
+    'checked_router_tensors': int, 'drifted_keys': list[str]}`` where
+    ``router_freeze_ok`` is ``True`` only when the drift is exactly ``0.0``.
+    """
+    from sml.surgery.cka import is_router_weight_key
+
+    if torch is None:  # pragma: no cover
+        raise ImportError("torch is required to verify MoE router freeze")
+
+    baseline_state = _extract_state_dict(baseline)
+    edited_state = _extract_state_dict(edited)
+
+    shared_router_keys = [
+        key
+        for key in baseline_state
+        if key in edited_state
+        and is_router_weight_key(key)
+        and isinstance(baseline_state[key], torch.Tensor)
+        and isinstance(edited_state[key], torch.Tensor)
+    ]
+
+    router_weight_drift = 0.0
+    drifted_keys: list[str] = []
+    for key in shared_router_keys:
+        base_tensor = baseline_state[key].detach().to(dtype=torch.float32)
+        edited_tensor = edited_state[key].detach().to(dtype=torch.float32)
+        if base_tensor.shape != edited_tensor.shape:
+            drift = float("inf")
+        else:
+            drift = float((edited_tensor - base_tensor).abs().max().item())
+        if drift != drift:  # NaN drift propagates as an infinite drift
+            drift = float("inf")
+        router_weight_drift = max(router_weight_drift, drift)
+        if drift != 0.0:
+            drifted_keys.append(key)
+
+    return {
+        "router_weight_drift": router_weight_drift,
+        "router_freeze_ok": router_weight_drift == 0.0,
+        "checked_router_tensors": len(shared_router_keys),
+        "drifted_keys": drifted_keys,
+    }
+
+
+def _extract_state_dict(source: Path | str | dict[str, Any] | Any) -> dict[str, Any]:
+    """Return a flat ``{key: tensor}`` state dict for a supported source."""
+    if isinstance(source, dict):
+        return dict(source)
+    if nn is not None and isinstance(source, nn.Module):
+        return dict(source.state_dict().items())
+    path = Path(source)
+    if _safetensors_load_file is None:  # pragma: no cover
+        raise ImportError("safetensors is required to load router weights from disk")
+    if path.is_dir():
+        state: dict[str, Any] = {}
+        for weight_file in sorted(path.glob("*.safetensors")):
+            state.update(_safetensors_load_file(str(weight_file), device="cpu"))
+        return state
+    if path.is_file():
+        return _safetensors_load_file(str(path), device="cpu")
+    raise FileNotFoundError(f"no checkpoint directory or safetensors file at {path}")
 
 
 def _parse_recipe(path: Path, errors: list[str]) -> dict[str, Any] | None:
@@ -397,7 +489,7 @@ def _check_architecture(
     errors: list[str],
     architectures: list[str],
 ) -> None:
-    """Require a non-empty ``architectures`` list with a standard entry."""
+    """Require a non-empty ``architectures`` list with a supported entry."""
     entries = config.get("architectures")
     if not isinstance(entries, list) or not entries:
         checks["standard_architecture"] = False
@@ -405,10 +497,10 @@ def _check_architecture(
         return
     names = [entry for entry in entries if isinstance(entry, str)]
     architectures.extend(names)
-    if not any(name in STANDARD_ARCHITECTURES for name in names):
+    if not any(name in SUPPORTED_ARCHITECTURES for name in names):
         checks["standard_architecture"] = False
-        expected = ", ".join(sorted(STANDARD_ARCHITECTURES))
-        errors.append(f"config.json: no standard architecture found (expected one of {expected})")
+        expected = ", ".join(sorted(SUPPORTED_ARCHITECTURES))
+        errors.append(f"config.json: no supported architecture found (expected one of {expected})")
 
 
 def _check_no_trust_remote_code(
@@ -461,13 +553,16 @@ def _inspect_weights(
     """Scan weight tensors and summarize weight magnitudes and row crest factors.
 
     Returns a dict with ``max_abs_weight``, ``max_row_crest_factor``,
-    ``row_crest_factor_p50``, ``row_crest_factor_p99`` and
-    ``top_3_outlier_layers`` keys. The percentile diagnostics fall back to
-    ``0.0`` (and the outlier list to empty) when there are no 2D
-    floating-point weight tensors.
+    ``max_block16_crest_factor``, ``row_crest_factor_p50``,
+    ``row_crest_factor_p99`` and ``top_3_outlier_layers`` keys. The
+    percentile diagnostics fall back to ``0.0`` (and the outlier list to
+    empty) when there are no 2D floating-point weight tensors.
     """
+    from sml.surgery.quantization import compute_microblock_crest_factor
+
     max_abs_weight = 0.0
     max_row_crest_factor = 0.0
+    max_block16_crest_factor = 0.0
     crest_factors: list[float] = []
     outlier_layers: list[dict[str, Any]] = []
     for path in weight_files:
@@ -494,6 +589,10 @@ def _inspect_weights(
                 row_rms = torch.sqrt((w * w).mean(dim=1) + 1e-8)
                 row_crest = float((row_abs_max / row_rms).max().item())
                 max_row_crest_factor = max(max_row_crest_factor, row_crest)
+                block16_cf = compute_microblock_crest_factor(tensor, block_size=16)[
+                    "max_block_crest_factor"
+                ]
+                max_block16_crest_factor = max(max_block16_crest_factor, block16_cf)
                 crest_factors.append(row_crest)
                 outlier_layers.append(
                     {
@@ -502,6 +601,30 @@ def _inspect_weights(
                         "max_abs": float(row_abs_max.max().item()),
                     }
                 )
+            elif tensor.ndim == 3 and tensor.is_floating_point():
+                # Packed/fused MoE expert tensors stack one 2-D expert
+                # matrix per leading index; inspect each expert slice
+                # individually instead of skipping ndim != 2 so per-expert
+                # outliers and NaN/Inf do not hide inside the packed dim.
+                for expert in range(tensor.shape[0]):
+                    expert_slice = tensor[expert]
+                    if not expert_slice.is_floating_point():
+                        continue
+                    if bool(torch.isnan(expert_slice).any()) or bool(
+                        torch.isinf(expert_slice).any()
+                    ):
+                        checks["no_nan_inf"] = False
+                        errors.append(
+                            f"{path.name}: tensor '{key}'[{expert}] contains NaN or Inf values"
+                        )
+                    if expert_slice.numel():
+                        magnitude = float(expert_slice.abs().max().item())
+                        max_abs_weight = max(max_abs_weight, magnitude)
+                    if expert_slice.numel() > 0:
+                        block16_cf = compute_microblock_crest_factor(expert_slice, block_size=16)[
+                            "max_block_crest_factor"
+                        ]
+                        max_block16_crest_factor = max(max_block16_crest_factor, block16_cf)
     if crest_factors:
         distribution = torch.tensor(crest_factors, dtype=torch.float32)
         row_crest_p50 = float(torch.quantile(distribution, 0.5).item())
@@ -515,6 +638,7 @@ def _inspect_weights(
     return {
         "max_abs_weight": max_abs_weight,
         "max_row_crest_factor": max_row_crest_factor,
+        "max_block16_crest_factor": max_block16_crest_factor,
         "row_crest_factor_p50": row_crest_p50,
         "row_crest_factor_p99": row_crest_p99,
         "top_3_outlier_layers": top_3_outlier_layers,

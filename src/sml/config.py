@@ -34,6 +34,8 @@ class ModelConfig:
     tie_embeddings: bool = True
     rope_theta: float = 10000.0
     norm_eps: float = 1e-5
+    num_loop_repeats: int = 1
+    loop_layer_range: tuple[int, int] | None = None
 
     def __post_init__(self) -> None:
         if self.d_model % self.n_heads != 0:
@@ -44,6 +46,21 @@ class ModelConfig:
             raise ValueError(
                 f"n_heads ({self.n_heads}) must be divisible by n_kv_heads ({self.n_kv_heads})"
             )
+        if self.num_loop_repeats < 1:
+            raise ValueError(f"num_loop_repeats ({self.num_loop_repeats}) must be >= 1")
+        if self.loop_layer_range is not None:
+            if isinstance(self.loop_layer_range, list):
+                object.__setattr__(self, "loop_layer_range", tuple(self.loop_layer_range))
+            if len(self.loop_layer_range) != 2:
+                raise ValueError(
+                    f"loop_layer_range must have exactly 2 elements, got {self.loop_layer_range}"
+                )
+            start, end = self.loop_layer_range
+            if not 0 <= start <= end < self.n_layers:
+                raise ValueError(
+                    f"loop_layer_range ({start}, {end}) must satisfy "
+                    f"0 <= start <= end < n_layers ({self.n_layers})"
+                )
 
     @property
     def head_dim(self) -> int:

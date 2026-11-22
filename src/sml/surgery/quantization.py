@@ -752,6 +752,458 @@ def evaluate_llm_h11_fp8_provider_survival(
 
 
 # ---------------------------------------------------------------------------
+# Sprint 12 (H18): NVFP4 (E2M1) micro-block quantization + crest factor
+# ---------------------------------------------------------------------------
+
+_NVFP4_E2M1_LEVELS: tuple[float, ...] = (
+    -6.0,
+    -4.0,
+    -3.0,
+    -2.0,
+    -1.5,
+    -1.0,
+    -0.5,
+    0.0,
+    0.5,
+    1.0,
+    1.5,
+    2.0,
+    3.0,
+    4.0,
+    6.0,
+)
+
+
+def quantize_nvfp4_e2m1(weight: torch.Tensor, block_size: int = 16) -> torch.Tensor:
+    """
+    Emulate NVFP4 fake quantization: E2M1 mantissa levels with FP8 (E4M3)
+    per-``block_size`` block scales.
+
+    Each block of ``block_size`` elements is scaled by its absmax / 6.0, the
+    scale itself is rounded through ``torch.float8_e4m3fn`` (as the NVFP4
+    format requires), and the normalized values are snapped to the nearest
+    E2M1 representable level before dequantization.
+
+    Args:
+        weight: Weight tensor to quantize.
+        block_size: Micro-block size (NVFP4 uses 16).
+
+    Returns:
+        Dequantized NVFP4-emulated tensor in the original shape, dtype and
+        device.
+    """
+    if block_size <= 0:
+        raise ValueError(f"block_size must be positive, got {block_size}")
+
+    orig_shape = weight.shape
+    orig_dtype = weight.dtype
+    orig_device = weight.device
+
+    work = weight.detach().to(dtype=torch.float32)
+    last_dim = work.shape[-1]
+    rows = work.reshape(-1, last_dim)
+
+    pad_len = (block_size - (last_dim % block_size)) % block_size
+    if pad_len > 0:
+        rows = F.pad(rows, (0, pad_len))
+    blocks = rows.reshape(-1, block_size)
+
+    block_absmax = blocks.abs().amax(dim=-1, keepdim=True)
+    raw_scale = (block_absmax / 6.0).clamp(min=_FP8_SCALE_MIN, max=FP8_E4M3_MAX)
+
+    try:
+        scale = raw_scale.to(torch.float8_e4m3fn).to(torch.float32)
+    except (RuntimeError, TypeError):
+        # Device (e.g. MPS) cannot cast to float8: emulate on CPU and move back.
+        scale = raw_scale.cpu().to(torch.float8_e4m3fn).to(torch.float32).to(raw_scale.device)
+    scale = scale.clamp(min=_FP8_SCALE_MIN)
+
+    normalized = (blocks / scale).clamp(-6.0, 6.0)
+    levels = torch.tensor(_NVFP4_E2M1_LEVELS, dtype=torch.float32, device=normalized.device)
+    level_idx = normalized.unsqueeze(-1).sub(levels).abs().argmin(dim=-1)
+    snapped = levels[level_idx]
+
+    dequantized = (snapped * scale).reshape(rows.shape)
+    if pad_len > 0:
+        dequantized = dequantized[:, :-pad_len]
+
+    return dequantized.reshape(orig_shape).to(dtype=orig_dtype).to(device=orig_device)
+
+
+def _percentile(values: torch.Tensor, q: float) -> float:
+    """Nearest-rank percentile of a flat tensor (sort-based, no size limits)."""
+    if values.numel() == 0:
+        return 0.0
+    sorted_vals, _ = torch.sort(values.detach().reshape(-1).float())
+    rank = int(round(q * (sorted_vals.numel() - 1)))
+    return float(sorted_vals[rank].item())
+
+
+def compute_microblock_crest_factor(weight: torch.Tensor, block_size: int = 16) -> dict[str, float]:
+    """
+    Compute per-micro-block crest factors (block max / block RMS) of a weight.
+
+    The weight is viewed as ``(-1, last_dim)`` and split into ``block_size``
+    micro-blocks; zero padding needed for divisibility is masked out so it
+    does not dilute the per-block RMS.
+
+    Args:
+        weight: Weight tensor (1-D or N-D, the last dimension is blocked).
+        block_size: Micro-block size (NVFP4 uses 16).
+
+    Returns:
+        Dict with ``max_block_crest_factor``, ``mean_block_crest_factor``,
+        ``p50_block_crest_factor`` and ``p99_block_crest_factor``.
+    """
+    if block_size <= 0:
+        raise ValueError(f"block_size must be positive, got {block_size}")
+
+    work = weight.detach().to(dtype=torch.float32)
+    last_dim = work.shape[-1]
+    rows = work.reshape(-1, last_dim)
+
+    pad_len = (block_size - (last_dim % block_size)) % block_size
+    valid = torch.ones_like(rows)
+    if pad_len > 0:
+        rows = F.pad(rows, (0, pad_len))
+        valid = F.pad(valid, (0, pad_len))
+    blocks = rows.reshape(-1, block_size)
+    mask = valid.reshape(-1, block_size)
+
+    counts = mask.sum(dim=-1).clamp(min=1.0)
+    mean_sq = (blocks * blocks * mask).sum(dim=-1) / counts
+    rms = torch.sqrt(mean_sq + 1e-8)
+    block_max = (blocks.abs() * mask).amax(dim=-1)
+    crest = block_max / (rms + 1e-8)
+
+    return {
+        "max_block_crest_factor": float(crest.max().item()) if crest.numel() else 0.0,
+        "mean_block_crest_factor": float(crest.mean().item()) if crest.numel() else 0.0,
+        "p50_block_crest_factor": _percentile(crest, 0.50),
+        "p99_block_crest_factor": _percentile(crest, 0.99),
+    }
+
+
+def regularize_microblock_crest_factor(
+    weight: torch.Tensor, block_size: int = 16, max_block_cf: float = 3.2
+) -> torch.Tensor:
+    """
+    Clip micro-block crest factors to ``max_block_cf`` while preserving the
+    2-D row norms of the weight.
+
+    Runs up to 16 iterations of per-block RMS recomputation and clamping,
+    exiting early once every block crest factor is within ``max_block_cf`` plus
+    a 1e-4 tolerance, then rescales every row back to its original L2 norm
+    (when it survives with a norm above 1e-8), so the surgery's
+    norm-preservation guarantee holds.
+
+    Args:
+        weight: Weight tensor (1-D or N-D, the last dimension is blocked).
+        block_size: Micro-block size (NVFP4 uses 16).
+        max_block_cf: Maximum allowed per-block crest factor.
+
+    Returns:
+        Regularized tensor in the original shape, dtype and device.
+    """
+    if block_size <= 0:
+        raise ValueError(f"block_size must be positive, got {block_size}")
+    if max_block_cf <= 0:
+        raise ValueError(f"max_block_cf must be positive, got {max_block_cf}")
+
+    orig_shape = weight.shape
+    orig_dtype = weight.dtype
+    orig_device = weight.device
+
+    work = weight.detach().to(dtype=torch.float32)
+    last_dim = work.shape[-1]
+    rows = work.reshape(-1, last_dim)
+    orig_row_norms = rows.norm(p=2, dim=-1, keepdim=True)
+
+    pad_len = (block_size - (last_dim % block_size)) % block_size
+    valid = torch.ones_like(rows)
+    if pad_len > 0:
+        rows = F.pad(rows, (0, pad_len))
+        valid = F.pad(valid, (0, pad_len))
+    blocks = rows.reshape(-1, block_size)
+    mask = valid.reshape(-1, block_size)
+
+    for _ in range(16):
+        counts = mask.sum(dim=-1, keepdim=True).clamp(min=1.0)
+        mean_sq = (blocks * blocks * mask).sum(dim=-1, keepdim=True) / counts
+        rms = torch.sqrt(mean_sq + 1e-8)
+        block_max = (blocks.abs() * mask).amax(dim=-1, keepdim=True)
+        if float((block_max / rms).max().item()) <= max_block_cf + 1e-4:
+            break
+        limit = max_block_cf * rms
+        blocks = blocks.clamp(-limit, limit)
+        blocks = blocks * mask  # keep zero-padded elements at zero
+
+    w_padded = blocks.reshape(rows.shape)
+    w_rows = w_padded[:, :last_dim]
+
+    new_row_norms = w_rows.norm(p=2, dim=-1, keepdim=True)
+    restore = torch.where(
+        new_row_norms > 1e-8,
+        orig_row_norms / new_row_norms.clamp(min=1e-8),
+        torch.ones_like(new_row_norms),
+    )
+    w_rows = w_rows * restore
+
+    return w_rows.reshape(orig_shape).to(dtype=orig_dtype).to(device=orig_device)
+
+
+def evaluate_h18_nvfp4_quant_snap_survival(
+    seed: int = 2026,
+    n_prompts: int = 8,
+    seq_len: int = 32,
+    num_iters: int = 4,
+    step_size: float = 0.75,
+    block_size: int = 16,
+    max_block_cf: float = 3.2,
+) -> dict[str, Any]:
+    """
+    H18: verify that NVFP4 quantization-snap (micro-block crest regularization)
+    makes Lancet biprojected surgery survive NVFP4 and INT4 block-32
+    quantization better than unsnapped surgery and naive ablation.
+
+    A deterministic small Transformer is surgered three ways (naive rank-1
+    ablation at scale 1.5, Lancet biprojection without quant snap, and Lancet
+    biprojection with NVFP4 quant snap), and each arm is quantized with NVFP4
+    (E2M1, block 16) and INT4 (group 32). Re-leakage along the ablated
+    direction and next-token KL against the BF16 reference are compared per
+    arm, together with the micro-block / row crest-factor health of the
+    quant-snapped weights.
+
+    Returns:
+        Dict with ``nvfp4_releakage_reduction_ratio``,
+        ``int4_b32_releakage_reduction_ratio``,
+        ``h18_nvfp4_kl_reduction_ratio``, ``max_block16_crest_factor``,
+        ``max_row_crest_factor``, ``snap_weight_rel_l2_drift``,
+        ``h18_verified`` and an ``arms`` breakdown.
+    """
+    from sml.model.transformer import ModelConfig, Transformer
+    from sml.surgery.subspace import (
+        apply_lancet_biprojected_surgery,
+        apply_subspace_ablation,
+        biproject_direction,
+    )
+
+    torch.manual_seed(seed)
+    config = ModelConfig(
+        name="h18-nvfp4-survival",
+        vocab_size=256,
+        d_model=128,
+        n_layers=4,
+        n_heads=4,
+        n_kv_heads=2,
+        d_ff=384,
+        max_seq_len=64,
+        rope_theta=10000.0,
+    )
+    base_model = Transformer(config)
+    base_model.eval()
+
+    layers = get_transformer_layers(base_model)
+    with torch.no_grad():
+        target_direction = _normalized_mean_direction(layers[-1].self_attn.o_proj.weight)
+        anchor_direction = _normalized_mean_direction(layers[0].self_attn.o_proj.weight)
+
+    # Deployment direction for the Lancet/H18 arms: the biprojected target.
+    lancet_direction = biproject_direction(target_direction, [anchor_direction])
+
+    # a) Naive: rank-1 ablation without biprojection or norm preservation.
+    naive_model = apply_subspace_ablation(base_model, target_direction, scale=1.5)
+    # b) Lancet: biprojected, norm-preserving surgery, no quant snap.
+    lancet_model = apply_lancet_biprojected_surgery(
+        base_model,
+        target_direction,
+        anchor_direction,
+        scale=1.0,
+        preserve_row_norm=True,
+        quant_snap=False,
+    )
+    # c) H18: Lancet surgery with NVFP4 quantization-snap regularization.
+    h18_model = apply_lancet_biprojected_surgery(
+        base_model,
+        target_direction,
+        anchor_direction,
+        scale=1.0,
+        preserve_row_norm=True,
+        quant_snap=True,
+        quant_snap_iters=num_iters,
+        max_block16_crest_factor=max_block_cf,
+    )
+
+    prompt_gen = torch.Generator().manual_seed(seed + 1)
+    prompt_ids = torch.randint(0, config.vocab_size, (n_prompts, seq_len), generator=prompt_gen)
+
+    # BF16 provider reference and quantized endpoints per arm.
+    reference_model = base_model.to(torch.bfloat16)
+    naive_model = naive_model.to(torch.bfloat16)
+    lancet_model = lancet_model.to(torch.bfloat16)
+    h18_model = h18_model.to(torch.bfloat16)
+
+    def _quantize_arm_nvfp4(model: torch.nn.Module) -> torch.nn.Module:
+        """NVFP4 (E2M1, block 16) fake-quantize every 2-D linear weight."""
+        quantized = copy.deepcopy(model)
+        with torch.no_grad():
+            for module in quantized.modules():
+                if isinstance(module, torch.nn.Linear) and module.weight.ndim == 2:
+                    try:
+                        module.weight.data = quantize_nvfp4_e2m1(module.weight.data, block_size)
+                    except (RuntimeError, TypeError):
+                        # Fallback: keep a bfloat16/float32 copy of the weight.
+                        try:
+                            module.weight.data = module.weight.data.to(torch.bfloat16).clone()
+                        except (RuntimeError, TypeError):
+                            module.weight.data = module.weight.data.to(torch.float32).clone()
+        return quantized
+
+    def _quantize_arm_int4(model: torch.nn.Module) -> torch.nn.Module:
+        """INT4 block-32 fake-quantize every 2-D linear weight."""
+        quantized = copy.deepcopy(model)
+        with torch.no_grad():
+            for module in quantized.modules():
+                if isinstance(module, torch.nn.Linear) and module.weight.ndim == 2:
+                    module.weight.data = quantize_tensor_groupwise(
+                        module.weight.data, bits=4, group_size=32
+                    )
+        return quantized
+
+    naive_nvfp4_model = _quantize_arm_nvfp4(naive_model)
+    lancet_nvfp4_model = _quantize_arm_nvfp4(lancet_model)
+    h18_nvfp4_model = _quantize_arm_nvfp4(h18_model)
+    naive_int4_model = _quantize_arm_int4(naive_model)
+    lancet_int4_model = _quantize_arm_int4(lancet_model)
+    h18_int4_model = _quantize_arm_int4(h18_model)
+
+    # Next-token KL of each quantized endpoint vs the BF16 provider reference.
+    kl_naive_nvfp4 = _next_token_kl(reference_model, naive_nvfp4_model, prompt_ids)
+    kl_lancet_nvfp4 = _next_token_kl(reference_model, lancet_nvfp4_model, prompt_ids)
+    kl_h18_nvfp4 = _next_token_kl(reference_model, h18_nvfp4_model, prompt_ids)
+    kl_naive_int4 = _next_token_kl(reference_model, naive_int4_model, prompt_ids)
+    kl_lancet_int4 = _next_token_kl(reference_model, lancet_int4_model, prompt_ids)
+    kl_h18_int4 = _next_token_kl(reference_model, h18_int4_model, prompt_ids)
+
+    # Subspace re-leakage: weight energy along the ablated direction that
+    # quantization re-introduces, per arm and per quantization format.
+    nvfp4_subspace_releakage_naive = _compute_subspace_releakage(
+        base_model, naive_nvfp4_model, target_direction
+    )
+    nvfp4_subspace_releakage_lancet = _compute_subspace_releakage(
+        base_model, lancet_nvfp4_model, lancet_direction
+    )
+    nvfp4_subspace_releakage_h18 = _compute_subspace_releakage(
+        base_model, h18_nvfp4_model, lancet_direction
+    )
+    int4_subspace_releakage_naive = _compute_subspace_releakage(
+        base_model, naive_int4_model, target_direction
+    )
+    int4_subspace_releakage_lancet = _compute_subspace_releakage(
+        base_model, lancet_int4_model, lancet_direction
+    )
+    int4_subspace_releakage_h18 = _compute_subspace_releakage(
+        base_model, h18_int4_model, lancet_direction
+    )
+
+    # Crest-factor health of the surgured H18 weights (the o_proj/down_proj
+    # projections the micro-block hygiene pass touches).
+    max_block16_crest_factor = 0.0
+    max_row_crest_factor = 0.0
+    for layer in get_transformer_layers(h18_model):
+        for proj in (layer.self_attn.o_proj, layer.mlp.down_proj):
+            weight = proj.weight.detach().float()
+            block_stats = compute_microblock_crest_factor(weight, block_size=block_size)
+            max_block16_crest_factor = max(
+                max_block16_crest_factor, block_stats["max_block_crest_factor"]
+            )
+            row_abs_max = weight.abs().amax(dim=1)
+            row_rms = torch.sqrt((weight * weight).mean(dim=1) + 1e-8)
+            if row_rms.numel() > 0:
+                row_crest = float((row_abs_max / (row_rms + 1e-8)).max())
+                max_row_crest_factor = max(max_row_crest_factor, row_crest)
+
+    # Drift the quant snap introduces on the surgered o_proj/down_proj weights.
+    snap_weight_rel_l2_drift = 0.0
+    for lancet_layer, h18_layer in zip(
+        get_transformer_layers(lancet_model), get_transformer_layers(h18_model), strict=True
+    ):
+        for lancet_proj, h18_proj in (
+            (lancet_layer.self_attn.o_proj, h18_layer.self_attn.o_proj),
+            (lancet_layer.mlp.down_proj, h18_layer.mlp.down_proj),
+        ):
+            w_lancet = lancet_proj.weight.detach().float()
+            w_h18 = h18_proj.weight.detach().float()
+            drift = float((w_h18 - w_lancet).norm() / (w_lancet.norm() + 1e-8))
+            snap_weight_rel_l2_drift = max(snap_weight_rel_l2_drift, drift)
+
+    nvfp4_releakage_reduction_ratio = (
+        nvfp4_subspace_releakage_lancet - nvfp4_subspace_releakage_h18
+    ) / max(nvfp4_subspace_releakage_lancet, 1e-12)
+    int4_b32_releakage_reduction_ratio = (
+        int4_subspace_releakage_lancet - int4_subspace_releakage_h18
+    ) / max(int4_subspace_releakage_lancet, 1e-12)
+    h18_nvfp4_kl_reduction_ratio = (kl_naive_nvfp4 - kl_h18_nvfp4) / max(kl_naive_nvfp4, 1e-12)
+
+    h18_verified = bool(
+        nvfp4_releakage_reduction_ratio >= 0.50
+        and int4_b32_releakage_reduction_ratio >= 0.40
+        and h18_nvfp4_kl_reduction_ratio >= 0.25
+        and max_block16_crest_factor <= 3.35
+        and max_row_crest_factor < 25.0
+        and snap_weight_rel_l2_drift <= 0.02
+    )
+
+    return {
+        "nvfp4_releakage_reduction_ratio": nvfp4_releakage_reduction_ratio,
+        "int4_b32_releakage_reduction_ratio": int4_b32_releakage_reduction_ratio,
+        "h18_nvfp4_kl_reduction_ratio": h18_nvfp4_kl_reduction_ratio,
+        "max_block16_crest_factor": max_block16_crest_factor,
+        "max_row_crest_factor": max_row_crest_factor,
+        "snap_weight_rel_l2_drift": snap_weight_rel_l2_drift,
+        "h18_verified": h18_verified,
+        "kl_naive_nvfp4": kl_naive_nvfp4,
+        "kl_lancet_nvfp4": kl_lancet_nvfp4,
+        "kl_h18_nvfp4": kl_h18_nvfp4,
+        "kl_naive_int4_b32": kl_naive_int4,
+        "kl_lancet_int4_b32": kl_lancet_int4,
+        "kl_h18_int4_b32": kl_h18_int4,
+        "nvfp4_subspace_releakage_naive": nvfp4_subspace_releakage_naive,
+        "nvfp4_subspace_releakage_lancet": nvfp4_subspace_releakage_lancet,
+        "nvfp4_subspace_releakage_h18": nvfp4_subspace_releakage_h18,
+        "int4_b32_subspace_releakage_naive": int4_subspace_releakage_naive,
+        "int4_b32_subspace_releakage_lancet": int4_subspace_releakage_lancet,
+        "int4_b32_subspace_releakage_h18": int4_subspace_releakage_h18,
+        "arms": {
+            "naive": {
+                "kl_bf16_vs_nvfp4": kl_naive_nvfp4,
+                "kl_bf16_vs_int4_b32": kl_naive_int4,
+                "nvfp4_subspace_releakage": nvfp4_subspace_releakage_naive,
+                "int4_b32_subspace_releakage": int4_subspace_releakage_naive,
+            },
+            "lancet": {
+                "kl_bf16_vs_nvfp4": kl_lancet_nvfp4,
+                "kl_bf16_vs_int4_b32": kl_lancet_int4,
+                "nvfp4_subspace_releakage": nvfp4_subspace_releakage_lancet,
+                "int4_b32_subspace_releakage": int4_subspace_releakage_lancet,
+            },
+            "h18": {
+                "kl_bf16_vs_nvfp4": kl_h18_nvfp4,
+                "kl_bf16_vs_int4_b32": kl_h18_int4,
+                "nvfp4_subspace_releakage": nvfp4_subspace_releakage_h18,
+                "int4_b32_subspace_releakage": int4_subspace_releakage_h18,
+            },
+        },
+        "quant_format": "nvfp4_e2m1_fp8_scale_block16",
+        "int4_group_size": 32,
+        "block_size": block_size,
+        "max_block_cf": max_block_cf,
+        "num_iters": num_iters,
+        "step_size": step_size,
+    }
+
+
+# ---------------------------------------------------------------------------
 # CKA-guided GGUF recipes (llama.cpp / llama-quantize)
 # ---------------------------------------------------------------------------
 
