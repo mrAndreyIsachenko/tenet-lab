@@ -10,16 +10,35 @@ from __future__ import annotations
 import re
 from typing import Any
 
+import yaml
+
 CANONICAL_TENET_NAMES = (
     "Tenet-3B-Qwen2.5-Unslop-v1",
     "Tenet-8B-Llama3.1-Unslop-v1",
     "Tenet-12B-Nemo-Unslop-v1",
     "Tenet-32B-Qwen2.5-Unslop-v1",
     "Tenet-70B-Llama3.3-Unslop-v1",
+    "Tenet-26B-A4B-Gemma4-Unslop-v3",
+    "Tenet-30B-A3B-Qwen3-Unslop-v3",
+    "Tenet-24B-Mistral3.1-Unslop-v3",
 )
 
+# Matches every canonical Tenet revision (v1, v2, v3, ...) in both the
+# dense form (``Tenet-<size>B-<family>-Unslop-v<rev>``) and the MoE form
+# with an explicit active-parameter token
+# (``Tenet-<size>B-A<n>B-<family>-Unslop-v<rev>``, e.g.
+# ``Tenet-26B-A4B-Gemma4-Unslop-v3``). The named groups back
+# ``parse_tenet_model_name``; the accepted language is identical to the
+# original dense-only pattern because the MoE group is optional and the
+# ``-A<n>B`` token is itself a valid family segment.
 _TENET_NAME_PATTERN = re.compile(
-    r"^Tenet-\d+(?:\.\d+)?B-[A-Za-z0-9](?:[A-Za-z0-9.\-]*[A-Za-z0-9])?-Unslop-v\d+$"
+    r"^Tenet-"
+    r"(?P<size>\d+(?:\.\d+)?)B"
+    r"(?:-A(?P<active>\d+)B)?"
+    r"-"
+    r"(?P<family>[A-Za-z0-9](?:[A-Za-z0-9.\-]*[A-Za-z0-9])?)"
+    r"-Unslop-"
+    r"(?P<version>v\d+)$"
 )
 
 _TAGS = (
@@ -89,6 +108,8 @@ def generate_tenet_model_card(
 
     tags = "\n".join(f"- {tag}" for tag in _TAGS)
     recipe_details = _recipe_reconstruction_details(recipe_metadata)
+    model_index_block = render_model_index_yaml(model_id, metrics)
+    model_index_frontmatter = f"{model_index_block}\n" if model_index_block else ""
 
     return f"""---
 license: apache-2.0
@@ -97,7 +118,7 @@ pipeline_tag: text-generation
 library_name: transformers
 tags:
 {tags}
----
+{model_index_frontmatter}---
 
 # {model_id}
 
@@ -547,6 +568,46 @@ def _validate_model_id(model_id: str) -> None:
         )
 
 
+def parse_tenet_model_name(model_id: str) -> dict[str, Any]:
+    """Parse a canonical Tenet model id into its structural components.
+
+    Accepts both the dense form (``Tenet-<size>B-<family>-Unslop-v<rev>``,
+    e.g. ``Tenet-3B-Qwen2.5-Unslop-v1``) and the MoE form with an explicit
+    active-parameter token (``Tenet-<size>B-A<n>B-<family>-Unslop-v<rev>``,
+    e.g. ``Tenet-26B-A4B-Gemma4-Unslop-v3``).
+
+    Returns a dict with:
+
+    * ``total_params`` - the total parameter size in billions as a float
+      (e.g. ``26.0`` for ``Tenet-26B-...``).
+    * ``active_params`` - the raw MoE active-parameter token (``'A4B'``,
+      ``'A3B'``) for MoE checkpoints, else ``None`` for dense ones.
+    * ``family`` - the base-model family segment (e.g. ``'Gemma4'``,
+      ``'Qwen2.5'``, ``'Mistral3.1'``).
+    * ``version`` - the revision token (``'v1'``, ``'v2'``, ``'v3'``).
+    * ``is_moe`` - ``True`` when an active-parameter token is present.
+
+    Raises ``ValueError`` when ``model_id`` does not match
+    ``_TENET_NAME_PATTERN``.
+    """
+    if not isinstance(model_id, str) or _TENET_NAME_PATTERN.match(model_id) is None:
+        examples = ", ".join(CANONICAL_TENET_NAMES)
+        raise ValueError(
+            "model_id must follow the canonical Tenet naming scheme "
+            "'Tenet-<size>B-<base>-Unslop-v<revision>', e.g. " + examples
+        )
+    match = _TENET_NAME_PATTERN.match(model_id)
+    active_token = match.group("active")
+    active_params = f"A{active_token}B" if active_token is not None else None
+    return {
+        "total_params": float(match.group("size")),
+        "active_params": active_params,
+        "family": match.group("family"),
+        "version": match.group("version"),
+        "is_moe": active_params is not None,
+    }
+
+
 def _first_value(metrics: dict[str, Any], *keys: str) -> Any:
     """Return the first non-``None`` value among ``keys``."""
     for key in keys:
@@ -662,16 +723,167 @@ _EXTERNAL_BENCHMARK_ROWS: tuple[tuple[str, str], ...] = (
     ("GSM8K / MATH-500 accuracy", "gsm8k_math_acc"),
     ("GSM8K CoT (strict)", "gsm8k_cot_strict"),
     ("GSM8K CoT (flexible)", "gsm8k_cot_flexible"),
+    ("MATH-500", "math_500"),
+    ("GPQA Diamond", "gpqa_diamond"),
+    ("MMLU-Pro", "mmlu_pro"),
     ("SQL-Incident Eval accuracy", "sql_incident_acc"),
     ("SQL-Incident mean reward", "sql_incident_reward"),
     ("Direct-Compliance rate", "direct_compliance_rate"),
     ("Unslop pass rate", "unslop_pass_rate"),
     ("Slop & Refusal rate", "slop_and_refusal_rate"),
+    ("EQ-Bench Creative Writing", "eqbench_creative_writing"),
+    ("Slop Score", "slop_score"),
+    ("Unclosed <think> Rate", "unclosed_think_rate"),
     ("BFCL tool accuracy", "bfcl_tool_acc"),
     ("HumanEval pass@1", "humaneval_pass1"),
+    ("HumanEval+ (EvalPlus)", "humaneval_plus"),
+    ("MBPP+ (EvalPlus)", "mbpp_plus"),
 )
 
 _EXTERNAL_SKIP_KEYS: frozenset[str] = frozenset({"elapsed_seconds"})
+
+# Native Hugging Face OpenEvals ``model-index`` metadata: OpenEvals metric
+# key -> (HF dataset type, HF dataset name, metric name).
+_OPEN_EVALS_SPECS: dict[str, tuple[str, str, str]] = {
+    "ifeval_strict": ("google/IFEval", "IFEval", "Prompt-level Strict Accuracy"),
+    "ifeval_inst_strict": (
+        "google/IFEval",
+        "IFEval",
+        "Instruction-level Strict Accuracy",
+    ),
+    "math_500": ("HuggingFaceH4/MATH-500", "MATH-500", "Accuracy"),
+    "hendrycks_math_500": ("HuggingFaceH4/MATH-500", "MATH-500", "Accuracy"),
+    "gsm8k_cot_strict": ("openai/gsm8k", "GSM8K", "Strict Match"),
+    "gsm8k_math_acc": ("openai/gsm8k", "GSM8K", "Accuracy"),
+    "gsm8k_cot_flexible": ("openai/gsm8k", "GSM8K", "Flexible Extract"),
+    "gpqa_diamond": ("Idavidrein/gpqa", "GPQA Diamond", "Accuracy"),
+    "gpqa_diamond_zeroshot": ("Idavidrein/gpqa", "GPQA Diamond", "Zero-shot Accuracy"),
+    "mmlu_pro": ("TIGER-Lab/MMLU-Pro", "MMLU-Pro", "Accuracy"),
+    "humaneval_plus": ("evalplus/humanevalplus", "HumanEval+", "Pass@1"),
+    "humaneval_pass1": ("evalplus/humanevalplus", "HumanEval+", "Pass@1"),
+    "mbpp_plus": ("evalplus/mbppplus", "MBPP+", "Pass@1"),
+    "eqbench_creative_writing": (
+        "eqbench/creative-writing",
+        "EQ-Bench Creative Writing & Slop",
+        "Creative Writing Score",
+    ),
+    "slop_score": (
+        "eqbench/creative-writing",
+        "EQ-Bench Creative Writing & Slop",
+        "Slop Score",
+    ),
+    "slop_and_refusal_rate": (
+        "eqbench/creative-writing",
+        "EQ-Bench Creative Writing & Slop",
+        "Slop & Refusal Rate",
+    ),
+}
+
+_OPEN_EVALS_SOURCE_NAME = "Tenet OpenEvals (vLLM)"
+
+
+def _open_eval_values(metrics: dict[str, Any]) -> dict[str, Any]:
+    """Collect OpenEvals metric values across sources (later sources win).
+
+    Merge priority: top-level metrics < ``external_benchmarks`` (with the
+    nested ``external_benchmarks['external_benchmarks']`` payload) <
+    ``external_benchmarks_comparison['arms']['tenet']`` < ``open_evals``.
+    """
+    merged: dict[str, Any] = {}
+    for key, value in metrics.items():
+        if key in _OPEN_EVALS_SPECS:
+            merged[key] = value
+    external = metrics.get("external_benchmarks")
+    if isinstance(external, dict):
+        flat = (
+            external["external_benchmarks"]
+            if isinstance(external.get("external_benchmarks"), dict)
+            else external
+        )
+        for key in _OPEN_EVALS_SPECS:
+            if key in flat:
+                merged[key] = flat[key]
+    comparison = metrics.get("external_benchmarks_comparison")
+    if isinstance(comparison, dict):
+        arms = comparison.get("arms")
+        if isinstance(arms, dict) and isinstance(arms.get("tenet"), dict):
+            tenet = arms["tenet"]
+            for key in _OPEN_EVALS_SPECS:
+                if key in tenet:
+                    merged[key] = tenet[key]
+    open_evals = metrics.get("open_evals")
+    if isinstance(open_evals, dict):
+        for key in _OPEN_EVALS_SPECS:
+            if key in open_evals:
+                merged[key] = open_evals[key]
+    return merged
+
+
+def _numeric_metric_value(value: Any) -> float | None:
+    """Return ``value`` as a float when it is a usable metric number."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def build_model_index(
+    model_id: str,
+    metrics: dict[str, Any],
+    *,
+    source_url: str | None = None,
+) -> list[dict[str, Any]]:
+    """Build a native HF ``model-index`` structure from OpenEvals metrics.
+
+    Only datasets with at least one numeric metric value are emitted;
+    multiple metrics for the same dataset are grouped into a single
+    ``results`` entry. Returns an empty list when nothing is available.
+    """
+    values = _open_eval_values(metrics)
+    results: list[dict[str, Any]] = []
+    by_dataset: dict[tuple[str, str], dict[str, Any]] = {}
+    for key, (ds_type, ds_name, metric_name) in _OPEN_EVALS_SPECS.items():
+        if key not in values:
+            continue
+        number = _numeric_metric_value(values[key])
+        if number is None:
+            continue
+        entry = by_dataset.get((ds_type, ds_name))
+        if entry is None:
+            entry = {
+                "task": {"type": "text-generation"},
+                "dataset": {"name": ds_name, "type": ds_type},
+                "metrics": [],
+                "source": {
+                    "name": _OPEN_EVALS_SOURCE_NAME,
+                    "url": source_url or _hf_url(model_id),
+                },
+            }
+            by_dataset[(ds_type, ds_name)] = entry
+            results.append(entry)
+        entry["metrics"].append({"name": metric_name, "type": key, "value": round(number, 6)})
+    if not results:
+        return []
+    return [{"name": model_id, "results": results}]
+
+
+def render_model_index_yaml(
+    model_id: str,
+    metrics: dict[str, Any],
+    *,
+    source_url: str | None = None,
+) -> str:
+    """Render the native HF ``model-index`` YAML block (empty when unused)."""
+    entries = build_model_index(model_id, metrics, source_url=source_url)
+    if not entries:
+        return ""
+    return yaml.safe_dump(
+        {"model-index": entries}, sort_keys=False, default_flow_style=False
+    ).rstrip()
 
 
 def _format_delta(value: Any) -> str:
