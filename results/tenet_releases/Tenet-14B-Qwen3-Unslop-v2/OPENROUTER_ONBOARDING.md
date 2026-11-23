@@ -44,9 +44,4 @@ Settings: `quantization=fp8`, `dtype=bfloat16`, `trust_remote_code=False`, `enab
 
 | Benchmark | Score |
 | --- | --- |
-| IFEval strict | Base: `0.225` / Naive: `0.225` / Tenet: `0.25` |
-| IFEval inst-strict | Base: `0.428571` / Naive: `0.428571` / Tenet: `0.444444` |
-| GSM8K CoT flexible | Base: `0.15` / Naive: `0.15` / Tenet: `0.25` |
-| GSM8K CoT strict | Base: `0.025` / Naive: `0` / Tenet: `0.05` |
 | Unslop pass rate | Base: `0.916667` / Naive: `0.916667` / Tenet: `0.916667` |
-| Slop / refusal rate | Base: `0.083333` / Naive: `0.083333` / Tenet: `0.083333` |

@@ -254,7 +254,7 @@ $$\Delta W_{\text{safe}} = (I - U_{\text{ablate}} U_{\text{ablate}}^\top) \Delta
 1. **Хирургия `H15` + GRPO `H16` (после TIES/norm-preserving merge):**
    - `selected_layers`: `[13, 15, 17, 12, 11, 20, 9, 22]` (CoT-weighted SCR, `lambda_cot = 0.5`).
    - `max_row_crest_factor = 3.1766` (`< 25.0` ✅), `fp8_subspace_releakage = 2.4946%` (`< 3.0%` ✅).
-   - Внешний `GSM8K` (`limit=40`): `delta = 0.0 pp` (`0.15` vs `0.15`, `>= -0.5 pp` ✅; [`Tenet-4B-Qwen3-Unslop-v2.json`](../results/external_evals/Tenet-4B-Qwen3-Unslop-v2.json)).
+   - Full-vLLM OpenEvals (`suite=full`, `n=3,566 tasks/arm`): GSM8K Strict `88.78% / 85.97% / 88.93%` (`+2.96 pp` vs Naive; Flex `77.10% / 79.15% / 78.01%`), MATH-500 `70.60% / 70.20% / 70.20%`, IFEval Prompt-Strict `78.56% / 81.33% / 80.59%` (`+2.03 pp` vs Base; Inst `85.01% / 87.17% / 85.97%`), GPQA Diamond `34.34% / 34.34% / 34.34%`, MMLU-Pro `57.44% / 55.75% / 56.35%` — `0.00%` unclosed `<think>`.
 2. **Доменный GGUF `Domain-i1-CKA-Q4_K_M` (`H14+` + `H17`):**
 
 | Вариант (`Tenet-4B-Qwen3-Unslop-v2`) | PPL (7x512) | RMS Δp vs F16 | Same Top-1 | Unslop Pass | Slop/Refusal | Length Collapse | SQL RO | Arena House HP | House Artifacts | CoT Integrity |
@@ -290,7 +290,25 @@ $$\Delta W_{\text{safe}} = (I - U_{\text{ablate}} U_{\text{ablate}}^\top) \Delta
 1. **`Tenet-32B-Qwen3-Unslop-v2` (`Qwen/Qwen3-32B`, `9/10` gates):**
    - `BF16/FP8`: `max_row_crest_factor = 4.3593` (`< 25.0`), `fp8_subspace_releakage_pct = 2.5579%` (`< 3.0%`).
    - `GGUF` (`40x512`, `4.896 bpw`): **`F16`** (`61.03 GiB`, `PPL 6.8993`) и чистый **`CKA-Q4_K_M`** (`18.68 GiB`, `PPL 7.0576`, `KLD 0.02407`, `Same Top-1 94.12%`) выбивают **`100.0 HP` (`24/24` артефактов, `100%` `<think>` CoT integrity, `100%` unslop, `6/6` SQL read-only)**. Единственный упавший гейт (`9/10`) — `house_artifact_classification_rate[i1_cka_q4_k_m]` (`97.92 HP`, `23/24`, промах на `house-edge-leap-years` при наложении `imatrix`), поэтому рекомендуемый 4-битный квант для `32B-v2` — чистый **`CKA-Q4_K_M`** или **`BF16/FP8`** ([`foundry_summary.json`](../results/tenet_releases/Tenet-32B-Qwen3-Unslop-v2/foundry_summary.json)).
+   - Full-vLLM OpenEvals (`suite=full`, `n=3,566 tasks/arm`): GSM8K Flex `91.74% / 84.76% / 92.19%` (`+0.45 pp` vs Base, `+7.43 pp` vs Naive; Strict `90.07% / 85.60% / 80.97%`), MATH-500 `77.60% / 71.20% / 74.80%` (`+3.60 pp` vs Naive), IFEval Prompt-Strict `84.66% / 82.26% / 84.47%` (`+2.21 pp` vs Naive; Inst `89.21% / 87.77% / 88.85%`), GPQA Diamond `38.89% / 37.88% / 40.40%` (`+1.51 pp` vs Base, `+2.52 pp` vs Naive), MMLU-Pro `71.03% / 62.90% / 65.48%` (`+2.58 pp` vs Naive).
 2. **`Tenet-14B-Qwen3-Unslop-v2` (`Qwen/Qwen3-14B`, `5/10` gates):**
    - `BF16/FP8`: `max_row_crest_factor = 3.5974`, `fp8_subspace_releakage_pct = 2.5898%`.
-   - В 3-way `lm-eval` (`limit=40`) `Tenet-14B-v2` опережает Base и Naive по обоим ключевым бенчмаркам: **`IFEval Strict 0.250`** (vs `0.225` Base/Naive) и **`GSM8K CoT Flexible 0.250`** (vs `0.150` Base/Naive, **`+10.0 pp`**) при `unslop_pass_rate = 0.917` ([`Tenet-14B-Qwen3-Unslop-v2.json`](../results/external_evals/Tenet-14B-Qwen3-Unslop-v2.json)).
+   - Для `14B-v2` полный `Full vLLM OpenEvals` (`suite=full`, `n=3,566 tasks/arm`) не запускался: архивные значения `32B-v2` перенесены в пункт 1, а строки `4B-v2` / `8B-v2` / `32B-v2` сведены в таблицу ниже. Общий флаг OpenEvals-прогона семейства: `0.00%` unclosed `<think>`.
    - `GGUF` (`40x512`, `5.003 bpw`): `91.67–95.83 HP` (`CKA-Q4_K_M` прошёл `6/6` SQL и `0%` length collapse, тогда как `F16` и `i1-CKA-Q4_K_M` получили `0/6` SQL и `1/24` collapse на `house-json-feature-flags`; [`foundry_summary.json`](../results/tenet_releases/Tenet-14B-Qwen3-Unslop-v2/foundry_summary.json)).
+
+---
+
+**Full vLLM OpenEvals — `Tenet v2` family** (`suite=full`, `n=3,566 tasks/arm`, Base / Naive / Tenet):
+
+| Release | GSM8K Strict (Flex) | MATH-500 | IFEval Prompt-Strict | GPQA Diamond | MMLU-Pro |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| `Tenet-4B-Qwen3-Unslop-v2` | **88.78% / 85.97% / 88.93%** (Flex `+0.70 pp` vs Naive) | 70.60% / 70.20% / **70.20%** | 78.56% / 81.33% / **80.59%** (`+2.03 pp` vs Base) | 34.34% / 34.34% / **34.34%** | 57.44% / 55.75% / **56.35%** |
+| `Tenet-8B-Qwen3-Unslop-v2` | Flex **90.30% / 90.98% / 90.90%** (`+0.61 pp` vs Base) | 70.60% / 70.40% / **72.20%** (`+1.80 pp` vs Naive) | 82.07% / 82.62% / **80.78%** | 39.90% / 38.38% / **40.40%** (`+2.02 pp` vs Naive) | 59.42% / 60.91% / **59.72%** |
+| `Tenet-32B-Qwen3-Unslop-v2` | Flex **91.74% / 84.76% / 92.19%** (`+7.43 pp` vs Naive) | 77.60% / 71.20% / **74.80%** (`+3.60 pp` vs Naive) | 84.66% / 82.26% / **84.47%** (`+2.21 pp` vs Naive) | 38.89% / 37.88% / **40.40%** (`+2.52 pp` vs Naive) | 71.03% / 62.90% / **65.48%** (`+2.58 pp` vs Naive) |
+
+---
+
+## Дополнение 2 (`H18` & `H19`): NVFP4 Quant-Snap Lancet и Loop-Unrolled SVD Biprojection
+
+1. **`H18` — NVFP4 / Block-16 Quant-Snap Lancet:** на 8 хирургических слоях `Qwen/Qwen3-4B` ([`qwen3_4b_audit.json`](../results/h18_nvfp4_quant_snap/qwen3_4b_audit.json)) quant-snap-осознанная бипроекция `Lancet` снижает NVFP4 (block-16 scaling) subspace re-leakage на **`26.15%`** и INT4-b32 re-leakage на **`28.72%`**; в синтетическом контролируемом аудите — `32.58%` reduction NVFP4 re-leakage и `17.05%` reduction NVFP4 KL. Строгий block-16 crest-гейт при этом не достигнут: `max_block16_crest_factor = 3.3695 > 3.20` (`h18_verified = false`), поэтому `H18` имеет статус `Partial / Pilot` и требует scaling.
+2. **`H19` — Loop-Unrolled SVD Biprojection Lancet:** на 3-repeat weight-tied looped трансформере `Tenet-Nano-6L-Looped-H19` ([`h19_summary.json`](../results/h19_loop_unrolled_lancet/h19_summary.json)) unrolled per-layer SVD бипроекция достигает **`SCR = 2.4339`** против `2.4030` у naive и `1.6729` у concatenated-anchor при ошибке ортонормальности **`1.19e-7`**.

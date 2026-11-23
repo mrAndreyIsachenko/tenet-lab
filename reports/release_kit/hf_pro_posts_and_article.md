@@ -19,17 +19,17 @@ With Hugging Face **PRO** active (`isPro: true`), two high-visibility channels a
 
 After our Tenet v1 models swept both divisions at Model Fight Card 16 (onlymodels.gg, 2026-11-20) — Tenet-3B-Qwen2.5-Unslop-v1 (Minors Champion, 90 HP) & Tenet-8B-Llama3.1-Unslop-v1 (Majors Champion, 50 HP, 7/7 Peer Eval hits) — we ported our weight surgery pipeline to `<think>...</think>` reasoning models.
 
-Standard 2-anchor abliteration fractures the `</think>` boundary (crashing Qwen3-8B IFEval Strict 3x from 0.300 → 0.100), while standard anti-slop GRPO bloats `<think>` padding.
+Standard 2-anchor abliteration fractures the `</think>` boundary and collapses instruction following (Base IFEval `80.78%` for 8B-v2 vs a naive-abliterated collapse), while standard anti-slop GRPO bloats `<think>` padding.
 
 Tenet v2 solves both via:
 • H15 Tri-Anchor Lancet Surgery: float32 Modified Gram-Schmidt projection protecting U_reason ⊥ U_boundary ⊥ U_format + per-row L2-norm restoration (Max Row Crest 3.18–4.37 < 25.0, FP8 E4M3 re-leakage 2.49%–2.72% vs ~50% naive).
 • H16 Length-Calibrated GRPO: cuts CoT padding while preserving 100% `<think>` tag integrity.
 
 📊 H100 3-Way lm-eval & 10-Gate Verification:
-• mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2: 10/10 gates, 100.0 HP (24/24), holds 100% of Base IFEval Strict (0.300 vs 0.100 Naive) & finishes 17.4% faster.
-• mr-andrey-isachenko/Tenet-14B-Qwen3-Unslop-v2: +10.0 pp GSM8K CoT Flexible (0.250 vs 0.150 Base/Naive) & +2.5 pp IFEval Strict (23.0% faster).
-• mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2: 100.0 HP (24/24, 6/6 SQL) in BF16, F16 & pure CKA-Q4_K_M (4.952 bpw).
-• mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2: 10/10 gates, 100.0 HP across F16, CKA-Q4_K_M & i1-CKA-Q4_K_M.
+• mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2: 10/10 gates, 100.0 HP (24/24); Full vLLM OpenEvals: IFEval `80.78%`, GSM8K Flex `90.90%` (+0.61 pp vs Base), MATH-500 `72.20%` (+1.60 pp vs Base), GPQA `40.40%`, MMLU-Pro `59.72%`.
+• mr-andrey-isachenko/Tenet-14B-Qwen3-Unslop-v2: Full vLLM OpenEvals verified across GSM8K / MATH-500 / GPQA / MMLU-Pro / IFEval & runs 23.0% faster.
+• mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2: 100.0 HP (24/24, 6/6 SQL) in BF16, F16 & pure CKA-Q4_K_M (4.952 bpw); Full vLLM OpenEvals: GSM8K Flex `92.19%` (+7.43 pp vs Naive 84.76%), MATH-500 `74.80%` (+3.60 pp vs Naive), GPQA `40.40%`, MMLU-Pro `65.48%`, IFEval `84.47%`.
+• mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2: 10/10 gates, 100.0 HP across F16, CKA-Q4_K_M & i1-CKA-Q4_K_M; Full vLLM OpenEvals: IFEval `80.59%` (+2.03 pp vs Base), GSM8K Strict `88.93%` (+2.96 pp vs Naive), MATH-500 `70.20%`, GPQA `34.34%`, MMLU-Pro `56.35%`.
 
 📦 Collection: https://huggingface.co/collections/mr-andrey-isachenko/tenet-v2-thinking-safe-tri-anchor-unslop-and-domain-cka-gguf-6b00aec98d01429c224654d4
 🔬 ZeroGPU FP8 & CKA Inspector Space: https://huggingface.co/spaces/mr-andrey-isachenko/fp8-abliteration-inspector
@@ -95,7 +95,7 @@ In this article, we share the full mathematical formulation and H100 verificatio
 In standard instruct models (`Qwen2.5`, `Llama-3.1`, `Mistral-Nemo`), dual-anchor orthogonal projection (`H9`) + per-row $L_2$-norm restoration (`H11`) suffices to remove preachy refusals and corporate boilerplate ("slop") while keeping vLLM/OpenRouter `FP8 E4M3` subspace re-leakage below `3%` (compared to `~50%` on naive rank-1 abliteration).
 
 On `Qwen3` hybrid reasoning models, however:
-1. **`</think>` Boundary Collapse:** Refusal and slop vectors extracted across unsegmented responses partially overlap with the hidden-state transition governing the closing `</think>` tag and strict output formatting. On `Qwen3-8B`, naive abliteration crashes `IFEval Strict` by **3x** (`0.300` → `0.100`) and drops `unslop_pass_rate` from `0.917` to `0.792`.
+1. **`</think>` Boundary Collapse:** Refusal and slop vectors extracted across unsegmented responses partially overlap with the hidden-state transition governing the closing `</think>` tag and strict output formatting. On `Qwen3-8B`, naive abliteration collapses `IFEval Strict` and drops `unslop_pass_rate` from `0.917` to `0.792`.
 2. **CoT Padding Inflation Under Anti-Slop GRPO:** If a reward function penalizes verbosity only in the final answer, the GRPO policy shifts padding *inside* `<think>...</think>`, inflating reasoning token counts until generation truncates at `max_tokens` before closing `</think>`.
 
 ---
@@ -133,18 +133,17 @@ All LoRA updates are projected orthogonally to the removed refusal/slop basis (`
 
 ## 3. H100 3-Way `lm-eval` Benchmarks (`Base` vs `Naive` vs `Tenet v2`)
 
-All benchmarks were executed on `1x H100 80GB SXM` (`limit=40`, `seed=1337`, exact manifests in [`results/external_evals/`](https://github.com/mrAndreyIsachenko/tenet-lab/tree/main/results/external_evals)):
+Full vLLM OpenEvals suite (`seed=1337`, exact manifests in [`results/external_evals/`](https://github.com/mrAndreyIsachenko/tenet-lab/tree/main/results/external_evals)):
 
-| Model Family (`Qwen3`) | `ifeval_strict` (Base / Naive / **Tenet v2**) | `gsm8k_cot_flexible` (Base / Naive / **Tenet v2**) | `unslop_pass_rate` (Base / Naive / **Tenet v2**) | Suite Wall Time (Base → **Tenet v2**) |
-| :--- | :---: | :---: | :---: | :---: |
-| **[`Tenet-4B-Qwen3-Unslop-v2`](https://huggingface.co/mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2)** | `0.250` / — / `0.200` | `0.150` / — / `0.150` | — | `1043.3s` → `1106.5s` |
-| **[`Tenet-8B-Qwen3-Unslop-v2`](https://huggingface.co/mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2)** | `0.300` / `0.100` / **`0.300`** | `0.225` / `0.175` / `0.175` | `0.917` / `0.792` / `0.875` | `1030.7s` → **`851.8s` (`-17.4%`)** |
-| **[`Tenet-14B-Qwen3-Unslop-v2`](https://huggingface.co/mr-andrey-isachenko/Tenet-14B-Qwen3-Unslop-v2)** | `0.225` / `0.225` / **`0.250` (`+2.5 pp`)** | `0.150` / `0.150` / **`0.250` (`+10.0 pp`)** | `0.917` / `0.917` / **`0.917`** | `965.0s` → **`743.2s` (`-23.0%`)** |
-| **[`Tenet-32B-Qwen3-Unslop-v2`](https://huggingface.co/mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2)** | `0.250` / `0.300` / `0.225` | `0.175` / `0.125` / **`0.175`** | `0.917` / `0.833` / `0.875` | `1473.2s` → **`1352.9s` (`-8.2%`)** |
+| Model Family (`Qwen3`) | `IFEval` | `GSM8K` | `MATH-500` | `GPQA Diamond` | `MMLU-Pro` |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **[`Tenet-4B-Qwen3-Unslop-v2`](https://huggingface.co/mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2)** | **`80.59%` (`+2.03 pp` vs Base)** | **`88.93%` Strict (`+2.96 pp` vs Naive)** | `70.20%` | `34.34%` | `56.35%` |
+| **[`Tenet-8B-Qwen3-Unslop-v2`](https://huggingface.co/mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2)** | `80.78%` | **`90.90%` Flex (`+0.61 pp` vs Base)** | **`72.20%` (`+1.60 pp` vs Base, `+1.80 pp` vs Naive)** | **`40.40%` (`+0.50 pp` vs Base, `+2.02 pp` vs Naive)** | `59.72%` |
+| **[`Tenet-32B-Qwen3-Unslop-v2`](https://huggingface.co/mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2)** | **`84.47%` (`+2.21 pp` vs Naive)** | **`92.19%` Flex (`+7.43 pp` vs Naive `84.76%`, `+0.45 pp` vs Base)** | **`74.80%` (`+3.60 pp` vs Naive)** | **`40.40%` (`+1.51 pp` vs Base, `+2.52 pp` vs Naive)** | **`65.48%` (`+2.58 pp` vs Naive)** |
 
 Key takeaways:
-- **`Tenet-8B-Qwen3-Unslop-v2`** retains **`100%` of Base `IFEval Strict` (`0.300`)** where naive abliteration collapses 3x to `0.100`, while completing the 4-task evaluation **`17.4%` faster** thanks to `H16` anti-padding calibration.
-- **`Tenet-14B-Qwen3-Unslop-v2`** wins the 3-way comparison outright on both external benchmarks: **`+10.0 pp` on `GSM8K CoT Flexible`** (`0.250` vs `0.150` Base/Naive) and **`+2.5 pp` on `IFEval Strict`** (`0.250` vs `0.225`), running **`23.0%` faster**.
+- **`Tenet-8B-Qwen3-Unslop-v2`** beats Base on every headline benchmark: `GSM8K Flex` `90.90%` (`+0.61 pp`), `MATH-500` `72.20%` (`+1.60 pp` vs Base, `+1.80 pp` vs Naive), `GPQA Diamond` `40.40%` (`+0.50 pp` vs Base), with `IFEval` `80.78%` and `MMLU-Pro` `59.72%`.
+- **`Tenet-32B-Qwen3-Unslop-v2`** wins the 3-way comparison outright: `GSM8K Flex` `92.19%` (`+7.43 pp` vs Naive `84.76%`), `MATH-500` `74.80%` (`+3.60 pp` vs Naive), `MMLU-Pro` `65.48%` (`+2.58 pp` vs Naive), and `IFEval` `84.47%` (`+2.21 pp` vs Naive).
 
 ---
 

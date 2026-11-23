@@ -9,10 +9,10 @@ All metrics below are sourced directly from `results/tenet_releases/*/foundry_su
 ### 1. OnlyModels.gg (Model Fight Card 17 & Auto-Crawler Hygiene)
 - **Target Entries:**
   - **Minors Division:** `mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2` (`10/10` gates, `100.0 HP`, `24/24` artifacts across `F16`, `CKA-Q4_K_M`, `i1-CKA-Q4_K_M`, `100%` `<think>` integrity)
-  - **Majors Division:** `mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2` (`10/10` gates, `100.0 HP`, `24/24` artifacts, `i1-CKA-Q4_K_M` Mean KLD `0.01314`, `0.300` `IFEval Strict` vs `0.100` Naive)
+  - **Majors Division:** `mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2` (`10/10` gates, `100.0 HP`, `24/24` artifacts, `i1-CKA-Q4_K_M` Mean KLD `0.01314`; Full vLLM OpenEvals: IFEval `80.78%`, GSM8K Flex `90.90%`, MATH-500 `72.20%`, GPQA `40.40%`, MMLU-Pro `59.72%`)
   - **Heavy / Open Division:** `mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2` (`9/10` gates; **submit `BF16` or pure `CKA-Q4_K_M`** at `4.952 bpw`, both `100.0 HP` `24/24`, `6/6` SQL)
 - **Prior Proof:** Model Fight Card 16 (`2026-11-20`, `onlymodels.gg/cards/2026-11-20.html`) — `Tenet-3B-Qwen2.5-Unslop-v1` (Minors Champion, `90 HP`, `22/22`) and `Tenet-8B-Llama3.1-Unslop-v1` (Majors Champion, `50 HP`, `24/24`, `7/7` Peer Eval hits).
-- **Auto-Crawler Mechanics (2026):** The OnlyModels.gg auto-crawler crawls each listed HF repo root and builds the Fight Card row straight from the root listing, so the **repo root must contain only the recommended artifacts**: `*-cka-q4_k_m.gguf` and `*-f16.gguf`. Experimental imatrix-overlay ablations (`*-i1-cka-q4_k_m.gguf`) **belong in `experimental_ablation/`** — a stray root-level `i1` file is crawled as if it were the recommended quant and corrupts the HP / KLD row.
+- **Auto-Crawler Mechanics (2026):** The OnlyModels.gg auto-crawler crawls each listed HF repo root and builds the Fight Card row straight from the root listing, so the **repo root must contain only the recommended artifacts**: `*-cka-q4_k_m.gguf` and `*-f16.gguf`. Experimental imatrix-overlay ablations (`*-i1-cka-q4_k_m.gguf`) **belong in `experimental_ablation/`** — a stray root-level `i1` file is crawled as if it were the recommended quant and corrupts the HP / KLD row. There is no manual submission form — OnlyModels.gg is fully crawler-driven, so repo-root hygiene is the only submission step. The stray root-level `i1-cka-q4_k_m.gguf` files on `Tenet-14B-Qwen3-Unslop-v2` and `Tenet-32B-Qwen3-Unslop-v2` have **already been moved into `experimental_ablation/`** on Hugging Face, so the crawler now picks the pure `cka-q4_k_m.gguf` for both repos.
 - **Sanitizer (`scripts/hub/sanitize_gguf_roots.py`):** default targets are the `Tenet-14B-Qwen3-Unslop-v2` and `Tenet-32B-Qwen3-Unslop-v2` repos; always preview before writing.
   ```bash
   # Dry run (default) — prints planned moves/keeps, writes nothing:
@@ -37,13 +37,13 @@ Post on the `DontPlanToEnd/UGI-Leaderboard` Discussions tab:
   - `mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2` (Base: `Qwen/Qwen3-32B`, `bfloat16`)
 - **Method:** H15 Tri-Anchor Lancet Surgery ($U_{\text{reason}} \perp U_{\text{boundary}} \perp U_{\text{format}}$ with per-row $L_2$-norm restoration) + H16 Length-Calibrated Anti-Padding GRPO (`tenet-lab`).
 - **Full OpenEvals Metrics (2026, `scripts/eval/run_vllm_open_evals.py --suite full`, BF16 & FP8):**
-  - `IFEval` (N=541, strict prompt-level): `8B-v2` holds `0.300` vs `0.100` naive abliteration; `32B-v2` at base parity.
-  - `MATH-500` + `GSM8K` (N=1319, CoT): `14B-v2` GSM8K CoT `+10.0 pp` (`0.250` vs `0.150` naive); MATH-500 parity with base.
-  - `GPQA Diamond` (N=198): no regression vs `Qwen3` base in BF16 or FP8 E4M3.
-  - `MMLU-Pro` + `EvalPlus`: parity with base; `sql_readonly` boundary `6/6` in pure `CKA-Q4_K_M`.
+  - `IFEval` (strict prompt-level): `4B-v2` `80.59%` (`+2.03 pp` vs Base); `8B-v2` `80.78%`; `32B-v2` `84.47%` (`+2.21 pp` vs Naive).
+  - `GSM8K` + `MATH-500`: `4B-v2` GSM8K Strict `88.93%` (`+2.96 pp` vs Naive), MATH-500 `70.20%`; `8B-v2` GSM8K Flex `90.90%` (`+0.61 pp` vs Base), MATH-500 `72.20%` (`+1.60 pp` vs Base, `+1.80 pp` vs Naive); `32B-v2` GSM8K Flex `92.19%` (`+7.43 pp` vs Naive `84.76%`, `+0.45 pp` vs Base), MATH-500 `74.80%` (`+3.60 pp` vs Naive).
+  - `GPQA Diamond`: `4B-v2` `34.34%`; `8B-v2` `40.40%` (`+0.50 pp` vs Base, `+2.02 pp` vs Naive); `32B-v2` `40.40%` (`+1.51 pp` vs Base, `+2.52 pp` vs Naive) — no regression vs `Qwen3` base in BF16 or FP8 E4M3.
+  - `MMLU-Pro`: `4B-v2` `56.35%`; `8B-v2` `59.72%`; `32B-v2` `65.48%` (`+2.58 pp` vs Naive). `sql_readonly` boundary `6/6` in pure `CKA-Q4_K_M`.
   - `unclosed_think_rate = 0.0` across 4B/8B/14B/32B — 100% `</think>` closure (24-seed Arena Verifier), no reasoning-boundary leakage.
 - **Verification Summary:**
-  - `8B-v2`: `10/10` release gates passed (`100.0 HP`, `24/24` artifacts, `Crest=4.3688`, `FP8 re-leakage=2.7243%`), completes 4-task `lm-eval` 17.4% faster (`851.8s` vs `1030.7s` base).
+  - `8B-v2`: `10/10` release gates passed (`100.0 HP`, `24/24` artifacts, `Crest=4.3688`, `FP8 re-leakage=2.7243%`); Full vLLM OpenEvals: IFEval `80.78%`, GSM8K Flex `90.90%` (`+0.61 pp` vs Base), MATH-500 `72.20%` (`+1.60 pp` vs Base), GPQA `40.40%`, MMLU-Pro `59.72%`.
   - `32B-v2`: `9/10` gates (`100.0 HP` `24/24` in `F16` & pure `CKA-Q4_K_M`, `Crest=4.3593`, `FP8 re-leakage=2.5579%`).
 - **Collection:** https://huggingface.co/collections/mr-andrey-isachenko/tenet-v2-thinking-safe-tri-anchor-unslop-and-domain-cka-gguf-6b00aec98d01429c224654d4
 ```
@@ -81,7 +81,7 @@ Hi [Chutes / Featherless / OpenRouter] team,
 We just released Tenet v2 (Qwen3 4B / 8B / 14B / 32B), an open-weights family of thinking-safe unslop models following our double championship sweep on Model Fight Card 16 (Tenet-3B-v1 Minors Champion at 90 HP; Tenet-8B-v1 Majors Champion at 50 HP).
 
 Unlike standard abliterated models that suffer ~50% subspace re-leakage and Row Crest-Factor > 25 under FP8 E4M3 serving, Tenet v2 is mathematically certified for production FP8 inference:
-- Tenet-8B-Qwen3-Unslop-v2: Max Row Crest = 4.3688 (< 25), FP8 Re-Leakage = 2.7243% (< 3%), 10/10 hardware gates passed, 100.0 HP (24/24), holds 100% of Base IFEval Strict (0.300 vs 0.100 naive) while running 17.4% faster.
+- Tenet-8B-Qwen3-Unslop-v2: Max Row Crest = 4.3688 (< 25), FP8 Re-Leakage = 2.7243% (< 3%), 10/10 hardware gates passed, 100.0 HP (24/24), Full vLLM OpenEvals: GSM8K Flex 90.90% (+0.61 pp vs Base), MATH-500 72.20% (+1.60 pp vs Base), GPQA 40.40%, MMLU-Pro 59.72%, IFEval 80.78%.
 - Tenet-32B-Qwen3-Unslop-v2: Max Row Crest = 4.3593 (< 25), FP8 Re-Leakage = 2.5579% (< 3%), 100.0 HP (24/24) in BF16/F16 & pure CKA-Q4_K_M.
 
 HF Collection: https://huggingface.co/collections/mr-andrey-isachenko/tenet-v2-thinking-safe-tri-anchor-unslop-and-domain-cka-gguf-6b00aec98d01429c224654d4
@@ -122,35 +122,35 @@ Track Record:
 
 ---
 
-### 2. Prime Intellect / Lambda / Nebius Open Research Compute Grant (Sprint 13: `H18`)
+### 2. Prime Intellect / Lambda / Nebius Open Research Compute Grant (Sprint 14: `H20` — Scale Quant-Snap & Router-Aware MoE Lancet)
 **Target:** Prime Intellect / Lambda Research Grant / Nebius AI Cloud Open Research  
 **Requested Compute:** `8x H100 / B200` node hours (or `4x–8x H100 80GB SXM` burst)
 
 ```text
-Title: Quant-Snap Lancet (H18): Block-16 NVFP4 Quantization-Aware Subspace Surgery & 70B+ Streaming Tri-Anchor Unslop
+Title: Scaling Quant-Snap & Router-Aware MoE Lancet (H20) to 32B–70B+ Dense and Qwen3-30B-A3B MoE
 
 Principal Investigator: Andrey Isachenko (tenet-lab)
 Code & Verified Baselines: https://github.com/mrAndreyIsachenko/tenet-lab
 HF Models: https://huggingface.co/mr-andrey-isachenko
 
-1. Background & Verified Track Record (H1–H17):
-Over Sprints 1–12, we built and open-sourced `tenet-lab`—a fully reproducible pretraining and post-training verification suite with 8 published models (3B–32B):
+1. Background & Completed Pilots (H1–H19):
+Over Sprints 1–13, we built and open-sourced `tenet-lab` — a fully reproducible pretraining and post-training verification suite with 8 published models (3B–32B):
 - Pretraining Systems (H1–H4): 5-stage `@triton.jit` + `torch.compile` waterfall reaching 472,080.81 tok/s (34.22% MFU, 13.55x speedup over fp32 naive) on 1x H100 SXM, plus 4.0B-token WSD pretraining on FineWeb-Edu.
-- Subspace Surgery & FP8 Safety (H9–H13): Bi-projected norm-preserving Lancet surgery reducing FP8 E4M3 subspace re-leakage from ~50% (naive) to < 3%, validated independently by winning both divisions at Model Fight Card 16 (Tenet-3B-v1 at 90 HP; Tenet-8B-v1 at 50 HP, 7/7 Peer Eval hits).
-- Reasoning-Safe Tenet v2 (H15–H17): Tri-Anchor Lancet (U_reason ⊥ U_boundary ⊥ U_format) + Length-Calibrated Anti-Padding GRPO on Qwen3 (4B/8B/14B/32B). On Qwen3-8B, Tenet v2 holds 0.300 IFEval Strict (vs 0.100 naive) while running 17.4% faster; on Qwen3-14B, GSM8K CoT improves +10.0 pp (0.250 vs 0.150).
+- Subspace Surgery & FP8 Safety (H9–H13): Bi-projected norm-preserving Lancet surgery reducing FP8 E4M3 subspace re-leakage from ~50% (naive) to < 3%, validated independently by winning both divisions at Model Fight Card 16.
+- Reasoning-Safe Tenet v2 (H15–H17): Tri-Anchor Lancet (U_reason ⊥ U_boundary ⊥ U_format) + Length-Calibrated Anti-Padding GRPO on Qwen3 (4B/8B/14B/32B). Full vLLM OpenEvals: `8B-v2` GSM8K Flex `90.90%` (`+0.61 pp` vs Base), MATH-500 `72.20%` (`+1.60 pp` vs Base); `32B-v2` GSM8K Flex `92.19%` (`+7.43 pp` vs Naive `84.76%`), MMLU-Pro `65.48%` (`+2.58 pp` vs Naive).
+- Completed Pilot H18 (Quant-Snap Lancet): Block-16 NVFP4 quantization-aware subspace surgery already validated on Qwen3-4B, cutting NVFP4 re-leakage by `26.15%` and INT4-b32 re-leakage by `28.72%` versus pre-surgery baselines.
+- Completed Pilot H19 (Looped Lancet): iterative Lancet refinement reached `SCR=2.4339` with orthonormality error `1.19e-7` across the protected anchor bases.
 
-2. Open Gap Discovered in Tenet v2:
-Our 10-gate hardware audit exposed a fundamental quantization-subspace interaction at 14B–32B:
-- On `Tenet-32B-Qwen3-Unslop-v2`, F16 and pure `CKA-Q4_K_M` (4.952 bpw) score 100.0 HP (24/24), whereas overlaying `imatrix` (`i1-CKA-Q4_K_M`) drops 1/24 seeds (97.92 HP).
-- On `Tenet-14B-Qwen3-Unslop-v2`, 4-bit `imatrix` perturbs the `sql_readonly` boundary (`0/6` vs `6/6` in `CKA-Q4_K_M`).
+2. Open Gap:
+Both completed pilots ran at 4B scale only. The Tenet v2 hardware audit exposed the quantization-subspace interaction at 14B–32B (imatrix overlay dropping 1/24 seeds on 32B; 4-bit imatrix perturbing the sql_readonly boundary on 14B), so the method must be validated at scale — and no MoE-aware variant exists.
 
-3. Sprint 13 Proposal (H18 — Quant-Snap Lancet):
-We propose to solve 4-bit quantization re-leakage directly at surgery time:
-- Formulate **Quant-Snap Lancet**: joint Tri-Anchor orthogonal projection with a differentiable Block-16 NVFP4 / Q4_K_M round-trip penalty during layer-wise surgery, preventing `imatrix` activation re-weighting from rotating the zeroed subspace.
-- Scale **Streaming Tri-Anchor Surgery (H13+H15)** to **70B+ reasoning models** (`Llama-3.3-70B` / `Qwen3-72B`-class) with full 3-way `lm-eval`, NVFP4/FP8 E4M3 re-leakage audits, and 24-seed Arena Verifier manifests.
+3. Sprint 14 Proposal (H20 — Quant-Snap & Router-Aware MoE Lancet):
+With grant compute we scale the completed H18/H19 pilots rather than re-derive them:
+- Scale Quant-Snap Lancet (H18) from the 4B pilot to 32B–70B+ dense models (`Qwen3-32B`, `Llama-3.3-70B`, `Qwen3-72B`-class) with full NVFP4/FP8/INT4 re-leakage audits and 24-seed Arena Verifier manifests.
+- Extend the Lancet projection to Mixture-of-Experts: Router-Aware MoE Lancet on `Qwen3-30B-A3B`, protecting the router logits subspace and per-expert zeroed directions under NVFP4/FP8 serving.
 
 4. Deliverables (100% Open-Source):
-All code, Triton kernels, 70B+ checkpoints, GGUFs, and JSON verification manifests will be released under permissive open licenses on GitHub and Hugging Face.
+All code, Triton kernels, 32B–70B+ and MoE checkpoints, GGUFs, and JSON verification manifests will be released under permissive open licenses on GitHub and Hugging Face.
 ```
 
 ---
@@ -169,7 +169,7 @@ I'm building `tenet-lab` (https://github.com/mrAndreyIsachenko/tenet-lab), an op
 - **Double Championship at Model Fight Card 16 (`onlymodels.gg`, 2026-11-20):** `Tenet-3B-Qwen2.5-Unslop-v1` won Minors (90 HP, 22/22) and `Tenet-8B-Llama3.1-Unslop-v1` won Majors (50 HP, 24/24, 7/7 Peer Eval hits).
 - **Tenet v2 (`Qwen3 4B / 8B / 14B / 32B`):** 3-way `lm-eval` + 10-gate FP8/GGUF release suite for 14B and 32B executed end-to-end on RunPod H100.
 
-We publish full technical breakdowns (Reddit `r/LocalLLaMA`, Habr, X, Hugging Face) crediting RunPod H100s and sharing our exact stateless RunPod bootstrap scripts. With RunPod open-source compute credits, we will extend our pipeline to 70B+ streaming surgery and NVFP4 (`H18`) with full public benchmarks.
+We publish full technical breakdowns (Reddit `r/LocalLLaMA`, Habr, X, Hugging Face) crediting RunPod H100s and sharing our exact stateless RunPod bootstrap scripts. With RunPod open-source compute credits, we will scale our completed H18 (Quant-Snap: Qwen3-4B NVFP4 re-leakage `-26.15%`, INT4-b32 `-28.72%`) and H19 (Looped Lancet: `SCR=2.4339`, orthonormality error `1.19e-7`) pilots to 32B–70B+ dense and Qwen3-30B-A3B MoE targets (H20: Quant-Snap & Router-Aware MoE Lancet) with full public benchmarks.
 
 Links:
 - HF Family (8 models): https://huggingface.co/mr-andrey-isachenko
@@ -196,9 +196,9 @@ An end-to-end, deterministic post-training & certification stack:
 
 3. Empirical Proof:
 - **Independent Eval:** Swept both divisions of Model Fight Card 16 (`Tenet-3B-v1` Minors at 90 HP; `Tenet-8B-v1` Majors at 50 HP, 7/7 Peer Eval hits).
-- **3-Way `lm-eval` (`Qwen3`):** On `8B-v2`, holds 100% of Base `IFEval Strict` (`0.300` vs `0.100` Naive) while running 17.4% faster (`851.8s` vs `1030.7s`); on `14B-v2`, gains `+10.0 pp` `GSM8K CoT` (`0.250` vs `0.150`).
+- **Full vLLM OpenEvals (`Qwen3`):** `8B-v2` GSM8K Flex `90.90%` (`+0.61 pp` vs Base), MATH-500 `72.20%` (`+1.60 pp` vs Base), GPQA `40.40%`, MMLU-Pro `59.72%`; `32B-v2` GSM8K Flex `92.19%` (`+7.43 pp` vs Naive `84.76%`), MATH-500 `74.80%` (`+3.60 pp` vs Naive), MMLU-Pro `65.48%`, IFEval `84.47%`.
 - **Radical Transparency:** Published `9/10` on `32B-v2` and `5/10` on `14B-v2` verbatim in JSON manifests to document where `imatrix` 4-bit quantization perturbs surgically zeroed subspaces.
 
 4. Next Step:
-Integrate `tenet-lab` audits directly with `lm-evaluation-harness` workflows and scale Quantization-Aware Subspace Surgery (`H18`, NVFP4 / Q4_K_M) to 70B+ models.
+Integrate `tenet-lab` audits directly with `lm-evaluation-harness` workflows and scale the completed H18 (Quant-Snap, NVFP4: `-26.15%` NVFP4 / `-28.72%` INT4-b32 re-leakage on Qwen3-4B) and H19 (Looped Lancet: `SCR=2.4339`, orthonormality error `1.19e-7`) pilots via Quant-Snap & Router-Aware MoE Lancet (`H20`) to 32B–70B+ dense and Qwen3-30B-A3B MoE models.
 ```

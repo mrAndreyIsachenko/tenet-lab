@@ -31,7 +31,7 @@ tags:
 [![Arena House Simulator](https://img.shields.io/badge/Arena_House_Series-95.83_HP_(i1--CKA--Q4__K__M)-f5c542?style=for-the-badge)](https://github.com/mrAndreyIsachenko/tenet-lab)
 [![FP8 Readiness](https://img.shields.io/badge/FP8_E4M3_Ready-Crest_3.60_%3C_25-60c8eb?style=for-the-badge)](https://github.com/mrAndreyIsachenko/tenet-lab)
 
-> **Tenet v2 (`H15` + `H16` + `H14+` + `H17`) on [`Qwen/Qwen3-14B`](https://huggingface.co/Qwen/Qwen3-14B):** **BF16/FP8** passes readiness (`Crest=3.5974 < 25.0`, `FP8 re-leakage=2.5898%`) and **wins 3-way `lm-eval`** against Base (`IFEval Strict 0.250 vs 0.225`, `GSM8K CoT Flexible 0.250 vs 0.150`, **`+10.0 pp`**). Across 4-bit GGUF variants, Arena House scores reach **`91.67–95.83 HP`** (`5/10` release gates passed; `CKA-Q4_K_M` passes `6/6` SQL read-only and `0%` length collapse, while `F16` and `i1-CKA-Q4_K_M` hit `0/6` SQL and `1/24` collapse on `house-json-feature-flags`).
+> **Tenet v2 (`H15` + `H16` + `H14+` + `H17`) on [`Qwen/Qwen3-14B`](https://huggingface.co/Qwen/Qwen3-14B):** **BF16/FP8** passes readiness (`Crest=3.5974 < 25.0`, `FP8 re-leakage=2.5898%`). Across 4-bit GGUF variants, Arena House scores reach **`91.67–95.83 HP`** (`5/10` release gates passed; `CKA-Q4_K_M` passes `6/6` SQL read-only and `0%` length collapse, while `F16` and `i1-CKA-Q4_K_M` hit `0/6` SQL and `1/24` collapse on `house-json-feature-flags`). Foundry audit highlights (12-seed, Base / Naive / Tenet v2): Direct Compliance `1.00 / 1.00 / 1.00` and unslop pass rate `0.917 / 0.917 / 0.917`; `experimental_ablation/Tenet-14B-Qwen3-Unslop-v2-i1-cka-q4_k_m.gguf` is isolated from the repo root so crawlers index only the pure `cka-q4_k_m.gguf`.
 
 ## Model Overview
 
@@ -74,15 +74,14 @@ tags:
 
 ---
 
-## 3-Way External Benchmark (`lm-evaluation-harness` + Unslop Audit, `limit=40`)
+## Foundry Audit Notes (12-Seed Unslop Audit)
 
-| Metric | Base (`Qwen/Qwen3-14B`) | Naive Abliterated | Tenet v2 | Tenet vs Base |
-| :--- | ---: | ---: | ---: | ---: |
-| `ifeval` (Strict Prompt) | 0.225 | 0.225 | **0.250** | +2.5 pp |
-| `ifeval` (Instruction Strict) | 0.429 | 0.429 | **0.444** | +1.6 pp |
-| `gsm8k_cot` (Flexible Match) | 0.150 | 0.150 | **0.250** | +10.0 pp |
-| `unslop_pass_rate` (12-seed audit) | 0.917 | 0.917 | **0.917** | +0.0 pp |
-| `slop_and_refusal_rate` | 0.083 | 0.083 | **0.083** | +0.0 pp |
+| Metric | Base (`Qwen/Qwen3-14B`) | Naive Abliterated | Tenet v2 |
+| :--- | ---: | ---: | ---: |
+| Direct Compliance | 1.00 | 1.00 | **1.00** |
+| `unslop_pass_rate` | 0.917 | 0.917 | **0.917** |
+
+Full `n=3,566 tasks/arm` vLLM OpenEvals for the Qwen3 `Tenet v2` family are consolidated in the repo-level [`README.md`](../../../README.md) (`Full vLLM OpenEvals — Tenet v2` table).
 
 ---
 

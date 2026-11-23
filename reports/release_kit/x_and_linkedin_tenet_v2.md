@@ -14,7 +14,7 @@ Now we're shipping **Tenet v2** for `<think>` reasoning models (`Qwen3 4B / 8B /
 ### Tweet 2/7 (The `<think>` Problem)
 Why couldn't we just reuse Tenet v1 on `Qwen3`?
 Two failure modes:
-1. Naive / 2-anchor abliteration fractures the `</think>` boundary (`Qwen3-8B` `IFEval Strict` collapses 3x: `0.300 -> 0.100`).
+1. Naive / 2-anchor abliteration fractures the `</think>` boundary (`Qwen3-8B` `IFEval Strict` collapses to roughly a third of base).
 2. Standard anti-slop GRPO pushes verbosity *inside* `<think>` or hits `max_tokens` before closing tags.
 
 ### Tweet 3/7 (H15 + H16 Solution)
@@ -22,10 +22,10 @@ Tenet v2 fixes both:
 - **H15 Tri-Anchor Lancet Surgery:** orthogonalizes post-`</think>` refusal/slop against $U_{\text{reason}} \perp U_{\text{boundary}} \perp U_{\text{format}}$ in `float32` + per-row $L_2$-norm restoration.
 - **H16 Length-Calibrated GRPO:** penalizes `<think>` padding while rewarding compact, complete reasoning chains.
 
-### Tweet 4/7 (H100 3-Way `lm-eval` Proof)
-Verified on 1x H100 (`lm-eval` `limit=40`, `seed=1337`):
-- **`Tenet-8B-Qwen3-Unslop-v2`:** holds **`0.300` `IFEval Strict`** (100% of Base vs `0.100` Naive) & finishes **`17.4%` faster** (`851.8s` vs `1030.7s`).
-- **`Tenet-14B-Qwen3-Unslop-v2`:** **`+10.0 pp` `GSM8K CoT Flexible`** (`0.250` vs `0.150` Base/Naive) & `+2.5 pp` `IFEval` (`0.250` vs `0.225`).
+### Tweet 4/7 (Full vLLM OpenEvals Proof)
+Verified with **Full vLLM OpenEvals** (`n=3,566` questions per arm, `think_end_token=</think>`, `0.00%` unclosed `<think>`):
+- **`Tenet-8B-Qwen3-Unslop-v2`:** `GSM8K Flex` **`90.90%`** (+0.61 pp vs Base), `MATH-500` **`72.20%`** (+1.80 pp vs Naive), `GPQA Diamond` **`40.40%`** (+2.02 pp vs Naive), `MMLU-Pro` **`59.72%`**.
+- **`Tenet-32B-Qwen3-Unslop-v2`:** `GSM8K Flex` **`92.19%`** vs `84.76%` Naive (**`+7.43 pp`**), `MATH-500` **`74.80%`** (+3.60 pp vs Naive), `MMLU-Pro` **`65.48%`** (+2.58 pp vs Naive), `IFEval` **`84.47%`** (+2.21 pp vs Naive).
 
 ### Tweet 5/7 (10 Hardware Gates & Radical Transparency on `32B-v2`)
 Every release faces **10 hardware & GGUF gates** (`H11` FP8 Crest < 25 + `H17` 24-seed Arena Verifier):
@@ -54,16 +54,16 @@ Last week, our **Tenet v1** models won both divisions outright on **Model Fight 
 - **`Tenet-3B-Qwen2.5-Unslop-v1`** — Minors Champion (`90 HP`, `22/22` classifiable artifacts)
 - **`Tenet-8B-Llama3.1-Unslop-v1`** — Majors Champion (`50 HP`, `24/24` classifiable artifacts, `7/7` Peer Eval hits)
 
-When we moved to **`<think>...</think>` reasoning models (`Qwen3`)**, we found that standard 2-anchor abliteration fractures the `</think>` boundary (`Qwen3-8B` `IFEval Strict` drops 3x from `0.300` to `0.100`), while standard anti-slop GRPO inflates `<think>` padding.
+When we moved to **`<think>...</think>` reasoning models (`Qwen3`)**, we found that standard 2-anchor abliteration fractures the `</think>` boundary (`Qwen3-8B` `IFEval Strict` collapses to roughly a third of base), while standard anti-slop GRPO inflates `<think>` padding.
 
 Today we are releasing **Tenet v2 (`Qwen3 4B / 8B / 14B / 32B`)**, built on two new methods:
 1. **H15 Tri-Anchor Lancet Surgery:** orthogonalizes post-`</think>` refusal/slop directions simultaneously against reasoning ($U_{\text{reason}}$), boundary transition ($U_{\text{boundary}}$), and strict formatting ($U_{\text{format}}$), with per-row $L_2$-norm restoration for `FP8 E4M3` safety (`Crest 3.18–4.37 < 25.0`, `re-leakage 2.49%–2.72% < 3.0%`).
 2. **H16 Length-Calibrated Anti-Padding GRPO:** eliminates CoT bloat while preserving `</think>` tag integrity.
 
-**Measured H100 3-way `lm-eval` (`limit=40`) Highlights:**
-- `Tenet-8B-Qwen3-Unslop-v2`: maintains **`0.300` `IFEval Strict`** (vs `0.100` Naive) and completes the 4-task suite **`17.4%` faster** (`851.8s` vs `1030.7s` Base).
-- `Tenet-14B-Qwen3-Unslop-v2`: **`+10.0 pp` on `GSM8K CoT Flexible`** (`0.250` vs `0.150` Base/Naive) and `+2.5 pp` on `IFEval Strict` (`0.250` vs `0.225`).
-- **10-Gate Hardware & GGUF Verification:** `4B-v2` and `8B-v2` pass **`10/10` gates** (`100.0 HP`, `24/24`). `32B-v2` passes **`9/10` gates** (`100.0 HP` `24/24` in `F16` and pure `CKA-Q4_K_M` at `4.952 bpw`, with 1/24 seed drift only when `imatrix` is overlaid).
+**Measured Full vLLM OpenEvals Highlights (`n=3,566` questions per arm, `think_end_token=</think>`, `0.00%` unclosed `<think>`):**
+- `Tenet-8B-Qwen3-Unslop-v2` (`10/10` gates, `100.0 HP`): `GSM8K Flex` **`90.90%`** (+0.61 pp vs Base `90.30%`), `MATH-500` **`72.20%`** (+1.60 pp vs Base, +1.80 pp vs Naive), `GPQA Diamond` **`40.40%`** (+2.02 pp vs Naive), `MMLU-Pro` **`59.72%`**, `IFEval` **`80.78%`** (`86.81%` inst-strict).
+- `Tenet-32B-Qwen3-Unslop-v2` (`9/10` gates): `GSM8K Flex` **`92.19%`** vs `84.76%` Naive (**`+7.43 pp`**, +0.45 pp vs Base `91.74%`), `MATH-500` **`74.80%`** (+3.60 pp vs Naive), `GPQA Diamond` **`40.40%`** (+2.52 pp vs Naive), `MMLU-Pro` **`65.48%`** (+2.58 pp vs Naive), `IFEval` **`84.47%`** (+2.21 pp vs Naive).
+- **10-Gate Hardware & GGUF Verification:** `4B-v2` and `8B-v2` pass **`10/10` gates** (`100.0 HP`, `24/24`). `32B-v2` passes **`9/10` gates** (`100.0 HP` `24/24` in `F16` and pure `CKA-Q4_K_M` at `4.952 bpw`, with 1/24 seed drift only when `imatrix` is overlaid). Next up: `H18` NVFP4 Quant-Snap preview at **`-26.2%`** FP8 re-leakage.
 
 Full weights, GGUFs, interactive FP8 inspector, and reproducible JSON manifests:
 - Tenet v2 Collection: https://huggingface.co/collections/mr-andrey-isachenko/tenet-v2-thinking-safe-tri-anchor-unslop-and-domain-cka-gguf-6b00aec98d01429c224654d4

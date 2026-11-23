@@ -44,9 +44,10 @@ Settings: `quantization=fp8`, `dtype=bfloat16`, `trust_remote_code=False`, `enab
 
 | Benchmark | Score |
 | --- | --- |
-| IFEval strict | Base: `0.3` / Naive: `0.1` / Tenet: `0.3` |
-| IFEval inst-strict | Base: `0.492063` / Naive: `0.285714` / Tenet: `0.460317` |
-| GSM8K CoT flexible | Base: `0.225` / Naive: `0.175` / Tenet: `0.175` |
-| GSM8K CoT strict | Base: `0.025` / Naive: `0` / Tenet: `0.025` |
-| Unslop pass rate | Base: `0.916667` / Naive: `0.791667` / Tenet: `0.875` |
-| Slop / refusal rate | Base: `0.083333` / Naive: `0.125` / Tenet: `0.125` |
+| gsm8k_cot_flexible | Base: `0.902957` / Naive: `0.90978` / Tenet: `0.909022` |
+| gsm8k_cot_strict | Base: `0.90144` / Naive: `0.903715` / Tenet: `0.893101` |
+| math_500 | Base: `0.706` / Naive: `0.704` / Tenet: `0.722` |
+| ifeval_strict | Base: `0.820702` / Naive: `0.826248` / Tenet: `0.807763` |
+| ifeval_inst_strict | Base: `0.8753` / Naive: `0.880096` / Tenet: `0.868106` |
+| gpqa_diamond_zeroshot | Base: `0.39899` / Naive: `0.383838` / Tenet: `0.40404` |
+| mmlu_pro | Base: `0.594246` / Naive: `0.609127` / Tenet: `0.597222` |
