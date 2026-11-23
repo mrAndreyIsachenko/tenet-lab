@@ -157,14 +157,6 @@ Both 4-bit CKA mixed-precision GGUFs are shipped directly in this repository:
 
 ---
 
-## External Benchmark Check (`lm-evaluation-harness`, `limit=40`)
-
-| Arm | `gsm8k_cot` (Flexible Match) | `ifeval` (Prompt Strict) | `ifeval` (Instruction Strict) | `gsm8k_cot` Delta vs Base |
-| :--- | ---: | ---: | ---: | ---: |
-| `Qwen/Qwen3-4B` (Base) | 0.150 | 0.250 | 0.444 | — |
-| `Tenet-4B-Qwen3-Unslop-v2` | **0.150** | 0.200 | 0.413 | **+0.0 pp** |
-
----
 ## Quickstart (`llama.cpp`, `vLLM`, `Transformers`)
 
 ### 1. Local `llama.cpp` (`Domain-i1-CKA-Q4_K_M` GGUF)

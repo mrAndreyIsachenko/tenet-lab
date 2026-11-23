@@ -142,25 +142,13 @@ model-index:
 ## H14+ GGUF Quantization Survival (`F16` vs `CKA-Q4_K_M` vs `Domain-i1-CKA-Q4_K_M`)
 
 - **`Tenet-32B-Qwen3-Unslop-v2-cka-q4_k_m.gguf`** (`18.68 GiB`, `4.896 bpw`) — **Recommended 4-bit GGUF:** `100.0 HP` (`24/24` artifacts), `100%` `<think>` integrity, `100%` unslop, `6/6` read-only SQL.
-- **`Tenet-32B-Qwen3-Unslop-v2-i1-cka-q4_k_m.gguf`** (`18.68 GiB`, `4.896 bpw`) — Domain `imatrix` variant: lower KLD (`0.01733` vs `0.02407`), `97.92 HP` (`23/24` artifacts; single edge-case miss on `house-edge-leap-years`).
+- **`Tenet-32B-Qwen3-Unslop-v2-i1-cka-q4_k_m.gguf`** (`18.68 GiB`, `4.896 bpw`) — Domain `imatrix` variant: lower KLD (`0.01733` vs `0.02407`), `97.92 HP` (`23/24` artifacts; single edge-case miss on `house-edge-leap-years`). This variant is isolated under `experimental_ablation/` in the repo root, so automated GGUF crawlers and `llama.cpp -hf` default selection pick the pure **`Tenet-32B-Qwen3-Unslop-v2-cka-q4_k_m.gguf`** (`100.0 HP`, `24/24`) instead.
 
 | GGUF Variant | Size (GiB) | Avg BPW | Subspace Amp vs F16 | Max Row-Norm Drift | Surgical Weight L2 Err | PPL (40x512) | Mean KLD vs F16 | Same Top-1 | `<think>` Integrity | Arena House HP | House Artifacts | Unslop Pass | Read-Only SQL |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `f16` | 61.03 | 16.000 | 1.000x | 0.00000 | 0.000% | 6.8993 | 0.00000 | 100.00% | 100.00% | 100.00 HP | 24/24 | 100.00% | 6/6 |
 | `cka_q4_k_m` | 18.68 | 4.896 | 1.448x | 0.00391 | 1.172% | 7.0576 | 0.02407 | 94.12% | 100.00% | 100.00 HP | 24/24 | 100.00% | 6/6 |
 | `i1_cka_q4_k_m` | 18.68 | 4.896 | 1.467x | 0.06413 | 1.171% | 7.0570 | 0.01733 | 94.40% | 100.00% | 97.92 HP | 23/24 | 100.00% | 6/6 |
-
----
-
-## 3-Way External Benchmark (`lm-evaluation-harness` + Unslop Audit, `limit=40`)
-
-| Metric | Base (`Qwen/Qwen3-32B`) | Naive Abliterated | Tenet v2 | Tenet vs Base |
-| :--- | ---: | ---: | ---: | ---: |
-| `ifeval` (Strict Prompt) | 0.250 | 0.300 | **0.225** | -2.5 pp |
-| `ifeval` (Instruction Strict) | 0.444 | 0.413 | **0.397** | -4.8 pp |
-| `gsm8k_cot` (Flexible Match) | 0.175 | 0.125 | **0.175** | +0.0 pp |
-| `unslop_pass_rate` (12-seed audit) | 0.917 | 0.833 | **0.875** | -4.2 pp |
-| `slop_and_refusal_rate` | 0.083 | 0.125 | **0.125** | +4.2 pp |
 
 ---
 

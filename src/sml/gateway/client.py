@@ -285,12 +285,50 @@ def _format_manifest_value(value: Any) -> str:
     return str(value)
 
 
+HEADLINE_SCORE_KEYS = (
+    "gsm8k_cot_flexible",
+    "gsm8k_cot_strict",
+    "math_500",
+    "ifeval_strict",
+    "ifeval_inst_strict",
+    "gpqa_diamond_zeroshot",
+    "mmlu_pro",
+    "unclosed_think_rate",
+)
+
+
 def _external_benchmark_markdown_rows(benchmarks: dict[str, Any]) -> list[str]:
     arms = benchmarks.get("arms")
     if isinstance(arms, dict) and arms:
         tenet_arm = arms.get("tenet") or arms.get("tenet_v2") or benchmarks.get("after") or {}
         base_arm = arms.get("base") or benchmarks.get("before") or {}
         naive_arm = arms.get("naive") or {}
+
+        # Full vLLM OpenEvals layout: each arm wraps its headline floats in a
+        # nested "scores" dict (top-level arm keys are metadata like command /
+        # eqbench / evalplus). Render only the clean headline metrics.
+        if all(
+            isinstance(arm.get("scores"), dict)
+            for arm in (base_arm, naive_arm, tenet_arm)
+            if isinstance(arm, dict)
+        ) and any(
+            isinstance(arm.get("scores"), dict)
+            for arm in (base_arm, naive_arm, tenet_arm)
+            if isinstance(arm, dict)
+        ):
+            tenet_scores = tenet_arm.get("scores") or {}
+            base_scores = base_arm.get("scores") or {}
+            naive_scores = naive_arm.get("scores") or {}
+            rows = []
+            for key in HEADLINE_SCORE_KEYS:
+                if key in tenet_scores or key in base_scores or key in naive_scores:
+                    rows.append(
+                        f"| {key} | Base: `{_format_manifest_value(base_scores.get(key))}` "
+                        f"/ Naive: `{_format_manifest_value(naive_scores.get(key))}` "
+                        f"/ Tenet: `{_format_manifest_value(tenet_scores.get(key))}` |"
+                    )
+            if rows:
+                return rows
         rows: list[str] = []
         for key, label in (
             ("ifeval_strict", "IFEval strict"),

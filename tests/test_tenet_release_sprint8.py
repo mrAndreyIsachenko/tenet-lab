@@ -200,6 +200,61 @@ def test_build_openrouter_onboarding_manifest_qwen3_three_way():
     assert "Base: `0.25` / Naive: `0.3` / Tenet: `0.225`" in manifest["markdown_summary"]
 
 
+def test_build_openrouter_onboarding_manifest_full_vllm_openevals():
+    manifest = build_openrouter_onboarding_manifest(
+        hf_repo_id="mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2",
+        base_model="Qwen/Qwen3-32B",
+        h9_metrics=H9_METRICS,
+        h10_metrics=H10_METRICS,
+        h11_metrics=H11_METRICS,
+        external_benchmarks={
+            "arms": {
+                "base": {
+                    "command": "vllm serve ...",
+                    "eqbench": {"creative_writing": 0.5},
+                    "evalplus": {"humaneval": 0.7},
+                    "scores": {
+                        "gsm8k_cot_flexible": 0.175,
+                        "ifeval_strict": 0.25,
+                        "mmlu_pro": 0.61,
+                    },
+                },
+                "naive": {
+                    "command": "vllm serve ...",
+                    "eqbench": {"creative_writing": 0.5},
+                    "evalplus": {"humaneval": 0.7},
+                    "scores": {
+                        "gsm8k_cot_flexible": 0.125,
+                        "ifeval_strict": 0.30,
+                        "mmlu_pro": 0.58,
+                    },
+                },
+                "tenet": {
+                    "command": "vllm serve ...",
+                    "eqbench": {"creative_writing": 0.6},
+                    "evalplus": {"humaneval": 0.72},
+                    "scores": {
+                        "gsm8k_cot_flexible": 0.175,
+                        "ifeval_strict": 0.225,
+                        "mmlu_pro": 0.63,
+                    },
+                },
+            }
+        },
+    )
+
+    summary = manifest["markdown_summary"]
+    assert "Base: `0.25` / Naive: `0.3` / Tenet: `0.225`" in summary
+    assert "Base: `0.175` / Naive: `0.125` / Tenet: `0.175`" in summary
+    assert "Base: `0.61` / Naive: `0.58` / Tenet: `0.63`" in summary
+    # Raw arm metadata (command / eqbench / evalplus payloads) must never be
+    # dumped into the summary; the legit "vLLM launch command" section stays.
+    assert "creative_writing" not in summary
+    assert "humaneval" not in summary
+    assert "{'command'" not in summary
+    assert "'evalplus'" not in summary
+
+
 def test_build_tenet_release_bundle_nano(tmp_path: Path):
     result = build_tenet_release_bundle(
         output_dir=tmp_path,

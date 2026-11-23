@@ -44,7 +44,10 @@ Settings: `quantization=fp8`, `dtype=bfloat16`, `trust_remote_code=False`, `enab
 
 | Benchmark | Score |
 | --- | --- |
-| IFEval strict | Base: `0.25` / Naive: `—` / Tenet: `0.2` |
-| IFEval inst-strict | Base: `0.444444` / Naive: `—` / Tenet: `0.412698` |
-| GSM8K CoT flexible | Base: `0.15` / Naive: `—` / Tenet: `0.15` |
-| GSM8K CoT strict | Base: `0` / Naive: `—` / Tenet: `0` |
+| gsm8k_cot_flexible | Base: `0.771039` / Naive: `0.791509` / Tenet: `0.780136` |
+| gsm8k_cot_strict | Base: `0.887794` / Naive: `0.859742` / Tenet: `0.88931` |
+| math_500 | Base: `0.706` / Naive: `0.702` / Tenet: `0.702` |
+| ifeval_strict | Base: `0.785582` / Naive: `0.813309` / Tenet: `0.805915` |
+| ifeval_inst_strict | Base: `0.85012` / Naive: `0.871703` / Tenet: `0.859712` |
+| gpqa_diamond_zeroshot | Base: `0.343434` / Naive: `0.343434` / Tenet: `0.343434` |
+| mmlu_pro | Base: `0.574405` / Naive: `0.55754` / Tenet: `0.563492` |
