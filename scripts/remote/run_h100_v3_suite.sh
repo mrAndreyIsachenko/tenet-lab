@@ -10,6 +10,8 @@
 #                                   (default: all four, in that order).
 #   --dry-run                       Print commands without executing any
 #                                   GPU / network / uv sync steps.
+#   --auto-stop-pod                 Stop the RunPod pod (runpodctl stop pod)
+#                                   after the suite finishes.
 #   -h | --help                     Print this usage text and exit 0.
 #
 # Environment knobs (see defaults below): HF_NAMESPACE, BATCH_SIZE,
@@ -41,18 +43,20 @@ MMLU_PRO_LIMIT="${MMLU_PRO_LIMIT:-0}"
 DENSE_THINK_END_TOKEN="${DENSE_THINK_END_TOKEN:-}"
 NUM_GPUS="${NUM_GPUS:-1}"
 V3_EVAL_SUITE="${V3_EVAL_SUITE:-full}"
+SKIP_UV_SYNC="${SKIP_UV_SYNC:-0}"
+AUTO_STOP_POD="${AUTO_STOP_POD:-0}"
 
 export HF_NAMESPACE BATCH_SIZE MAX_GEN_TOKS THINK_END_TOKEN \
   DENSE_THINK_END_TOKEN MMLU_PRO_LIMIT NUM_GPUS FORCE_RERUN \
   KEEP_HF_CACHE UPLOAD_TO_HF NAIVE_4B_MODEL NAIVE_8B_MODEL NAIVE_32B_MODEL \
   TENET_V3_MOE_MODEL TENET_V3_MOE_RELEASE TENET_V3_DENSE_MODEL \
-  TENET_V3_DENSE_RELEASE V3_EVAL_SUITE
+  TENET_V3_DENSE_RELEASE V3_EVAL_SUITE SKIP_UV_SYNC AUTO_STOP_POD
 
 # ---------------------------------------------------------------------------
 # CLI parsing
 # ---------------------------------------------------------------------------
 DRY_RUN=0
-STEPS="eval_v2,h18_audit,h18_h19_bench,tenet_v3"
+STEPS="h18_audit,h18_h19_bench,eval_v2,tenet_v3"
 ALL_STEPS=(eval_v2 h18_audit h18_h19_bench tenet_v3)
 
 usage() {
@@ -73,6 +77,8 @@ Options:
   --steps=<csv>       Same as above, `=`-separated form.
   --dry-run           Print every command prefixed with "[dry-run]" without
                       executing any GPU / network / uv sync steps.
+  --auto-stop-pod     After the suite finishes, stop the RunPod pod via
+                      `runpodctl stop pod` (only when RUNPOD_POD_ID is set).
   -h, --help          Print this help and exit 0.
 
 Environment knobs (defaults):
@@ -97,6 +103,8 @@ Environment knobs (defaults):
   TENET_V3_DENSE_MODEL    mistralai/Mistral-Small-3.1-24B-Instruct-2503
   TENET_V3_DENSE_RELEASE  Tenet-24B-Mistral3.1-Unslop-v3
   V3_EVAL_SUITE           full
+  AUTO_STOP_POD           0     (1 or --auto-stop-pod = stop the RunPod pod
+                                 via `runpodctl stop pod` after the suite)
 
 Examples:
   bash scripts/remote/run_h100_v3_suite.sh --dry-run
@@ -121,6 +129,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dry-run)
       DRY_RUN=1
+      shift
+      ;;
+    --auto-stop-pod)
+      AUTO_STOP_POD=1
       shift
       ;;
     -h | --help)
@@ -210,6 +222,22 @@ cleanup() {
   fi
 }
 
+# Optionally stop the RunPod pod once the suite is done (AUTO_STOP_POD=1).
+stop_pod_if_requested() {
+  if [[ "${AUTO_STOP_POD}" != "1" ]]; then
+    return 0
+  fi
+  if [[ -f /etc/rp_environment && "${DRY_RUN}" != "1" ]]; then
+    # shellcheck disable=SC1091
+    source /etc/rp_environment
+  fi
+  if [[ -z "${RUNPOD_POD_ID:-}" ]]; then
+    echo "[auto-stop] AUTO_STOP_POD=1 but RUNPOD_POD_ID is not set; skipping pod stop"
+    return 0
+  fi
+  run_cmd runpodctl stop pod "${RUNPOD_POD_ID}"
+}
+
 trap cleanup EXIT
 
 preflight() {
@@ -233,8 +261,14 @@ preflight() {
   echo "[preflight] starting idle watchdog: scripts/remote/idle_watchdog.sh"
   bash scripts/remote/idle_watchdog.sh &
   WATCHDOG_PID=$!
-  echo "[preflight] uv sync --frozen --extra data --extra parity --extra telemetry --extra eval"
-  uv sync --frozen --extra data --extra parity --extra telemetry --extra eval
+  export PATH="${PWD}/.venv/bin:${PATH}"
+  if [[ "${SKIP_UV_SYNC}" == "1" ]]; then
+    export UV_NO_SYNC=1
+    echo "[preflight] SKIP_UV_SYNC=1: keeping existing .venv (UV_NO_SYNC=1)"
+  else
+    echo "[preflight] uv sync --frozen --extra data --extra parity --extra telemetry --extra eval"
+    uv sync --frozen --extra data --extra parity --extra telemetry --extra eval
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -418,3 +452,4 @@ run_cmd uv run python scripts/eval/summarize_h100_v3_suite.py \
   --output results/h100_v3_suite_summary.md
 
 echo "H100 v3 suite complete (steps: ${SELECTED_STEPS[*]})"
+stop_pod_if_requested

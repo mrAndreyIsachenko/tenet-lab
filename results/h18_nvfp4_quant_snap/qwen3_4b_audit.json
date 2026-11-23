@@ -1,0 +1,1575 @@
+{
+  "model_id": "Qwen/Qwen3-4B",
+  "basis_path": "results/tenet_releases/Tenet-4B-Qwen3-Unslop-v2/lancet_basis.safetensors",
+  "layers": [
+    9,
+    11,
+    12,
+    13,
+    15,
+    17,
+    20,
+    22
+  ],
+  "num_layers_audited": 8,
+  "projections": [
+    "mlp.down_proj",
+    "self_attn.o_proj"
+  ],
+  "config": {
+    "scale": 1.0,
+    "num_iters": 4,
+    "step_size": 0.75,
+    "block_size": 16,
+    "max_block_cf": 3.2,
+    "max_rel_drift": 0.02,
+    "cleanup_cache": false,
+    "shard_loader_injected": false
+  },
+  "per_layer": {
+    "9": {
+      "mlp.down_proj": {
+        "shape": [
+          2560,
+          9728
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.9769723415374756,
+              "block16_crest_factor_mean": 2.1455929279327393,
+              "rel_l2_drift": 0.028505273163318634,
+              "releak_ratio": 4.126509907109721e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.986180543899536,
+              "block16_crest_factor_mean": 2.1469671726226807,
+              "rel_l2_drift": 0.10524269193410873,
+              "releak_ratio": 0.09359998255968094
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.999998092651367,
+              "block16_crest_factor_mean": 2.135744571685791,
+              "rel_l2_drift": 0.103801429271698,
+              "releak_ratio": 0.09923268109560013
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.97794771194458,
+              "block16_crest_factor_mean": 2.144784688949585,
+              "rel_l2_drift": 0.03888298198580742,
+              "releak_ratio": 0.02439754270017147
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.9769725799560547,
+              "block16_crest_factor_mean": 2.1455929279327393,
+              "rel_l2_drift": 0.02840178832411766,
+              "releak_ratio": 0.023585999384522438
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.986180543899536,
+              "block16_crest_factor_mean": 2.146965742111206,
+              "rel_l2_drift": 0.10522628575563431,
+              "releak_ratio": 0.09757266193628311
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.999998092651367,
+              "block16_crest_factor_mean": 2.135744094848633,
+              "rel_l2_drift": 0.10382210463285446,
+              "releak_ratio": 0.10304974019527435
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.977947473526001,
+              "block16_crest_factor_mean": 2.144784688949585,
+              "rel_l2_drift": 0.03880419209599495,
+              "releak_ratio": 0.03362661600112915
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.487785816192627,
+              "block16_crest_factor_mean": 2.144498348236084,
+              "rel_l2_drift": 0.036402855068445206,
+              "releak_ratio": 0.06554556638002396
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.5677058696746826,
+              "block16_crest_factor_mean": 2.146212100982666,
+              "rel_l2_drift": 0.10757388174533844,
+              "releak_ratio": 0.07155846059322357
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.999802589416504,
+              "block16_crest_factor_mean": 2.13478684425354,
+              "rel_l2_drift": 0.10593870282173157,
+              "releak_ratio": 0.07214541733264923
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.5166115760803223,
+              "block16_crest_factor_mean": 2.1436610221862793,
+              "rel_l2_drift": 0.044983744621276855,
+              "releak_ratio": 0.07028792053461075
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.266613627493809,
+          "int4_b32_releakage_reduction_ratio": 0.2998971448551243,
+          "fp8_releakage_reduction_ratio": -1.0902466228612044
+        }
+      },
+      "self_attn.o_proj": {
+        "shape": [
+          2560,
+          4096
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.8171236515045166,
+              "block16_crest_factor_mean": 2.1183834075927734,
+              "rel_l2_drift": 0.03355918824672699,
+              "releak_ratio": 3.068593343868997e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.8186533451080322,
+              "block16_crest_factor_mean": 2.1187939643859863,
+              "rel_l2_drift": 0.10613471269607544,
+              "releak_ratio": 0.08357333391904831
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.8460614681243896,
+              "block16_crest_factor_mean": 2.1093459129333496,
+              "rel_l2_drift": 0.10336341708898544,
+              "releak_ratio": 0.08496221899986267
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.818671703338623,
+              "block16_crest_factor_mean": 2.117609739303589,
+              "rel_l2_drift": 0.04272091016173363,
+              "releak_ratio": 0.02187322825193405
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.817124128341675,
+              "block16_crest_factor_mean": 2.1183836460113525,
+              "rel_l2_drift": 0.03340977802872658,
+              "releak_ratio": 0.026423826813697815
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.8186569213867188,
+              "block16_crest_factor_mean": 2.1187832355499268,
+              "rel_l2_drift": 0.10610783845186234,
+              "releak_ratio": 0.08800972998142242
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.8460614681243896,
+              "block16_crest_factor_mean": 2.1093459129333496,
+              "rel_l2_drift": 0.1033773198723793,
+              "releak_ratio": 0.09035002440214157
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.818671703338623,
+              "block16_crest_factor_mean": 2.117609739303589,
+              "rel_l2_drift": 0.04259895905852318,
+              "releak_ratio": 0.03422991558909416
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.579528331756592,
+              "block16_crest_factor_mean": 2.1180922985076904,
+              "rel_l2_drift": 0.034615274518728256,
+              "releak_ratio": 0.05767464637756348
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.5776607990264893,
+              "block16_crest_factor_mean": 2.1185522079467773,
+              "rel_l2_drift": 0.1064910963177681,
+              "releak_ratio": 0.06323372572660446
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.645244836807251,
+              "block16_crest_factor_mean": 2.109104633331299,
+              "rel_l2_drift": 0.10368352383375168,
+              "releak_ratio": 0.06393242627382278
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.602567672729492,
+              "block16_crest_factor_mean": 2.11730694770813,
+              "rel_l2_drift": 0.04354700818657875,
+              "releak_ratio": 0.061372920870780945
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.2815143764223321,
+          "int4_b32_releakage_reduction_ratio": 0.29239170994283215,
+          "fp8_releakage_reduction_ratio": -0.7929615020825436
+        }
+      }
+    },
+    "11": {
+      "mlp.down_proj": {
+        "shape": [
+          2560,
+          9728
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.982316255569458,
+              "block16_crest_factor_mean": 2.1405797004699707,
+              "rel_l2_drift": 0.02781793102622032,
+              "releak_ratio": 4.018829145024938e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.9861810207366943,
+              "block16_crest_factor_mean": 2.1427810192108154,
+              "rel_l2_drift": 0.1044723242521286,
+              "releak_ratio": 0.09560810774564743
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.9999988079071045,
+              "block16_crest_factor_mean": 2.1307928562164307,
+              "rel_l2_drift": 0.10329756140708923,
+              "releak_ratio": 0.10250303894281387
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.983494281768799,
+              "block16_crest_factor_mean": 2.1397311687469482,
+              "rel_l2_drift": 0.03837990760803223,
+              "releak_ratio": 0.02506892941892147
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.982316493988037,
+              "block16_crest_factor_mean": 2.1405797004699707,
+              "rel_l2_drift": 0.027755673974752426,
+              "releak_ratio": 0.01893683150410652
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.9861810207366943,
+              "block16_crest_factor_mean": 2.1427884101867676,
+              "rel_l2_drift": 0.10446136444807053,
+              "releak_ratio": 0.09754283726215363
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.9999988079071045,
+              "block16_crest_factor_mean": 2.1307928562164307,
+              "rel_l2_drift": 0.10332528501749039,
+              "releak_ratio": 0.10520430654287338
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.983494520187378,
+              "block16_crest_factor_mean": 2.1397314071655273,
+              "rel_l2_drift": 0.03833320364356041,
+              "releak_ratio": 0.031184935942292213
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.4470324516296387,
+              "block16_crest_factor_mean": 2.139723300933838,
+              "rel_l2_drift": 0.035473935306072235,
+              "releak_ratio": 0.0676116868853569
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.5099291801452637,
+              "block16_crest_factor_mean": 2.142118453979492,
+              "rel_l2_drift": 0.10672669112682343,
+              "releak_ratio": 0.07271982729434967
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.5276308059692383,
+              "block16_crest_factor_mean": 2.1300413608551025,
+              "rel_l2_drift": 0.10535778105258942,
+              "releak_ratio": 0.07330866903066635
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.474515199661255,
+              "block16_crest_factor_mean": 2.1388442516326904,
+              "rel_l2_drift": 0.044244032353162766,
+              "releak_ratio": 0.072440966963768
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.25448316518710923,
+          "int4_b32_releakage_reduction_ratio": 0.3031780595332261,
+          "fp8_releakage_reduction_ratio": -1.3229474351917911
+        }
+      },
+      "self_attn.o_proj": {
+        "shape": [
+          2560,
+          4096
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.8893158435821533,
+              "block16_crest_factor_mean": 2.1169252395629883,
+              "rel_l2_drift": 0.03175393491983414,
+              "releak_ratio": 3.043637946120725e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.880566358566284,
+              "block16_crest_factor_mean": 2.116779327392578,
+              "rel_l2_drift": 0.10551708191633224,
+              "releak_ratio": 0.08475137501955032
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.8828868865966797,
+              "block16_crest_factor_mean": 2.1079928874969482,
+              "rel_l2_drift": 0.10266594588756561,
+              "releak_ratio": 0.08567044138908386
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.8922278881073,
+              "block16_crest_factor_mean": 2.1160824298858643,
+              "rel_l2_drift": 0.04132021218538284,
+              "releak_ratio": 0.021971097216010094
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.889315605163574,
+              "block16_crest_factor_mean": 2.1169252395629883,
+              "rel_l2_drift": 0.03163864463567734,
+              "releak_ratio": 0.023513443768024445
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.880556344985962,
+              "block16_crest_factor_mean": 2.116765260696411,
+              "rel_l2_drift": 0.1054975837469101,
+              "releak_ratio": 0.08855163305997849
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.8828868865966797,
+              "block16_crest_factor_mean": 2.1079928874969482,
+              "rel_l2_drift": 0.10268434882164001,
+              "releak_ratio": 0.08954766392707825
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.8922274112701416,
+              "block16_crest_factor_mean": 2.1160826683044434,
+              "rel_l2_drift": 0.041227083653211594,
+              "releak_ratio": 0.03180849924683571
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.468139886856079,
+              "block16_crest_factor_mean": 2.1166388988494873,
+              "rel_l2_drift": 0.03327162191271782,
+              "releak_ratio": 0.05762900412082672
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.5578107833862305,
+              "block16_crest_factor_mean": 2.1165084838867188,
+              "rel_l2_drift": 0.10597775876522064,
+              "releak_ratio": 0.06317544728517532
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.584934711456299,
+              "block16_crest_factor_mean": 2.107733726501465,
+              "rel_l2_drift": 0.10311520099639893,
+              "releak_ratio": 0.06427528709173203
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.480907678604126,
+              "block16_crest_factor_mean": 2.1158175468444824,
+              "rel_l2_drift": 0.04247055947780609,
+              "releak_ratio": 0.061724476516246796
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.2865693708620276,
+          "int4_b32_releakage_reduction_ratio": 0.28222262566141754,
+          "fp8_releakage_reduction_ratio": -0.9405026322449686
+        }
+      }
+    },
+    "12": {
+      "mlp.down_proj": {
+        "shape": [
+          2560,
+          9728
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.9848921298980713,
+              "block16_crest_factor_mean": 2.144832134246826,
+              "rel_l2_drift": 0.02851477824151516,
+              "releak_ratio": 4.1572997133698664e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.9861810207366943,
+              "block16_crest_factor_mean": 2.1473591327667236,
+              "rel_l2_drift": 0.10445062816143036,
+              "releak_ratio": 0.09321406483650208
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.999998092651367,
+              "block16_crest_factor_mean": 2.135108709335327,
+              "rel_l2_drift": 0.10386212915182114,
+              "releak_ratio": 0.09980298578739166
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.9847466945648193,
+              "block16_crest_factor_mean": 2.1440608501434326,
+              "rel_l2_drift": 0.03889013081789017,
+              "releak_ratio": 0.02438350021839142
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.9848923683166504,
+              "block16_crest_factor_mean": 2.144832134246826,
+              "rel_l2_drift": 0.02846289798617363,
+              "releak_ratio": 0.01683259755373001
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.9861810207366943,
+              "block16_crest_factor_mean": 2.147368907928467,
+              "rel_l2_drift": 0.10444644093513489,
+              "releak_ratio": 0.09473452717065811
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.999997615814209,
+              "block16_crest_factor_mean": 2.135108709335327,
+              "rel_l2_drift": 0.10389891266822815,
+              "releak_ratio": 0.10234084725379944
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.9847464561462402,
+              "block16_crest_factor_mean": 2.1440608501434326,
+              "rel_l2_drift": 0.03885621204972267,
+              "releak_ratio": 0.029923411086201668
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.4373791217803955,
+              "block16_crest_factor_mean": 2.144031524658203,
+              "rel_l2_drift": 0.03420351445674896,
+              "releak_ratio": 0.06437775492668152
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.5481579303741455,
+              "block16_crest_factor_mean": 2.146730899810791,
+              "rel_l2_drift": 0.10610651969909668,
+              "releak_ratio": 0.07108717411756516
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.527625560760498,
+              "block16_crest_factor_mean": 2.1344003677368164,
+              "rel_l2_drift": 0.10534076392650604,
+              "releak_ratio": 0.07169738411903381
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.4429409503936768,
+              "block16_crest_factor_mean": 2.143237590789795,
+              "rel_l2_drift": 0.043224968016147614,
+              "releak_ratio": 0.0686289370059967
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.249617048391383,
+          "int4_b32_releakage_reduction_ratio": 0.299425536890188,
+          "fp8_releakage_reduction_ratio": -1.2934864213272461
+        }
+      },
+      "self_attn.o_proj": {
+        "shape": [
+          2560,
+          4096
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.75577712059021,
+              "block16_crest_factor_mean": 2.118274211883545,
+              "rel_l2_drift": 0.03249550238251686,
+              "releak_ratio": 3.341373826515337e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.759648323059082,
+              "block16_crest_factor_mean": 2.119096517562866,
+              "rel_l2_drift": 0.10583489388227463,
+              "releak_ratio": 0.08903127908706665
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.775517702102661,
+              "block16_crest_factor_mean": 2.109299421310425,
+              "rel_l2_drift": 0.10319507122039795,
+              "releak_ratio": 0.08918733894824982
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.7652084827423096,
+              "block16_crest_factor_mean": 2.1173787117004395,
+              "rel_l2_drift": 0.041889965534210205,
+              "releak_ratio": 0.023329826071858406
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.7557790279388428,
+              "block16_crest_factor_mean": 2.118274211883545,
+              "rel_l2_drift": 0.03244216740131378,
+              "releak_ratio": 0.016853993758559227
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.7596476078033447,
+              "block16_crest_factor_mean": 2.119060754776001,
+              "rel_l2_drift": 0.10583151876926422,
+              "releak_ratio": 0.09084098786115646
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.775517463684082,
+              "block16_crest_factor_mean": 2.109299421310425,
+              "rel_l2_drift": 0.10324357450008392,
+              "releak_ratio": 0.09219113737344742
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.7652087211608887,
+              "block16_crest_factor_mean": 2.1173789501190186,
+              "rel_l2_drift": 0.04184013232588768,
+              "releak_ratio": 0.02845585346221924
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.3789055347442627,
+              "block16_crest_factor_mean": 2.118011713027954,
+              "rel_l2_drift": 0.03388698771595955,
+              "releak_ratio": 0.05972510948777199
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.4461560249328613,
+              "block16_crest_factor_mean": 2.118821859359741,
+              "rel_l2_drift": 0.10627539455890656,
+              "releak_ratio": 0.06674093753099442
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.3954532146453857,
+              "block16_crest_factor_mean": 2.109006881713867,
+              "rel_l2_drift": 0.10363529622554779,
+              "releak_ratio": 0.06840604543685913
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.40693736076355,
+              "block16_crest_factor_mean": 2.117170810699463,
+              "rel_l2_drift": 0.04295603930950165,
+              "releak_ratio": 0.0642126053571701
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.26529929823085086,
+          "int4_b32_releakage_reduction_ratio": 0.2579975973204426,
+          "fp8_releakage_reduction_ratio": -1.2565693010200873
+        }
+      }
+    },
+    "13": {
+      "mlp.down_proj": {
+        "shape": [
+          2560,
+          9728
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.982357978820801,
+              "block16_crest_factor_mean": 2.158184051513672,
+              "rel_l2_drift": 0.028260624036192894,
+              "releak_ratio": 4.2578901116030465e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.986179828643799,
+              "block16_crest_factor_mean": 2.1610748767852783,
+              "rel_l2_drift": 0.10412583500146866,
+              "releak_ratio": 0.09695003926753998
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.9999969005584717,
+              "block16_crest_factor_mean": 2.1479647159576416,
+              "rel_l2_drift": 0.10498610883951187,
+              "releak_ratio": 0.10435038805007935
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.982675075531006,
+              "block16_crest_factor_mean": 2.1573922634124756,
+              "rel_l2_drift": 0.038692738860845566,
+              "releak_ratio": 0.025146955624222755
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.98235821723938,
+              "block16_crest_factor_mean": 2.158184051513672,
+              "rel_l2_drift": 0.02818123809993267,
+              "releak_ratio": 0.02063644863665104
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.986179828643799,
+              "block16_crest_factor_mean": 2.1610918045043945,
+              "rel_l2_drift": 0.10411211848258972,
+              "releak_ratio": 0.0993189588189125
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.9999969005584717,
+              "block16_crest_factor_mean": 2.1479647159576416,
+              "rel_l2_drift": 0.10500900447368622,
+              "releak_ratio": 0.10712502151727676
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.982675075531006,
+              "block16_crest_factor_mean": 2.1573922634124756,
+              "rel_l2_drift": 0.03863637521862984,
+              "releak_ratio": 0.03296912834048271
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.433549165725708,
+              "block16_crest_factor_mean": 2.1572399139404297,
+              "rel_l2_drift": 0.03554382547736168,
+              "releak_ratio": 0.06779956072568893
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.4550836086273193,
+              "block16_crest_factor_mean": 2.1602368354797363,
+              "rel_l2_drift": 0.10628092288970947,
+              "releak_ratio": 0.07489078491926193
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.999922275543213,
+              "block16_crest_factor_mean": 2.1470999717712402,
+              "rel_l2_drift": 0.10685251653194427,
+              "releak_ratio": 0.07603196054697037
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.449211597442627,
+              "block16_crest_factor_mean": 2.1564300060272217,
+              "rel_l2_drift": 0.044287268072366714,
+              "releak_ratio": 0.07255125790834427
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.24595680613396553,
+          "int4_b32_releakage_reduction_ratio": 0.29025021913570226,
+          "fp8_releakage_reduction_ratio": -1.2005816216638872
+        }
+      },
+      "self_attn.o_proj": {
+        "shape": [
+          2560,
+          4096
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.8194446563720703,
+              "block16_crest_factor_mean": 2.121138334274292,
+              "rel_l2_drift": 0.028923802077770233,
+              "releak_ratio": 3.4438519946888846e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.8186705112457275,
+              "block16_crest_factor_mean": 2.121554136276245,
+              "rel_l2_drift": 0.10513018071651459,
+              "releak_ratio": 0.09299767762422562
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.810276985168457,
+              "block16_crest_factor_mean": 2.1122729778289795,
+              "rel_l2_drift": 0.1020701602101326,
+              "releak_ratio": 0.09412869811058044
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.8389973640441895,
+              "block16_crest_factor_mean": 2.1203322410583496,
+              "rel_l2_drift": 0.03918801620602608,
+              "releak_ratio": 0.024360639974474907
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.8194451332092285,
+              "block16_crest_factor_mean": 2.121138334274292,
+              "rel_l2_drift": 0.028848782181739807,
+              "releak_ratio": 0.02122126892209053
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.8186705112457275,
+              "block16_crest_factor_mean": 2.1215946674346924,
+              "rel_l2_drift": 0.1051206886768341,
+              "releak_ratio": 0.09620928764343262
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.810277223587036,
+              "block16_crest_factor_mean": 2.1122727394104004,
+              "rel_l2_drift": 0.10210025310516357,
+              "releak_ratio": 0.09856387227773666
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.838998317718506,
+              "block16_crest_factor_mean": 2.1203324794769287,
+              "rel_l2_drift": 0.0391353964805603,
+              "releak_ratio": 0.03238348662853241
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.513976812362671,
+              "block16_crest_factor_mean": 2.1208579540252686,
+              "rel_l2_drift": 0.030115444213151932,
+              "releak_ratio": 0.06331503391265869
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.528964042663574,
+              "block16_crest_factor_mean": 2.1213574409484863,
+              "rel_l2_drift": 0.10546357929706573,
+              "releak_ratio": 0.07139134407043457
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.4999306201934814,
+              "block16_crest_factor_mean": 2.111985921859741,
+              "rel_l2_drift": 0.102378249168396,
+              "releak_ratio": 0.07096140086650848
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.5156102180480957,
+              "block16_crest_factor_mean": 2.1200215816497803,
+              "rel_l2_drift": 0.04008091241121292,
+              "releak_ratio": 0.06815392524003983
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.25795787684217575,
+          "int4_b32_releakage_reduction_ratio": 0.2800465401100414,
+          "fp8_releakage_reduction_ratio": -1.1045888610397756
+        }
+      }
+    },
+    "15": {
+      "self_attn.o_proj": {
+        "shape": [
+          2560,
+          4096
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.849071502685547,
+              "block16_crest_factor_mean": 2.124403476715088,
+              "rel_l2_drift": 0.029166966676712036,
+              "releak_ratio": 3.5055950320384e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.7829232215881348,
+              "block16_crest_factor_mean": 2.1227123737335205,
+              "rel_l2_drift": 0.10573942959308624,
+              "releak_ratio": 0.09363704919815063
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.7755112648010254,
+              "block16_crest_factor_mean": 2.1152963638305664,
+              "rel_l2_drift": 0.1024065688252449,
+              "releak_ratio": 0.09587480872869492
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.8486688137054443,
+              "block16_crest_factor_mean": 2.1235461235046387,
+              "rel_l2_drift": 0.03936778008937836,
+              "releak_ratio": 0.024073146283626556
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.8490729331970215,
+              "block16_crest_factor_mean": 2.124403476715088,
+              "rel_l2_drift": 0.028847577050328255,
+              "releak_ratio": 0.0533115528523922
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.7829232215881348,
+              "block16_crest_factor_mean": 2.1226909160614014,
+              "rel_l2_drift": 0.10564849525690079,
+              "releak_ratio": 0.11017483472824097
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.7755126953125,
+              "block16_crest_factor_mean": 2.1152963638305664,
+              "rel_l2_drift": 0.1023617759346962,
+              "releak_ratio": 0.11229636520147324
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.848670244216919,
+              "block16_crest_factor_mean": 2.1235456466674805,
+              "rel_l2_drift": 0.03912491723895073,
+              "releak_ratio": 0.05755176395177841
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.5239572525024414,
+              "block16_crest_factor_mean": 2.1241378784179688,
+              "rel_l2_drift": 0.030264725908637047,
+              "releak_ratio": 0.06542300432920456
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.5482447147369385,
+              "block16_crest_factor_mean": 2.1224117279052734,
+              "rel_l2_drift": 0.10602881759405136,
+              "releak_ratio": 0.07636331766843796
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.4729554653167725,
+              "block16_crest_factor_mean": 2.1150667667388916,
+              "rel_l2_drift": 0.10270430892705917,
+              "releak_ratio": 0.07700458914041519
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.56831693649292,
+              "block16_crest_factor_mean": 2.1233022212982178,
+              "rel_l2_drift": 0.040173787623643875,
+              "releak_ratio": 0.07005924731492996
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.30688965536642776,
+          "int4_b32_releakage_reduction_ratio": 0.3142735385757174,
+          "fp8_releakage_reduction_ratio": -0.21732580383863387
+        }
+      },
+      "mlp.down_proj": {
+        "shape": [
+          2560,
+          9728
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.96455454826355,
+              "block16_crest_factor_mean": 2.1656408309936523,
+              "rel_l2_drift": 0.031228816136717796,
+              "releak_ratio": 4.3655671788656036e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.9589712619781494,
+              "block16_crest_factor_mean": 2.1680541038513184,
+              "rel_l2_drift": 0.10509398579597473,
+              "releak_ratio": 0.09400693327188492
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.9999961853027344,
+              "block16_crest_factor_mean": 2.1552300453186035,
+              "rel_l2_drift": 0.10643883794546127,
+              "releak_ratio": 0.10398527979850769
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.9652950763702393,
+              "block16_crest_factor_mean": 2.1648545265197754,
+              "rel_l2_drift": 0.040921375155448914,
+              "releak_ratio": 0.025550946593284607
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.964554786682129,
+              "block16_crest_factor_mean": 2.1656408309936523,
+              "rel_l2_drift": 0.030769051983952522,
+              "releak_ratio": 0.0605442151427269
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.9589712619781494,
+              "block16_crest_factor_mean": 2.168031692504883,
+              "rel_l2_drift": 0.1049797460436821,
+              "releak_ratio": 0.11526021361351013
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.9999961853027344,
+              "block16_crest_factor_mean": 2.1552300453186035,
+              "rel_l2_drift": 0.10636025667190552,
+              "releak_ratio": 0.12409598380327225
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.9652953147888184,
+              "block16_crest_factor_mean": 2.1648547649383545,
+              "rel_l2_drift": 0.040577735751867294,
+              "releak_ratio": 0.06627853214740753
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.5775341987609863,
+              "block16_crest_factor_mean": 2.164396047592163,
+              "rel_l2_drift": 0.04143938794732094,
+              "releak_ratio": 0.06819364428520203
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.60785174369812,
+              "block16_crest_factor_mean": 2.1670143604278564,
+              "rel_l2_drift": 0.10850271582603455,
+              "releak_ratio": 0.0814734399318695
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.5849764347076416,
+              "block16_crest_factor_mean": 2.1540956497192383,
+              "rel_l2_drift": 0.10944196581840515,
+              "releak_ratio": 0.08172029256820679
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.6138808727264404,
+              "block16_crest_factor_mean": 2.163583278656006,
+              "rel_l2_drift": 0.04915985092520714,
+              "releak_ratio": 0.07337061315774918
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.2931347480834474,
+          "int4_b32_releakage_reduction_ratio": 0.3414751222105874,
+          "fp8_releakage_reduction_ratio": -0.10700419548472229
+        }
+      }
+    },
+    "17": {
+      "mlp.down_proj": {
+        "shape": [
+          2560,
+          9728
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.993260622024536,
+              "block16_crest_factor_mean": 2.162271738052368,
+              "rel_l2_drift": 0.030871259048581123,
+              "releak_ratio": 4.440725547283364e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.9999988079071045,
+              "block16_crest_factor_mean": 2.1647117137908936,
+              "rel_l2_drift": 0.10522392392158508,
+              "releak_ratio": 0.09322454035282135
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.9999990463256836,
+              "block16_crest_factor_mean": 2.152064800262451,
+              "rel_l2_drift": 0.10611315816640854,
+              "releak_ratio": 0.10169839859008789
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.993685722351074,
+              "block16_crest_factor_mean": 2.161513566970825,
+              "rel_l2_drift": 0.04064125567674637,
+              "releak_ratio": 0.02468029595911503
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.993260622024536,
+              "block16_crest_factor_mean": 2.162271738052368,
+              "rel_l2_drift": 0.03080311417579651,
+              "releak_ratio": 0.023302478715777397
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.9999988079071045,
+              "block16_crest_factor_mean": 2.1647253036499023,
+              "rel_l2_drift": 0.1052088662981987,
+              "releak_ratio": 0.09834012389183044
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.9999990463256836,
+              "block16_crest_factor_mean": 2.152064800262451,
+              "rel_l2_drift": 0.10615032911300659,
+              "releak_ratio": 0.1058523952960968
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.993685483932495,
+              "block16_crest_factor_mean": 2.161513566970825,
+              "rel_l2_drift": 0.04059283062815666,
+              "releak_ratio": 0.03448186069726944
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.5641191005706787,
+              "block16_crest_factor_mean": 2.161109447479248,
+              "rel_l2_drift": 0.0426604337990284,
+              "releak_ratio": 0.06504689902067184
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.6493215560913086,
+              "block16_crest_factor_mean": 2.163756847381592,
+              "rel_l2_drift": 0.1091885045170784,
+              "releak_ratio": 0.07970154285430908
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.555987596511841,
+              "block16_crest_factor_mean": 2.151036500930786,
+              "rel_l2_drift": 0.10973180830478668,
+              "releak_ratio": 0.08051212131977081
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.551607847213745,
+              "block16_crest_factor_mean": 2.1603310108184814,
+              "rel_l2_drift": 0.05019966885447502,
+              "releak_ratio": 0.0696459710597992
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.18953180349887433,
+          "int4_b32_releakage_reduction_ratio": 0.23939254190179282,
+          "fp8_releakage_reduction_ratio": -1.0197857555092535
+        }
+      },
+      "self_attn.o_proj": {
+        "shape": [
+          2560,
+          4096
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.8187031745910645,
+              "block16_crest_factor_mean": 2.1243340969085693,
+              "rel_l2_drift": 0.031446948647499084,
+              "releak_ratio": 3.7154529763938626e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.830803871154785,
+              "block16_crest_factor_mean": 2.122938871383667,
+              "rel_l2_drift": 0.10618086159229279,
+              "releak_ratio": 0.09364481270313263
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.7755134105682373,
+              "block16_crest_factor_mean": 2.115135669708252,
+              "rel_l2_drift": 0.10312467068433762,
+              "releak_ratio": 0.09326677024364471
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.8200173377990723,
+              "block16_crest_factor_mean": 2.1235954761505127,
+              "rel_l2_drift": 0.041087813675403595,
+              "releak_ratio": 0.024662628769874573
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.8187036514282227,
+              "block16_crest_factor_mean": 2.1243340969085693,
+              "rel_l2_drift": 0.03089597262442112,
+              "releak_ratio": 0.056688807904720306
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.830803871154785,
+              "block16_crest_factor_mean": 2.122943878173828,
+              "rel_l2_drift": 0.10603611171245575,
+              "releak_ratio": 0.11148165911436081
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.7755134105682373,
+              "block16_crest_factor_mean": 2.115135669708252,
+              "rel_l2_drift": 0.10301584005355835,
+              "releak_ratio": 0.1099867895245552
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.820016860961914,
+              "block16_crest_factor_mean": 2.1235952377319336,
+              "rel_l2_drift": 0.04066681116819382,
+              "releak_ratio": 0.06100228428840637
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.4476912021636963,
+              "block16_crest_factor_mean": 2.1240601539611816,
+              "rel_l2_drift": 0.033006396144628525,
+              "releak_ratio": 0.06278011202812195
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.5100066661834717,
+              "block16_crest_factor_mean": 2.122727155685425,
+              "rel_l2_drift": 0.106671541929245,
+              "releak_ratio": 0.07468768209218979
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.4814300537109375,
+              "block16_crest_factor_mean": 2.11492657661438,
+              "rel_l2_drift": 0.1035744771361351,
+              "releak_ratio": 0.07369636744260788
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.437729597091675,
+              "block16_crest_factor_mean": 2.123274326324463,
+              "rel_l2_drift": 0.04227643460035324,
+              "releak_ratio": 0.06742364913225174
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.33004511517384927,
+          "int4_b32_releakage_reduction_ratio": 0.32995255374596855,
+          "fp8_releakage_reduction_ratio": -0.10526433425814785
+        }
+      }
+    },
+    "20": {
+      "mlp.down_proj": {
+        "shape": [
+          2560,
+          9728
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.9883885383605957,
+              "block16_crest_factor_mean": 2.1619701385498047,
+              "rel_l2_drift": 0.028025561943650246,
+              "releak_ratio": 4.434554057297646e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.999994993209839,
+              "block16_crest_factor_mean": 2.1648383140563965,
+              "rel_l2_drift": 0.10436900705099106,
+              "releak_ratio": 0.09698419272899628
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.999997138977051,
+              "block16_crest_factor_mean": 2.151700019836426,
+              "rel_l2_drift": 0.10528050363063812,
+              "releak_ratio": 0.10633597522974014
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.988933801651001,
+              "block16_crest_factor_mean": 2.1612584590911865,
+              "rel_l2_drift": 0.03852911666035652,
+              "releak_ratio": 0.025926128029823303
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.988388776779175,
+              "block16_crest_factor_mean": 2.1619701385498047,
+              "rel_l2_drift": 0.02804262936115265,
+              "releak_ratio": 0.024515265598893166
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.999994993209839,
+              "block16_crest_factor_mean": 2.164825201034546,
+              "rel_l2_drift": 0.10438434034585953,
+              "releak_ratio": 0.10147042572498322
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.99999737739563,
+              "block16_crest_factor_mean": 2.151700019836426,
+              "rel_l2_drift": 0.10533016175031662,
+              "releak_ratio": 0.1109951063990593
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.988933563232422,
+              "block16_crest_factor_mean": 2.1612584590911865,
+              "rel_l2_drift": 0.0385422520339489,
+              "releak_ratio": 0.03583769127726555
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.550077199935913,
+              "block16_crest_factor_mean": 2.1605663299560547,
+              "rel_l2_drift": 0.041651930660009384,
+              "releak_ratio": 0.06871384382247925
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.607882499694824,
+              "block16_crest_factor_mean": 2.163755416870117,
+              "rel_l2_drift": 0.10873658210039139,
+              "releak_ratio": 0.07932540029287338
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.9996962547302246,
+              "block16_crest_factor_mean": 2.150408983230591,
+              "rel_l2_drift": 0.10920216888189316,
+              "releak_ratio": 0.08021614700555801
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.5536301136016846,
+              "block16_crest_factor_mean": 2.1598219871520996,
+              "rel_l2_drift": 0.049344081431627274,
+              "releak_ratio": 0.07362233102321625
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.21824117986978608,
+          "int4_b32_releakage_reduction_ratio": 0.2773001476555379,
+          "fp8_releakage_reduction_ratio": -1.0543268385684277
+        }
+      },
+      "self_attn.o_proj": {
+        "shape": [
+          2560,
+          4096
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.753695011138916,
+              "block16_crest_factor_mean": 2.1249594688415527,
+              "rel_l2_drift": 0.027197545394301414,
+              "releak_ratio": 3.881141310557723e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.759648323059082,
+              "block16_crest_factor_mean": 2.124230146408081,
+              "rel_l2_drift": 0.10525528341531754,
+              "releak_ratio": 0.10366901010274887
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.775499105453491,
+              "block16_crest_factor_mean": 2.115865707397461,
+              "rel_l2_drift": 0.10180189460515976,
+              "releak_ratio": 0.09924068301916122
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.766516923904419,
+              "block16_crest_factor_mean": 2.1240792274475098,
+              "rel_l2_drift": 0.03792928159236908,
+              "releak_ratio": 0.026634395122528076
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.753694772720337,
+              "block16_crest_factor_mean": 2.1249592304229736,
+              "rel_l2_drift": 0.02703121304512024,
+              "releak_ratio": 0.027319777756929398
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.759648323059082,
+              "block16_crest_factor_mean": 2.1242263317108154,
+              "rel_l2_drift": 0.10523231327533722,
+              "releak_ratio": 0.10896645486354828
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.775498867034912,
+              "block16_crest_factor_mean": 2.115865707397461,
+              "rel_l2_drift": 0.10179629921913147,
+              "releak_ratio": 0.10370714217424393
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.766516923904419,
+              "block16_crest_factor_mean": 2.1240789890289307,
+              "rel_l2_drift": 0.03780936822295189,
+              "releak_ratio": 0.038130003958940506
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.3421192169189453,
+              "block16_crest_factor_mean": 2.1246891021728516,
+              "rel_l2_drift": 0.02827528491616249,
+              "releak_ratio": 0.06893625110387802
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.5099291801452637,
+              "block16_crest_factor_mean": 2.123990297317505,
+              "rel_l2_drift": 0.10554718971252441,
+              "releak_ratio": 0.07916133105754852
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.428453207015991,
+              "block16_crest_factor_mean": 2.115609884262085,
+              "rel_l2_drift": 0.10205364227294922,
+              "releak_ratio": 0.078293576836586
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.3624987602233887,
+              "block16_crest_factor_mean": 2.123814821243286,
+              "rel_l2_drift": 0.038706518709659576,
+              "releak_ratio": 0.07416233420372009
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.2735256813055248,
+          "int4_b32_releakage_reduction_ratio": 0.24505125495560598,
+          "fp8_releakage_reduction_ratio": -0.9449862707483652
+        }
+      }
+    },
+    "22": {
+      "mlp.down_proj": {
+        "shape": [
+          2560,
+          9728
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.9960741996765137,
+              "block16_crest_factor_mean": 2.163485288619995,
+              "rel_l2_drift": 0.0302976556122303,
+              "releak_ratio": 4.3782233660749625e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.9999990463256836,
+              "block16_crest_factor_mean": 2.1667211055755615,
+              "rel_l2_drift": 0.1048303097486496,
+              "releak_ratio": 0.09553368389606476
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.9999992847442627,
+              "block16_crest_factor_mean": 2.153160333633423,
+              "rel_l2_drift": 0.10638747364282608,
+              "releak_ratio": 0.1070345789194107
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.9960579872131348,
+              "block16_crest_factor_mean": 2.1626272201538086,
+              "rel_l2_drift": 0.04021161422133446,
+              "releak_ratio": 0.0256371907889843
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.9960739612579346,
+              "block16_crest_factor_mean": 2.163485288619995,
+              "rel_l2_drift": 0.030254829674959183,
+              "releak_ratio": 0.02598583698272705
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.9999990463256836,
+              "block16_crest_factor_mean": 2.166727304458618,
+              "rel_l2_drift": 0.10482765734195709,
+              "releak_ratio": 0.10039356350898743
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.9999992847442627,
+              "block16_crest_factor_mean": 2.153160333633423,
+              "rel_l2_drift": 0.10643012076616287,
+              "releak_ratio": 0.11197014153003693
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.996058225631714,
+              "block16_crest_factor_mean": 2.1626274585723877,
+              "rel_l2_drift": 0.04018178582191467,
+              "releak_ratio": 0.03690216690301895
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.7807059288024902,
+              "block16_crest_factor_mean": 2.162006139755249,
+              "rel_l2_drift": 0.048202961683273315,
+              "releak_ratio": 0.06793633103370667
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.7947072982788086,
+              "block16_crest_factor_mean": 2.1653892993927,
+              "rel_l2_drift": 0.11126258969306946,
+              "releak_ratio": 0.07852162420749664
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.999859571456909,
+              "block16_crest_factor_mean": 2.151874303817749,
+              "rel_l2_drift": 0.11221976578235626,
+              "releak_ratio": 0.07875461131334305
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.7813448905944824,
+              "block16_crest_factor_mean": 2.161135673522949,
+              "rel_l2_drift": 0.054948389530181885,
+              "releak_ratio": 0.07262035459280014
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.21786196780964717,
+          "int4_b32_releakage_reduction_ratio": 0.2966463180524206,
+          "fp8_releakage_reduction_ratio": -0.9679157265656153
+        }
+      },
+      "self_attn.o_proj": {
+        "shape": [
+          2560,
+          4096
+        ],
+        "direction_rows": 2,
+        "variants": {
+          "naive_ablation": {
+            "bf16": {
+              "block16_crest_factor_max": 3.790210485458374,
+              "block16_crest_factor_mean": 2.1256749629974365,
+              "rel_l2_drift": 0.03236857056617737,
+              "releak_ratio": 3.5331188996678975e-07
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.7711801528930664,
+              "block16_crest_factor_mean": 2.1256558895111084,
+              "rel_l2_drift": 0.10659123957157135,
+              "releak_ratio": 0.09286504238843918
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.7755017280578613,
+              "block16_crest_factor_mean": 2.1164894104003906,
+              "rel_l2_drift": 0.10348860174417496,
+              "releak_ratio": 0.0908837616443634
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.7946677207946777,
+              "block16_crest_factor_mean": 2.1248347759246826,
+              "rel_l2_drift": 0.04179348796606064,
+              "releak_ratio": 0.02423020265996456
+            }
+          },
+          "standard_lancet_h15": {
+            "bf16": {
+              "block16_crest_factor_max": 3.790210723876953,
+              "block16_crest_factor_mean": 2.1256749629974365,
+              "rel_l2_drift": 0.032307837158441544,
+              "releak_ratio": 0.019173884764313698
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.7711801528930664,
+              "block16_crest_factor_mean": 2.1256656646728516,
+              "rel_l2_drift": 0.10658153146505356,
+              "releak_ratio": 0.09472457319498062
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.7755019664764404,
+              "block16_crest_factor_mean": 2.116489887237549,
+              "rel_l2_drift": 0.10352089256048203,
+              "releak_ratio": 0.0938451811671257
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.7946677207946777,
+              "block16_crest_factor_mean": 2.1248345375061035,
+              "rel_l2_drift": 0.04174550622701645,
+              "releak_ratio": 0.030825968831777573
+            }
+          },
+          "h18_quant_snap_lancet": {
+            "bf16": {
+              "block16_crest_factor_max": 3.565297842025757,
+              "block16_crest_factor_mean": 2.1253864765167236,
+              "rel_l2_drift": 0.03328866511583328,
+              "releak_ratio": 0.06241176277399063
+            },
+            "nvfp4_b16": {
+              "block16_crest_factor_max": 3.5100741386413574,
+              "block16_crest_factor_mean": 2.1253623962402344,
+              "rel_l2_drift": 0.10687463730573654,
+              "releak_ratio": 0.07137883454561234
+            },
+            "int4_b32": {
+              "block16_crest_factor_max": 3.555969715118408,
+              "block16_crest_factor_mean": 2.1162266731262207,
+              "rel_l2_drift": 0.10374554246664047,
+              "releak_ratio": 0.070778489112854
+            },
+            "fp8_per_channel": {
+              "block16_crest_factor_max": 3.5960888862609863,
+              "block16_crest_factor_mean": 2.124566078186035,
+              "rel_l2_drift": 0.04249744117259979,
+              "releak_ratio": 0.06734341382980347
+            }
+          }
+        },
+        "summary_ratios": {
+          "nvfp4_releakage_reduction_ratio": 0.2464591590327203,
+          "int4_b32_releakage_reduction_ratio": 0.2457951678221283,
+          "fp8_releakage_reduction_ratio": -1.1846325154387736
+        }
+      }
+    }
+  },
+  "mean_metrics": {
+    "h18_quant_snap_lancet.bf16.block16_crest_factor_max": 3.506112441420555,
+    "h18_quant_snap_lancet.bf16.block16_crest_factor_mean": 2.1378403455018997,
+    "h18_quant_snap_lancet.bf16.rel_l2_drift": 0.03576895280275494,
+    "h18_quant_snap_lancet.bf16.releak_ratio": 0.0645700132008642,
+    "h18_quant_snap_lancet.fp8_per_channel.block16_crest_factor_max": 3.522150009870529,
+    "h18_quant_snap_lancet.fp8_per_channel.block16_crest_factor_mean": 2.1370199471712112,
+    "h18_quant_snap_lancet.fp8_per_channel.rel_l2_drift": 0.04456879408098757,
+    "h18_quant_snap_lancet.fp8_per_channel.releak_ratio": 0.06922630779445171,
+    "h18_quant_snap_lancet.int4_b32.block16_crest_factor_max": 3.6412420570850372,
+    "h18_quant_snap_lancet.int4_b32.block16_crest_factor_mean": 2.1283378154039383,
+    "h18_quant_snap_lancet.int4_b32.rel_l2_drift": 0.10556098213419318,
+    "h18_quant_snap_lancet.int4_b32.releak_ratio": 0.073858424089849,
+    "h18_quant_snap_lancet.nvfp4_b16.block16_crest_factor_max": 3.558092877268791,
+    "h18_quant_snap_lancet.nvfp4_b16.block16_crest_factor_mean": 2.1390591114759445,
+    "h18_quant_snap_lancet.nvfp4_b16.rel_l2_drift": 0.10710677644237876,
+    "h18_quant_snap_lancet.nvfp4_b16.releak_ratio": 0.07346317963674664,
+    "naive_ablation.bf16.block16_crest_factor_max": 3.897634878754616,
+    "naive_ablation.bf16.block16_crest_factor_mean": 2.1385406255722046,
+    "naive_ablation.bf16.rel_l2_drift": 0.030027147382497787,
+    "naive_ablation.bf16.releak_ratio": 3.857022772280061e-07,
+    "naive_ablation.fp8_per_channel.block16_crest_factor_max": 3.901113286614418,
+    "naive_ablation.fp8_per_channel.block16_crest_factor_mean": 2.1377300918102264,
+    "naive_ablation.fp8_per_channel.rel_l2_drift": 0.04002791177481413,
+    "naive_ablation.fp8_per_channel.releak_ratio": 0.0244954158551991,
+    "naive_ablation.int4_b32.block16_crest_factor_max": 3.901047006249428,
+    "naive_ablation.int4_b32.block16_crest_factor_mean": 2.128966525197029,
+    "naive_ablation.int4_b32.rel_l2_drift": 0.10389272077009082,
+    "naive_ablation.int4_b32.releak_ratio": 0.09738487796857953,
+    "naive_ablation.nvfp4_b16.block16_crest_factor_max": 3.895361289381981,
+    "naive_ablation.nvfp4_b16.block16_crest_factor_mean": 2.1396417915821075,
+    "naive_ablation.nvfp4_b16.rel_l2_drift": 0.1052620243281126,
+    "naive_ablation.nvfp4_b16.releak_ratio": 0.09333069529384375,
+    "standard_lancet_h15.bf16.block16_crest_factor_max": 3.8976352363824844,
+    "standard_lancet_h15.bf16.block16_crest_factor_mean": 2.1385406255722046,
+    "standard_lancet_h15.bf16.rel_l2_drift": 0.02988082473166287,
+    "standard_lancet_h15.bf16.releak_ratio": 0.028677889378741384,
+    "standard_lancet_h15.fp8_per_channel.block16_crest_factor_max": 3.901113376021385,
+    "standard_lancet_h15.fp8_per_channel.block16_crest_factor_mean": 2.1377301067113876,
+    "standard_lancet_h15.fp8_per_channel.rel_l2_drift": 0.03991704760119319,
+    "standard_lancet_h15.fp8_per_channel.releak_ratio": 0.038474507397040725,
+    "standard_lancet_h15.int4_b32.block16_crest_factor_max": 3.9010470807552338,
+    "standard_lancet_h15.int4_b32.block16_crest_factor_mean": 2.128966510295868,
+    "standard_lancet_h15.int4_b32.rel_l2_drift": 0.1039016549475491,
+    "standard_lancet_h15.int4_b32.releak_ratio": 0.1038201074115932,
+    "standard_lancet_h15.nvfp4_b16.block16_crest_factor_max": 3.895360842347145,
+    "standard_lancet_h15.nvfp4_b16.block16_crest_factor_mean": 2.1396409422159195,
+    "standard_lancet_h15.nvfp4_b16.rel_l2_drift": 0.10523143131285906,
+    "standard_lancet_h15.nvfp4_b16.releak_ratio": 0.09959952952340245
+  },
+  "summary_ratios": {
+    "fp8_releakage_reduction_ratio": -0.9126953648652152,
+    "int4_b32_releakage_reduction_ratio": 0.2872060048980458,
+    "nvfp4_releakage_reduction_ratio": 0.26148130498149563
+  },
+  "output_path": "results/h18_nvfp4_quant_snap/qwen3_4b_audit.json"
+}

@@ -430,6 +430,40 @@ def test_run_h100_v3_suite_two_gpus_and_mmlu_pro_limit_dry_run() -> None:
         assert line.index("CUDA_VISIBLE_DEVICES=") < line.index("run_tenet_v3_pilot.py")
 
 
+def test_run_h100_v3_suite_auto_stop_pod_and_fail_fast_default_dry_run() -> None:
+    env = dict(os.environ)
+    env["RUNPOD_POD_ID"] = "testpod123"
+    proc = subprocess.run(
+        ["bash", str(SUITE_SCRIPT), "--dry-run", "--auto-stop-pod"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=env,
+    )
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    lines = proc.stdout.splitlines()
+
+    # Default (no --steps) now runs the fail-fast order: h18_audit and
+    # h18_h19_bench must both appear before eval_v2 (and tenet_v3 last).
+    first_positions = {}
+    for name, marker in (
+        ("h18_audit", "audit_h18_qwen3_4b.py"),
+        ("h18_h19_bench", "sml run --config"),
+        ("eval_v2", "run_vllm_open_evals.py"),
+        ("tenet_v3", "run_tenet_v3_pilot.py"),
+    ):
+        matches = [i for i, line in enumerate(lines) if marker in line]
+        assert matches, f"missing {name} dry-run lines"
+        first_positions[name] = matches[0]
+    assert first_positions["h18_audit"] < first_positions["h18_h19_bench"]
+    assert first_positions["h18_h19_bench"] < first_positions["eval_v2"]
+    assert first_positions["eval_v2"] < first_positions["tenet_v3"]
+
+    # --auto-stop-pod emits the (dry-run) pod stop for the given pod id.
+    assert "[dry-run] runpodctl stop pod testpod123" in lines
+
+
 def test_run_h100_v3_suite_rejects_unknown_step() -> None:
     proc = subprocess.run(
         ["bash", str(SUITE_SCRIPT), "--dry-run", "--steps", "eval_v2,bogus_step"],

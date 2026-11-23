@@ -165,6 +165,8 @@ def _row_normalized_basis(direction: torch.Tensor) -> torch.Tensor:
 
 
 def _project_onto(weight: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+    if weight.shape[0] == u.shape[-1] and weight.shape[-1] != u.shape[-1]:
+        return u @ weight  # [k, in]
     return weight @ u.T  # [out, k]
 
 
@@ -208,7 +210,12 @@ def audit_layer_variants(
     u = _row_normalized_basis(direction)
     base_target_energy = float(_project_onto(base, u).norm())
 
-    projection = _project_onto(base, u) @ u  # [out, in]
+    proj_coeff = _project_onto(base, u)
+    projection = (
+        (u.T @ proj_coeff)
+        if (base.shape[0] == u.shape[-1] and base.shape[-1] != u.shape[-1])
+        else (proj_coeff @ u)
+    )  # [out, in]
     naive = base - projection
     h15 = _preserve_row_norms(base - scale * projection, base)
     h18 = project_and_snap_subspace_norm_preserving(

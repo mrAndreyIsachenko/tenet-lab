@@ -9,7 +9,7 @@ Evaluates three model references with ``lm-eval --model vllm`` (or
 3. Tenet release
 
 Suite profiles (``--suite full | quick``; ``full`` has NO default limit):
-- ``full``:  ifeval, hendrycks_math_500, gsm8k_cot, gpqa_diamond_zeroshot,
+- ``full``:  ifeval, hendrycks_math500, gsm8k_cot, gpqa_diamond_zeroshot,
   mmlu_pro + evalplus (humaneval_plus, mbpp_plus) + eqbench
   (eqbench_creative_writing, slop_score)
 - ``quick``: ifeval, gsm8k_cot at limit=40
@@ -31,8 +31,11 @@ lm-eval (and optional evalplus/eqbench entrypoints when installed). Use
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import shutil
+import signal
 import subprocess
 import time
 from collections.abc import Sequence
@@ -50,12 +53,22 @@ DEFAULT_API_BASE = "http://localhost:8080"
 
 ARMS = ("base", "naive", "tenet")
 
+# Zero-shot chat tasks that need the model's chat template with thinking
+# disabled (run separately under ``chat_0shot/`` when ``--split-chat-0shot``).
+ZERO_SHOT_CHAT_TASKS: tuple[str, ...] = ("ifeval", "hendrycks_math500")
+DEFAULT_CHAT_0SHOT_MAX_GEN_TOKS = 1280
+
+# Reference to the pristine subprocess.run so tests that monkeypatch
+# ``subprocess.run`` can be detected (they get the simple code path).
+_ORIG_SUBPROCESS_RUN = subprocess.run
+_ORIG_SUBPROCESS_POPEN = subprocess.Popen
+
 SUITE_PROFILES: dict[str, dict[str, Any]] = {
     "full": {
         "limit": None,
         "tasks": (
             "ifeval",
-            "hendrycks_math_500",
+            "hendrycks_math500",
             "gsm8k_cot",
             "gpqa_diamond_zeroshot",
             "mmlu_pro",
@@ -188,6 +201,8 @@ def build_lm_eval_command(
     max_gen_toks: int = DEFAULT_MAX_GEN_TOKS,
     think_end_token: str = DEFAULT_THINK_END_TOKEN,
     api_base: str | None = None,
+    apply_chat_template: bool = False,
+    enable_thinking: bool | None = None,
 ) -> list[str]:
     """Build the ``lm_eval`` argv for one arm.
 
@@ -213,9 +228,13 @@ def build_lm_eval_command(
             f"gpu_memory_utilization={float(gpu_memory_utilization)}",
             f"max_model_len={int(max_model_len)}",
         ]
-        if think_end_token:
+        if enable_thinking is not None:
+            model_args.append(f"enable_thinking={bool(enable_thinking)}")
+        if think_end_token and enable_thinking is not False:
             model_args.append(f"think_end_token={think_end_token}")
         cmd += ["--model", "vllm", "--model_args", ",".join(model_args)]
+        if apply_chat_template:
+            cmd.append("--apply_chat_template")
         return cmd
 
     if backend == "openai-compatible":
@@ -380,14 +399,40 @@ def _flatten_lm_eval_scores(results: dict[str, Any]) -> dict[str, float]:
                 continue
             if not isinstance(value, (int, float)) or isinstance(value, bool):
                 continue
+            val = round(float(value), 6)
             clean = key.split(",")[0]
-            scores[f"{task}_{clean}"] = round(float(value), 6)
+            scores[f"{task}_{clean}"] = val
+            if task == "gsm8k_cot" and key == "exact_match,strict-match":
+                scores["gsm8k_cot_strict"] = val
+            elif task == "gsm8k_cot" and key == "exact_match,flexible-extract":
+                scores["gsm8k_cot_flexible"] = val
+                scores["gsm8k_math_acc"] = val
+            elif task == "ifeval" and clean == "prompt_level_strict_acc":
+                scores["ifeval_strict"] = val
+            elif task == "ifeval" and clean == "inst_level_strict_acc":
+                scores["ifeval_inst_strict"] = val
+            elif task == "hendrycks_math500" and clean == "exact_match":
+                scores["math_500"] = val
+                scores["hendrycks_math500"] = val
+            elif task == "gpqa_diamond_zeroshot" and clean == "acc":
+                scores["gpqa_diamond"] = val
+                scores["gpqa_diamond_zeroshot"] = val
+            elif task == "mmlu_pro" and clean == "exact_match":
+                scores["mmlu_pro"] = val
     return scores
 
 
 def _load_lm_eval_payload(raw_dir: Path) -> dict[str, Any] | None:
     """Load the main lm-eval results JSON (the one holding a ``results`` dict)."""
-    candidates = sorted(raw_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    candidates = sorted(
+        (
+            p
+            for p in raw_dir.rglob("*.json")
+            if not ({"mmlu_pro", "chat_0shot"} & set(p.relative_to(raw_dir).parts))
+        ),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
     for path in candidates:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -403,7 +448,12 @@ def _load_sample_dicts(raw_dir: Path, results: dict[str, Any] | None) -> list[di
     if isinstance(embedded, list) and embedded:
         return [s for s in embedded if isinstance(s, dict)]
     samples: list[dict[str, Any]] = []
-    for path in sorted(raw_dir.glob("samples_*.jsonl")):
+    sample_files = sorted(
+        p
+        for p in raw_dir.rglob("samples_*.jsonl")
+        if not ({"mmlu_pro", "chat_0shot"} & set(p.relative_to(raw_dir).parts))
+    )
+    for path in sample_files:
         for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line:
@@ -415,6 +465,149 @@ def _load_sample_dicts(raw_dir: Path, results: dict[str, Any] | None) -> list[di
             if isinstance(record, dict):
                 samples.append(record)
     return samples
+
+
+def _find_valid_subtask_payload(sub_dir: Path) -> dict[str, Any] | None:
+    """Find a reusable lm-eval ``results_*.json`` payload for ``--resume``.
+
+    Only lm-eval's own ``results_*.json`` files count (``arm_summary.json`` and
+    hand-written caches do not). mmlu_pro and chat_0shot payloads live in their
+    own subtask directories, so they are excluded by name here.
+    """
+    for path in sorted(sub_dir.rglob("*results*.json")):
+        if {"mmlu_pro", "chat_0shot"} & set(path.relative_to(sub_dir).parts):
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if isinstance(data, dict) and isinstance(data.get("results"), dict) and data["results"]:
+            return data
+    return None
+
+
+class SanityGateError(RuntimeError):
+    """Raised when eval scores or response lengths look implausible."""
+
+
+def validate_open_evals_sanity(
+    scores: dict[str, float],
+    samples: Sequence[dict[str, Any]] = (),
+    *,
+    max_gen_toks: int = DEFAULT_MAX_GEN_TOKS,
+) -> None:
+    """Raise ``SanityGateError`` on near-zero scores or runaway responses."""
+    if scores.get("math_500", 1.0) <= 0.05 or (
+        scores.get("hendrycks_math500_exact_match", 1.0) <= 0.05
+    ):
+        raise SanityGateError(f"math_500 score near zero: {scores}")
+    if scores.get("ifeval_strict", 1.0) <= 0.10 or (
+        scores.get("ifeval_prompt_level_strict_acc", 1.0) <= 0.10
+    ):
+        raise SanityGateError(f"ifeval strict score near zero: {scores}")
+    if len(samples) >= 10:
+        lengths: list[int] = []
+        for sample in samples:
+            if not isinstance(sample, dict):
+                continue
+            resps = sample.get("resps")
+            if (
+                isinstance(resps, list)
+                and resps
+                and isinstance(resps[0], list)
+                and resps[0]
+                and isinstance(resps[0][0], str)
+                and resps[0][0]
+            ):
+                lengths.append(len(resps[0][0]))
+        if lengths:
+            mean_chars = sum(lengths) / len(lengths)
+            if mean_chars > max_gen_toks * 3.5:
+                raise SanityGateError(
+                    f"mean response length {mean_chars:.0f} chars exceeds "
+                    f"3.5x max_gen_toks ({max_gen_toks * 3.5:.0f})"
+                )
+
+
+def _parse_arms(raw: str) -> tuple[str, ...]:
+    """Parse a comma-separated arm subset; dedupe preserving order."""
+    seen: list[str] = []
+    for part in raw.split(","):
+        arm = part.strip()
+        if not arm:
+            continue
+        if arm not in ARMS:
+            raise ValueError(f"Unknown arm {arm!r}; valid arms: {', '.join(ARMS)}")
+        if arm not in seen:
+            seen.append(arm)
+    if not seen:
+        raise ValueError("No valid arms parsed from --arms")
+    return tuple(seen)
+
+
+def _kill_process_group(pid: int) -> None:
+    """Kill a launched subtask's whole process group (vLLM engine included)."""
+    with contextlib.suppress(ProcessLookupError, OSError):
+        os.killpg(pid, signal.SIGKILL)
+
+
+def _run_subtask_with_cleanup(
+    cmd: list[str], *, log_path: Path | None = None
+) -> tuple[int, str, str]:
+    """Run one lm-eval subtask, killing the process group on failure.
+
+    Returns ``(returncode, stdout, stderr)``. When ``subprocess.run`` has been
+    monkeypatched (tests), fall back to the simple ``subprocess.run`` call.
+    With the real ``Popen`` path, ``start_new_session=True`` puts lm-eval and
+    its ``VLLM::EngineCore`` children in their own process group so a failure
+    never leaks VRAM-holding zombies. When ``log_path`` is provided, combined
+    output is streamed to that file in real time so live tqdm progress is
+    visible on disk.
+    """
+    if subprocess.run is not _ORIG_SUBPROCESS_RUN:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        return proc.returncode, proc.stdout or "", proc.stderr or ""
+    if log_path is not None and subprocess.Popen is _ORIG_SUBPROCESS_POPEN:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        proc = None
+        try:
+            with log_path.open("w", encoding="utf-8") as log_f:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=log_f,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    start_new_session=True,
+                )
+                returncode = proc.wait()
+        except Exception as exc:  # noqa: BLE001 - report any launch/IO failure
+            if proc is not None:
+                _kill_process_group(proc.pid)
+            return 1, "", f"{type(exc).__name__}: {exc}"
+        if returncode != 0 and proc is not None:
+            _kill_process_group(proc.pid)
+        tail = ""
+        with contextlib.suppress(OSError):
+            tail = log_path.read_text(encoding="utf-8", errors="replace")[-8000:]
+        return returncode, "", tail
+    proc = None
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        stdout, stderr = proc.communicate()
+        returncode = proc.returncode
+    except Exception as exc:  # noqa: BLE001 - report any launch/IO failure
+        if proc is not None:
+            _kill_process_group(proc.pid)
+        return 1, "", f"{type(exc).__name__}: {exc}"
+    if returncode != 0:
+        _kill_process_group(proc.pid)
+    return returncode, stdout or "", stderr or ""
 
 
 def _run_optional_tool(
@@ -464,10 +657,20 @@ def _eval_arm(
     think_end_token: str,
     api_base: str | None,
     dry_run: bool,
+    resume: bool = True,
+    max_retries: int = 2,
+    retry_delay_sec: float = 15.0,
+    split_chat_0shot: bool = False,
+    sanity_gate: bool = False,
 ) -> dict[str, Any]:
     raw_dir.mkdir(parents=True, exist_ok=True)
 
-    def _build_cmd(run_tasks: Sequence[str], output_path: Path, run_limit: int | None) -> list[str]:
+    def _build_cmd(
+        run_tasks: Sequence[str],
+        output_path: Path,
+        run_limit: int | None,
+        **overrides: Any,
+    ) -> list[str]:
         return build_lm_eval_command(
             model_ref,
             tasks=run_tasks,
@@ -479,29 +682,49 @@ def _eval_arm(
             tensor_parallel_size=tensor_parallel_size,
             gpu_memory_utilization=gpu_memory_utilization,
             max_model_len=max_model_len,
-            max_gen_toks=max_gen_toks,
+            max_gen_toks=overrides.pop("max_gen_toks", max_gen_toks),
             think_end_token=think_end_token,
             api_base=api_base,
+            **overrides,
         )
 
-    if mmlu_pro_limit is not None and mmlu_pro_limit > 0 and "mmlu_pro" in tasks:
+    # Optionally split the zero-shot chat tasks into their own run: chat
+    # template applied, thinking disabled, capped generation length.
+    chat_tasks = tuple(t for t in tasks if t in ZERO_SHOT_CHAT_TASKS) if split_chat_0shot else ()
+    non_chat_tasks = tuple(t for t in tasks if t not in chat_tasks)
+    runs: list[tuple[Sequence[str], Path, int | None, dict[str, Any]]] = []
+    if mmlu_pro_limit is not None and mmlu_pro_limit > 0 and "mmlu_pro" in non_chat_tasks:
         # Split the run: everything except mmlu_pro at the suite limit, and
         # mmlu_pro alone into its own subdirectory with the override limit.
-        other_tasks = tuple(t for t in tasks if t != "mmlu_pro")
+        other_tasks = tuple(t for t in non_chat_tasks if t != "mmlu_pro")
         mmlu_dir = raw_dir / "mmlu_pro"
-        cmds: list[list[str]] = []
-        sub_dirs: list[Path] = []
         if other_tasks:
-            cmds.append(_build_cmd(other_tasks, raw_dir, limit))
-            sub_dirs.append(raw_dir)
-        cmds.append(_build_cmd(("mmlu_pro",), mmlu_dir, mmlu_pro_limit))
-        sub_dirs.append(mmlu_dir)
-    else:
-        cmds = [_build_cmd(tasks, raw_dir, limit)]
-        sub_dirs = [raw_dir]
+            runs.append((other_tasks, raw_dir, limit, {}))
+        runs.append((("mmlu_pro",), mmlu_dir, mmlu_pro_limit, {}))
+    elif non_chat_tasks:
+        runs.append((non_chat_tasks, raw_dir, limit, {}))
+    if chat_tasks:
+        runs.append(
+            (
+                chat_tasks,
+                raw_dir / "chat_0shot",
+                limit,
+                {
+                    "apply_chat_template": True,
+                    "enable_thinking": False,
+                    "max_gen_toks": min(max_gen_toks, DEFAULT_CHAT_0SHOT_MAX_GEN_TOKS),
+                },
+            )
+        )
+    cmds = [
+        _build_cmd(run_tasks, out_dir, run_limit, **overrides)
+        for run_tasks, out_dir, run_limit, overrides in runs
+    ]
+    sub_dirs = [out_dir for _, out_dir, _, _ in runs]
 
-    record: dict[str, Any] = {"arm": arm, "model": model_ref, "command": cmds[0]}
-    if len(cmds) > 1:
+    record: dict[str, Any] = {"arm": arm, "model": model_ref}
+    if cmds:
+        record["command"] = cmds[0]
         record["commands"] = cmds
     if dry_run:
         record["status"] = "dry-run"
@@ -513,14 +736,40 @@ def _eval_arm(
     lm_eval_version: str | None = None
     payload_found = False
     for cmd, sub_dir in zip(cmds, sub_dirs, strict=True):
+        if resume and not dry_run:
+            cached_payload = _find_valid_subtask_payload(sub_dir)
+            if cached_payload is not None:
+                print(f"[{arm}] Resuming: reusing cached results under {sub_dir}", flush=True)
+                payload_found = True
+                scores.update(_flatten_lm_eval_scores(cached_payload))
+                if lm_eval_version is None:
+                    lm_eval_version = cached_payload.get("git_hash") or cached_payload.get(
+                        "config", {}
+                    ).get("lm_eval_version")
+                samples.extend(_load_sample_dicts(sub_dir, cached_payload))
+                continue
         print(f"[{arm}] Running: {' '.join(cmd)}", flush=True)
         t0 = time.time()
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        attempts = max(1, 1 + max(0, int(max_retries)))
+        returncode, stdout, stderr = 1, "", ""
+        for attempt in range(attempts):
+            returncode, stdout, stderr = _run_subtask_with_cleanup(
+                cmd, log_path=sub_dir / "lm_eval_live.log"
+            )
+            if returncode == 0:
+                break
+            if attempt < attempts - 1:
+                print(
+                    f"[{arm}] attempt {attempt + 1}/{attempts} failed (rc={returncode}); "
+                    f"retrying in {retry_delay_sec}s",
+                    flush=True,
+                )
+                time.sleep(retry_delay_sec)
         elapsed += time.time() - t0
-        if proc.returncode != 0:
+        if returncode != 0:
             record["elapsed_seconds"] = round(elapsed, 1)
             record["status"] = "error"
-            record["error"] = (proc.stderr or proc.stdout or "")[-4000:]
+            record["error"] = (stderr or stdout or "")[-4000:]
             print(f"[{arm}] lm-eval FAILED in {round(elapsed, 1)}s", flush=True)
             return record
         results = _load_lm_eval_payload(sub_dir)
@@ -534,6 +783,9 @@ def _eval_arm(
                 "lm_eval_version"
             )
         samples.extend(_load_sample_dicts(sub_dir, results))
+
+    if sanity_gate and payload_found:
+        validate_open_evals_sanity(scores, samples, max_gen_toks=max_gen_toks)
 
     record["elapsed_seconds"] = round(elapsed, 1)
     record["status"] = "ok"
@@ -618,12 +870,55 @@ def main() -> int:
     parser.add_argument("--max-gen-toks", type=int, default=DEFAULT_MAX_GEN_TOKS)
     parser.add_argument("--think-end-token", default=DEFAULT_THINK_END_TOKEN)
     parser.add_argument(
+        "--arms",
+        default="base,naive,tenet",
+        help="Comma-separated subset of arms to run (default: base,naive,tenet)",
+    )
+    parser.add_argument(
+        "--resume",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Reuse cached subtask/arm results when present (default: yes)",
+    )
+    parser.add_argument(
+        "--split-chat-0shot",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Split zero-shot chat tasks (ifeval, hendrycks_math500) into a "
+            "separate chat-template run with thinking disabled"
+        ),
+    )
+    parser.add_argument(
+        "--sanity-gate",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Fail the arm when scores or response lengths look implausible",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=2,
+        help="Retries per failed lm-eval subtask (total attempts = 1 + retries)",
+    )
+    parser.add_argument(
+        "--retry-delay-sec",
+        type=float,
+        default=15.0,
+        help="Seconds to sleep between subtask retry attempts",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true", help="Print commands and exit without running"
     )
     args = parser.parse_args()
 
     if args.backend == "hf":
         parser.error("--backend hf is not supported here; use run_external_benchmark_3way.py")
+    try:
+        selected_arms = _parse_arms(args.arms)
+    except ValueError as exc:
+        parser.error(str(exc))
+        raise SystemExit(2) from None  # unreachable; parser.error exits
     backend = "openai-compatible" if args.precision == "gguf" else args.backend
     if args.precision == "gguf" and args.backend != "openai-compatible":
         print(
@@ -641,7 +936,24 @@ def main() -> int:
     base_raw = REPO_ROOT / "results" / "external_evals" / args.release_id / "raw"
     arms: dict[str, dict[str, Any]] = {}
     model_refs = {"base": args.base_model, "naive": args.naive_model, "tenet": args.tenet_repo}
-    for arm in ARMS:
+    for arm in selected_arms:
+        summary_path = base_raw / arm / "arm_summary.json"
+        if args.resume and summary_path.exists() and not args.dry_run:
+            try:
+                cached = json.loads(summary_path.read_text(encoding="utf-8"))
+                if (
+                    isinstance(cached, dict)
+                    and cached.get("status") == "ok"
+                    and cached.get("scores")
+                ):
+                    print(
+                        f"[{arm}] Reusing completed arm_summary.json under {summary_path}",
+                        flush=True,
+                    )
+                    arms[arm] = cached
+                    continue
+            except (json.JSONDecodeError, OSError):
+                pass
         arms[arm] = _eval_arm(
             arm,
             model_refs[arm],
@@ -662,19 +974,50 @@ def main() -> int:
             think_end_token=args.think_end_token,
             api_base=args.api_base,
             dry_run=args.dry_run,
+            resume=args.resume,
+            max_retries=args.max_retries,
+            retry_delay_sec=args.retry_delay_sec,
+            split_chat_0shot=args.split_chat_0shot,
+            sanity_gate=args.sanity_gate,
         )
-        (base_raw / arm / "arm_summary.json").write_text(
-            json.dumps(arms[arm], indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
+        if not args.dry_run:
+            tmp_path = summary_path.with_suffix(".json.tmp")
+            tmp_path.write_text(
+                json.dumps(arms[arm], indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            os.replace(tmp_path, summary_path)
 
     if args.dry_run:
         print("Dry run complete; no lm-eval/vllm processes were launched.", flush=True)
         return 0
 
-    failed = [arm for arm in ARMS if arms[arm].get("status") == "error"]
+    # Partial --arms runs: try to fill missing arms from cached summaries so a
+    # complete 3-way report can still be produced.
+    for arm in (a for a in ARMS if a not in arms):
+        summary_path = base_raw / arm / "arm_summary.json"
+        if not summary_path.exists():
+            continue
+        try:
+            cached = json.loads(summary_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if isinstance(cached, dict) and cached.get("status") == "ok" and cached.get("scores"):
+            print(f"[{arm}] Filling missing arm from cached {summary_path}", flush=True)
+            arms[arm] = cached
+
+    failed = [arm for arm, rec in arms.items() if rec.get("status") == "error"]
     if failed:
         print(f"ERROR: arms failed: {', '.join(failed)}", flush=True)
         return 1
+
+    if set(arms) != set(ARMS):
+        missing = [arm for arm in ARMS if arm not in arms]
+        print(
+            f"Partial run: completed arms {sorted(arms)}; missing {missing}; "
+            "skipping 3-way report (per-arm summaries saved).",
+            flush=True,
+        )
+        return 0
 
     payload: dict[str, Any] = {
         "model_id": args.release_id,

@@ -1,0 +1,52 @@
+{
+  "experiment_id": "h18_nvfp4_quant_snap",
+  "hypothesis_id": "H18",
+  "seed": 2026,
+  "nvfp4_releakage_reduction_ratio": 0.32582992079216955,
+  "int4_b32_releakage_reduction_ratio": 0.09619256749529419,
+  "h18_nvfp4_kl_reduction_ratio": 0.17054936888157907,
+  "max_block16_crest_factor": 3.369473457336426,
+  "max_row_crest_factor": 4.88852071762085,
+  "snap_weight_rel_l2_drift": 0.00871897954493761,
+  "h18_verified": false,
+  "kl_naive_nvfp4": 0.0018584404606372118,
+  "kl_lancet_nvfp4": 0.0015514087863266468,
+  "kl_h18_nvfp4": 0.0015414846129715443,
+  "kl_naive_int4_b32": 0.0015665892278775573,
+  "kl_lancet_int4_b32": 0.0013007912784814835,
+  "kl_h18_int4_b32": 0.0012923295143991709,
+  "nvfp4_subspace_releakage_naive": 0.49158284124472607,
+  "nvfp4_subspace_releakage_lancet": 0.12444847397843675,
+  "nvfp4_subspace_releakage_h18": 0.08389943755933633,
+  "int4_b32_subspace_releakage_naive": 0.5084322033908917,
+  "int4_b32_subspace_releakage_lancet": 0.0920732597668025,
+  "int4_b32_subspace_releakage_h18": 0.0832164965121726,
+  "arms": {
+    "naive": {
+      "kl_bf16_vs_nvfp4": 0.0018584404606372118,
+      "kl_bf16_vs_int4_b32": 0.0015665892278775573,
+      "nvfp4_subspace_releakage": 0.49158284124472607,
+      "int4_b32_subspace_releakage": 0.5084322033908917
+    },
+    "lancet": {
+      "kl_bf16_vs_nvfp4": 0.0015514087863266468,
+      "kl_bf16_vs_int4_b32": 0.0013007912784814835,
+      "nvfp4_subspace_releakage": 0.12444847397843675,
+      "int4_b32_subspace_releakage": 0.0920732597668025
+    },
+    "h18": {
+      "kl_bf16_vs_nvfp4": 0.0015414846129715443,
+      "kl_bf16_vs_int4_b32": 0.0012923295143991709,
+      "nvfp4_subspace_releakage": 0.08389943755933633,
+      "int4_b32_subspace_releakage": 0.0832164965121726
+    }
+  },
+  "quant_format": "nvfp4_e2m1_fp8_scale_block16",
+  "int4_group_size": 32,
+  "block_size": 16,
+  "max_block_cf": 3.2,
+  "num_iters": 4,
+  "step_size": 0.75,
+  "elapsed_seconds": 10.064,
+  "run_path": "results/h18_nvfp4_quant_snap"
+}

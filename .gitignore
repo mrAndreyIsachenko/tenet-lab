@@ -49,3 +49,4 @@ reports/release_kit/*.pdf
 .env
 .env.*
 !.env.example
+.harness/
