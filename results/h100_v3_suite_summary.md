@@ -10,6 +10,8 @@ _Generated from `results/` — missing sources are skipped._
 |---|---|---|
 | Tenet-12B-Nemo-Unslop-v1.json | base |
 | Tenet-14B-Qwen3-Unslop-v2.json | base |
+| Tenet-24B-Mistral3.1-Unslop-v3.json | base |
+| Tenet-26B-A4B-Gemma4-Unslop-v3.json | base |
 | Tenet-32B-Qwen2.5-Unslop-v1.json | base |
 | Tenet-32B-Qwen3-Unslop-v2.json | base |
 | Tenet-3B-Qwen2.5-Unslop-v1.json | base |
@@ -82,6 +84,13 @@ _Generated from `results/` — missing sources are skipped._
 | num_sampled_responses | 4884 | 4884 | 4884 | +0.0000 | +0.0000 |
 | evalplus | {'humaneval_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'Qwen/Qwen3-8B', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}, 'mbpp_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'Qwen/Qwen3-8B', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}} | {'humaneval_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'huihui-ai/Qwen3-8B-abliterated', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}, 'mbpp_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'huihui-ai/Qwen3-8B-abliterated', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}} | {'humaneval_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}, 'mbpp_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}} | - | - |
 | eqbench | {'eqbench_creative_writing': {'status': 'error', 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'Qwen/Qwen3-8B', '--components', 'creative_writing', '--url', 'http://localhost:8080']}, 'slop_score': {'status': 'error', 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'Qwen/Qwen3-8B', '--components', 'slop_score', '--url', 'http://localhost:8080']}} | {'eqbench_creative_writing': {'status': 'error', 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'huihui-ai/Qwen3-8B-abliterated', '--components', 'creative_writing', '--url', 'http://localhost:8080']}, 'slop_score': {'status': 'error', 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'huihui-ai/Qwen3-8B-abliterated', '--components', 'slop_score', '--url', 'http://localhost:8080']}} | {'eqbench_creative_writing': {'status': 'error', 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2', '--components', 'creative_writing', '--url', 'http://localhost:8080']}, 'slop_score': {'status': 'error', 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2', '--components', 'slop_score', '--url', 'http://localhost:8080']}} | - | - |
+
+### v3-era external eval files
+
+| file | file |
+|---|---|
+| Tenet-24B-Mistral3.1-Unslop-v3.json |
+| Tenet-26B-A4B-Gemma4-Unslop-v3.json |
 
 ## 2. H18 Quant-Snap Audit on `Qwen/Qwen3-4B` (NVFP4 block-16, INT4 block-32, FP8 per-channel)
 
@@ -1235,4 +1244,217 @@ _Generated from `results/` — missing sources are skipped._
 
 ## 4. Tenet v3 (H20 + H18 Quant-Snap) Non-Qwen/Meta Pilot
 
-_No `results/tenet_releases/*v3*/foundry_summary.json` found — run `scripts/run_tenet_v3_pilot.py` first._
+### Pilot releases
+
+| file | release_id | target | model_id | status | quant_snap | beta | eval_suite |
+|---|---|---|---|---|---|---|---|
+| Tenet-24B-Mistral3.1-Unslop-v3 | dense | mistralai/Mistral-Small-3.1-24B-Instruct-2503 | ok | True | 1 | full |
+| Tenet-26B-A4B-Gemma4-Unslop-v3 | moe | google/gemma-4-26b-a4b-it | ok | True | 1 | full |
+
+
+#### `Tenet-24B-Mistral3.1-Unslop-v3` (full summary)
+
+| metric | value |
+|---|---|
+| release_id | Tenet-24B-Mistral3.1-Unslop-v3 |
+| target | dense |
+| model_id | mistralai/Mistral-Small-3.1-24B-Instruct-2503 |
+| naive_model | mistralai/Mistral-Small-3.1-24B-Instruct-2503 |
+| hoop | H20 |
+| quant_snap | True |
+| quant_snap_iters | 4 |
+| beta | 1 |
+| eval_suite | full |
+| artifacts_dir | /workspace/tenet_materialized/Tenet-24B-Mistral3.1-Unslop-v3 |
+| started_at | 2026-11-23T22:12:06 |
+| model_info.model_id | mistralai/Mistral-Small-3.1-24B-Instruct-2503 |
+| model_info.architecture | Mistral3ForConditionalGeneration |
+| model_info.num_hidden_layers | 40 |
+| model_info.hidden_size | 5120 |
+| model_info.torch_dtype | torch.bfloat16 |
+| model_info.has_tokenizer | True |
+| model_info.tokenizer_class | MistralCommonBackend |
+| model_info.selected_layers[0] | 22 |
+| model_info.selected_layers[1] | 23 |
+| model_info.selected_layers[2] | 24 |
+| model_info.selected_layers[3] | 25 |
+| model_info.selected_layers[4] | 26 |
+| model_info.selected_layers[5] | 27 |
+| model_info.selected_layers[6] | 28 |
+| model_info.selected_layers[7] | 29 |
+| lancet_basis.extractor | streaming_power_iteration_top2 |
+| lancet_basis.device | cuda |
+| lancet_basis.selected_layers[0] | 22 |
+| lancet_basis.selected_layers[1] | 23 |
+| lancet_basis.selected_layers[2] | 24 |
+| lancet_basis.selected_layers[3] | 25 |
+| lancet_basis.selected_layers[4] | 26 |
+| lancet_basis.selected_layers[5] | 27 |
+| lancet_basis.selected_layers[6] | 28 |
+| lancet_basis.selected_layers[7] | 29 |
+| lancet_basis.num_directions | 8 |
+| lancet_basis.norms.layer_22 | 1.4142 |
+| lancet_basis.norms.layer_23 | 1.4142 |
+| lancet_basis.norms.layer_24 | 1.4142 |
+| lancet_basis.norms.layer_25 | 1.4142 |
+| lancet_basis.norms.layer_26 | 1.4142 |
+| lancet_basis.norms.layer_27 | 1.4142 |
+| lancet_basis.norms.layer_28 | 1.4142 |
+| lancet_basis.norms.layer_29 | 1.4142 |
+| lancet_basis.output_path | /workspace/tenet_materialized/Tenet-24B-Mistral3.1-Unslop-v3/lancet_basis.safetensors |
+| cka_quant_recipe.source | build_cka_quant_recipe |
+| cka_quant_recipe.layers | 0 |
+| surgery.function | apply_lancet_recipe_streaming |
+| surgery.output_dir | /workspace/tenet_materialized/Tenet-24B-Mistral3.1-Unslop-v3 |
+| surgery.scale | 0.35 |
+| surgery.quant_snap | True |
+| surgery.quant_snap_iters | 4 |
+| surgery.result.shards_processed | 10 |
+| surgery.result.tensors_modified | 16 |
+| surgery.result.max_row_norm_drift | 0.0011 |
+| surgery.result.max_row_crest_factor | 9.0078 |
+| surgery.result.provider_ready | True |
+| surgery.result.peak_memory_bytes | 532738 |
+| surgery.result.peak_memory_gb | 0.0005 |
+| surgery.result.peak_disk_shard_bytes | 4886472248 |
+| surgery.result.quant_snap | True |
+| surgery.result.quant_snap_iters | 4 |
+| surgery.result.max_block16_crest_factor | None |
+| fight_card_gate.status | ok |
+| fight_card_gate.num_prompts | 24 |
+| fight_card_gate.total_evaluated | 24 |
+| fight_card_gate.cot_tag_integrity_rate | 1 |
+| fight_card_gate.length_collapse_rate | 0 |
+| fight_card_gate.slop_and_refusal_rate | 0 |
+| fight_card_gate.mean_response_words | 47.0417 |
+| fight_card_gate.mean_cot_words | 16 |
+| fight_card_gate.gate_passed | True |
+| fight_card_gate.gate_details | {'cot_tag_integrity': {'value': 1.0, 'threshold_min': 0.995, 'passed': True}, 'length_collapse': {'value': 0.0, 'threshold_max': 0.01, 'passed': True}, 'slop_and_refusal': {'value': 0.0, 'threshold_max': 0.02, 'passed': True}} |
+| status | ok |
+| vllm_evals.status | ok |
+| vllm_evals.returncode | 0 |
+| vllm_evals.eval_json[0] | results/external_evals/Tenet-24B-Mistral3.1-Unslop-v3.json |
+| hf_upload.status | ok |
+| hf_upload.repo_id | mr-andrey-isachenko/Tenet-24B-Mistral3.1-Unslop-v3 |
+
+
+#### `Tenet-26B-A4B-Gemma4-Unslop-v3` (full summary)
+
+| metric | value |
+|---|---|
+| release_id | Tenet-26B-A4B-Gemma4-Unslop-v3 |
+| target | moe |
+| model_id | google/gemma-4-26b-a4b-it |
+| naive_model | google/gemma-4-26b-a4b-it |
+| hoop | H20 |
+| quant_snap | True |
+| quant_snap_iters | 4 |
+| beta | 1 |
+| eval_suite | full |
+| artifacts_dir | /workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3 |
+| started_at | 2026-11-23T20:18:05 |
+| model_info.model_id | google/gemma-4-26b-a4b-it |
+| model_info.architecture | Gemma4ForConditionalGeneration |
+| model_info.num_hidden_layers | 30 |
+| model_info.hidden_size | 2816 |
+| model_info.torch_dtype | torch.bfloat16 |
+| model_info.has_tokenizer | True |
+| model_info.tokenizer_class | GemmaTokenizer |
+| model_info.selected_layers[0] | 15 |
+| model_info.selected_layers[1] | 16 |
+| model_info.selected_layers[2] | 17 |
+| model_info.selected_layers[3] | 18 |
+| model_info.selected_layers[4] | 19 |
+| model_info.selected_layers[5] | 20 |
+| model_info.selected_layers[6] | 21 |
+| model_info.selected_layers[7] | 22 |
+| lancet_basis.extractor | streaming_power_iteration_top2 |
+| lancet_basis.device | cuda |
+| lancet_basis.selected_layers[0] | 15 |
+| lancet_basis.selected_layers[1] | 16 |
+| lancet_basis.selected_layers[2] | 17 |
+| lancet_basis.selected_layers[3] | 18 |
+| lancet_basis.selected_layers[4] | 19 |
+| lancet_basis.selected_layers[5] | 20 |
+| lancet_basis.selected_layers[6] | 21 |
+| lancet_basis.selected_layers[7] | 22 |
+| lancet_basis.num_directions | 8 |
+| lancet_basis.norms.layer_15 | 1.4142 |
+| lancet_basis.norms.layer_16 | 1.4142 |
+| lancet_basis.norms.layer_17 | 1.4142 |
+| lancet_basis.norms.layer_18 | 1.4142 |
+| lancet_basis.norms.layer_19 | 1.4142 |
+| lancet_basis.norms.layer_20 | 1.4142 |
+| lancet_basis.norms.layer_21 | 1.4142 |
+| lancet_basis.norms.layer_22 | 1.4142 |
+| lancet_basis.output_path | /workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3/lancet_basis.safetensors |
+| cka_quant_recipe.source | build_cka_quant_recipe |
+| cka_quant_recipe.layers | 0 |
+| surgery.function | apply_moe_lancet_recipe_streaming |
+| surgery.output_dir | /workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3 |
+| surgery.scale | 0.35 |
+| surgery.quant_snap | True |
+| surgery.quant_snap_iters | 4 |
+| surgery.reused_existing_shards | 2 |
+| moe_router_freeze.checked | True |
+| moe_router_freeze.router_keys | 30 |
+| moe_router_freeze.router_weight_drift | 0 |
+| moe_router_freeze.router_freeze_ok | True |
+| moe_router_freeze.checked_router_tensors | 30 |
+| fight_card_gate.status | ok |
+| fight_card_gate.num_prompts | 24 |
+| fight_card_gate.total_evaluated | 24 |
+| fight_card_gate.cot_tag_integrity_rate | 1 |
+| fight_card_gate.length_collapse_rate | 0 |
+| fight_card_gate.slop_and_refusal_rate | 0 |
+| fight_card_gate.mean_response_words | 47.0417 |
+| fight_card_gate.mean_cot_words | 16 |
+| fight_card_gate.gate_passed | True |
+| fight_card_gate.gate_details | {'cot_tag_integrity': {'value': 1.0, 'threshold_min': 0.995, 'passed': True}, 'length_collapse': {'value': 0.0, 'threshold_max': 0.01, 'passed': True}, 'slop_and_refusal': {'value': 0.0, 'threshold_max': 0.02, 'passed': True}} |
+| status | ok |
+| vllm_evals.status | ok |
+| vllm_evals.returncode | 0 |
+| vllm_evals.command[0] | /workspace/tenet-lab/.venv/bin/python |
+| vllm_evals.command[1] | /workspace/tenet-lab/scripts/eval/run_vllm_open_evals.py |
+| vllm_evals.command[2] | --release-id |
+| vllm_evals.command[3] | Tenet-26B-A4B-Gemma4-Unslop-v3 |
+| vllm_evals.command[4] | --base-model |
+| vllm_evals.command[5] | google/gemma-4-26b-a4b-it |
+| vllm_evals.command[6] | --naive-model |
+| vllm_evals.command[7] | google/gemma-4-26b-a4b-it |
+| vllm_evals.command[8] | --tenet-repo |
+| vllm_evals.command[9] | /workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3 |
+| vllm_evals.command[10] | --suite |
+| vllm_evals.command[11] | full |
+| vllm_evals.command[12] | --backend |
+| vllm_evals.command[13] | vllm |
+| vllm_evals.command[14] | --precision |
+| vllm_evals.command[15] | bf16 |
+| vllm_evals.command[16] | --batch-size |
+| vllm_evals.command[17] | auto |
+| vllm_evals.command[18] | --max-gen-toks |
+| vllm_evals.command[19] | 8192 |
+| vllm_evals.command[20] | --think-end-token |
+| vllm_evals.command[21] | </think> |
+| vllm_evals.command[22] | --gpu-memory-utilization |
+| vllm_evals.command[23] | 0.85 |
+| vllm_evals.command[24] | --mmlu-pro-limit |
+| vllm_evals.command[25] | 72 |
+| vllm_evals.command[26] | --split-chat-0shot |
+| vllm_evals.command[27] | --resume |
+| vllm_evals.eval_json[0] | /workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v3.json |
+| vllm_evals.export_model_index.returncode | 0 |
+| vllm_evals.export_model_index.stderr_tail |  |
+| hf_upload.status | ok |
+| hf_upload.repo_id | mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v3 |
+| hf_upload.folder | /workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3 |
+| drop_local_weights.dropped_count | 2 |
+| drop_local_weights.freed_bytes | 51612009852 |
+| drop_local_weights.dropped[0] | model-00001-of-00002.safetensors |
+| drop_local_weights.dropped[1] | model-00002-of-00002.safetensors |
+| hf_cache_cleanup.status | ok |
+| hf_cache_cleanup.removed | True |
+| hf_cache_cleanup.path | /root/.cache/huggingface/hub/models--google--gemma-4-26b-a4b-it |
+| hf_cache_cleanup.freed_bytes | 103288682152 |
+| finished_at | 2026-11-23T22:12:05 |
+

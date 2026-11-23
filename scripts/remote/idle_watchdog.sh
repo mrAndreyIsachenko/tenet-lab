@@ -12,7 +12,9 @@ echo "[sml-watchdog] Monitoring GPU utilization every ${CHECK_INTERVAL_SEC}s (sh
 
 while true; do
     UTIL=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits | awk '{ if ($1 > max) max=$1 } END { print max+0 }')
-    if [ "${UTIL}" -lt "${UTIL_THRESHOLD_PCT}" ]; then
+    if pgrep -f "run_tenet_v3_pilot|run_vllm_open_evals|lm_eval|vllm|audit_h18" >/dev/null 2>&1; then
+        IDLE_COUNT=0
+    elif [ "${UTIL}" -lt "${UTIL_THRESHOLD_PCT}" ]; then
         IDLE_COUNT=$((IDLE_COUNT + 1))
         echo "[sml-watchdog] GPU utilization ${UTIL}% < ${UTIL_THRESHOLD_PCT}% (${IDLE_COUNT}/${MAX_IDLE_MINUTES})"
         if [ "${IDLE_COUNT}" -ge "${MAX_IDLE_MINUTES}" ]; then

@@ -938,6 +938,26 @@ def main() -> int:
     model_refs = {"base": args.base_model, "naive": args.naive_model, "tenet": args.tenet_repo}
     for arm in selected_arms:
         summary_path = base_raw / arm / "arm_summary.json"
+        if (
+            arm == "naive"
+            and model_refs.get("naive") == model_refs.get("base")
+            and "base" in arms
+            and arms["base"].get("status") == "ok"
+            and not args.dry_run
+        ):
+            print(
+                f"[naive] naive_model == base_model ({model_refs['naive']}); "
+                "reusing completed base arm scores",
+                flush=True,
+            )
+            arms["naive"] = {**arms["base"], "arm": "naive"}
+            summary_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = summary_path.with_suffix(".json.tmp")
+            tmp_path.write_text(
+                json.dumps(arms["naive"], indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            os.replace(tmp_path, summary_path)
+            continue
         if args.resume and summary_path.exists() and not args.dry_run:
             try:
                 cached = json.loads(summary_path.read_text(encoding="utf-8"))

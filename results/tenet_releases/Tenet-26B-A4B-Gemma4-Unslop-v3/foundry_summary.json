@@ -1,0 +1,152 @@
+{
+  "release_id": "Tenet-26B-A4B-Gemma4-Unslop-v3",
+  "target": "moe",
+  "model_id": "google/gemma-4-26b-a4b-it",
+  "naive_model": "google/gemma-4-26b-a4b-it",
+  "hoop": "H20",
+  "quant_snap": true,
+  "quant_snap_iters": 4,
+  "beta": 1.0,
+  "eval_suite": "full",
+  "artifacts_dir": "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3",
+  "started_at": "2026-11-23T20:18:05",
+  "model_info": {
+    "model_id": "google/gemma-4-26b-a4b-it",
+    "architecture": "Gemma4ForConditionalGeneration",
+    "num_hidden_layers": 30,
+    "hidden_size": 2816,
+    "torch_dtype": "torch.bfloat16",
+    "has_tokenizer": true,
+    "tokenizer_class": "GemmaTokenizer",
+    "selected_layers": [
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22
+    ]
+  },
+  "lancet_basis": {
+    "extractor": "streaming_power_iteration_top2",
+    "device": "cuda",
+    "selected_layers": [
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22
+    ],
+    "num_directions": 8,
+    "norms": {
+      "layer_15": 1.414214,
+      "layer_16": 1.414213,
+      "layer_17": 1.414214,
+      "layer_18": 1.414213,
+      "layer_19": 1.414213,
+      "layer_20": 1.414214,
+      "layer_21": 1.414214,
+      "layer_22": 1.414214
+    },
+    "output_path": "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3/lancet_basis.safetensors"
+  },
+  "cka_quant_recipe": {
+    "source": "build_cka_quant_recipe",
+    "layers": 0
+  },
+  "surgery": {
+    "function": "apply_moe_lancet_recipe_streaming",
+    "output_dir": "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3",
+    "scale": 0.35,
+    "quant_snap": true,
+    "quant_snap_iters": 4,
+    "reused_existing_shards": 2
+  },
+  "moe_router_freeze": {
+    "checked": true,
+    "router_keys": 30,
+    "router_weight_drift": 0.0,
+    "router_freeze_ok": true,
+    "checked_router_tensors": 30,
+    "drifted_keys": []
+  },
+  "fight_card_gate": {
+    "status": "ok",
+    "num_prompts": 24,
+    "total_evaluated": 24,
+    "cot_tag_integrity_rate": 1.0,
+    "length_collapse_rate": 0.0,
+    "slop_and_refusal_rate": 0.0,
+    "mean_response_words": 47.041666666666664,
+    "mean_cot_words": 16.0,
+    "gate_passed": true,
+    "gate_details": "{'cot_tag_integrity': {'value': 1.0, 'threshold_min': 0.995, 'passed': True}, 'length_collapse': {'value': 0.0, 'threshold_max': 0.01, 'passed': True}, 'slop_and_refusal': {'value': 0.0, 'threshold_max': 0.02, 'passed': True}}"
+  },
+  "status": "ok",
+  "vllm_evals": {
+    "status": "ok",
+    "returncode": 0,
+    "command": [
+      "/workspace/tenet-lab/.venv/bin/python",
+      "/workspace/tenet-lab/scripts/eval/run_vllm_open_evals.py",
+      "--release-id",
+      "Tenet-26B-A4B-Gemma4-Unslop-v3",
+      "--base-model",
+      "google/gemma-4-26b-a4b-it",
+      "--naive-model",
+      "google/gemma-4-26b-a4b-it",
+      "--tenet-repo",
+      "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3",
+      "--suite",
+      "full",
+      "--backend",
+      "vllm",
+      "--precision",
+      "bf16",
+      "--batch-size",
+      "auto",
+      "--max-gen-toks",
+      "8192",
+      "--think-end-token",
+      "</think>",
+      "--gpu-memory-utilization",
+      "0.85",
+      "--mmlu-pro-limit",
+      "72",
+      "--split-chat-0shot",
+      "--resume"
+    ],
+    "eval_json": [
+      "/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v3.json"
+    ],
+    "export_model_index": {
+      "returncode": 0,
+      "stderr_tail": ""
+    }
+  },
+  "hf_upload": {
+    "status": "ok",
+    "repo_id": "mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v3",
+    "folder": "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3"
+  },
+  "drop_local_weights": {
+    "dropped_count": 2,
+    "freed_bytes": 51612009852,
+    "dropped": [
+      "model-00001-of-00002.safetensors",
+      "model-00002-of-00002.safetensors"
+    ]
+  },
+  "hf_cache_cleanup": {
+    "status": "ok",
+    "removed": true,
+    "path": "/root/.cache/huggingface/hub/models--google--gemma-4-26b-a4b-it",
+    "freed_bytes": 103288682152
+  },
+  "finished_at": "2026-11-23T22:12:05"
+}

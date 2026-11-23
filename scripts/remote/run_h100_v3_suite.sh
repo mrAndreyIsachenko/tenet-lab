@@ -258,9 +258,13 @@ preflight() {
     echo "error: HF_TOKEN is not set (export it or put it in .env)" >&2
     exit 1
   fi
-  echo "[preflight] starting idle watchdog: scripts/remote/idle_watchdog.sh"
-  bash scripts/remote/idle_watchdog.sh &
-  WATCHDOG_PID=$!
+  if [[ "${ENABLE_IDLE_WATCHDOG:-0}" == "1" ]]; then
+    echo "[preflight] starting idle watchdog: scripts/remote/idle_watchdog.sh"
+    bash scripts/remote/idle_watchdog.sh &
+    WATCHDOG_PID=$!
+  else
+    echo "[preflight] idle_watchdog disabled by default (relying on --auto-stop-pod on exit)"
+  fi
   export PATH="${PWD}/.venv/bin:${PATH}"
   if [[ "${SKIP_UV_SYNC}" == "1" ]]; then
     export UV_NO_SYNC=1
