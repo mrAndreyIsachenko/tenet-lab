@@ -892,6 +892,13 @@ def project_and_snap_subspace_norm_preserving(
     orig_device = weight.device
     orig_dtype = weight.dtype
 
+    # Run the snap loop on the GPU when one is available: the 4-iteration
+    # NVFP4/INT4 quantization simulation dominates runtime on CPU.
+    work_device = orig_device
+    if orig_device.type == "cpu" and torch.cuda.is_available():
+        weight = weight.to(device="cuda")
+        work_device = weight.device
+
     # Step 0: optional micro-block crest-factor hygiene on the raw weight.
     w_hygiene = weight
     if max_block_cf is not None and max_block_cf > 0:
@@ -904,7 +911,7 @@ def project_and_snap_subspace_norm_preserving(
         w_hygiene, directions, scale=scale, preserve_row_norm=preserve_row_norm
     ).to(torch.float32)
 
-    basis = _orthonormalize_basis(directions, device=orig_device)
+    basis = _orthonormalize_basis(directions, device=work_device)
     if not basis:
         return w_lancet.to(device=orig_device, dtype=orig_dtype)
 
@@ -1671,7 +1678,8 @@ def apply_lancet_recipe(
 
 
 _TARGET_WEIGHT_KEY_RE = re.compile(
-    r"^(?:model\.)?layers\.(\d+)\.(self_attn\.o_proj|mlp\.down_proj)\.weight$"
+    r"^(?:model\.|language_model\.model\.|language_model\.|model\.language_model\.)?"
+    r"layers\.(\d+)\.(self_attn\.o_proj|mlp\.down_proj)\.weight$"
 )
 
 
@@ -1743,7 +1751,7 @@ def _compute_row_crest_factor(weight: torch.Tensor) -> float:
     """
     if weight.ndim != 2 or weight.numel() == 0:
         return 1.0
-    norms = weight.float().norm(dim=-1)
+    norms = torch.linalg.vector_norm(weight, ord=2, dim=-1, dtype=torch.float32)
     mean_norm = norms.mean().clamp_min(1e-8)
     return float((norms.max() / mean_norm).item())
 
@@ -1884,10 +1892,13 @@ def apply_lancet_recipe_streaming(
         if index_data is not None:
             index_src = src_dir / "model.safetensors.index.json"
             shutil.copy2(index_src, dst_dir / "model.safetensors.index.json")
-        for aux_name in ("config.json", "tokenizer.json", "tokenizer_config.json"):
-            aux_path = src_dir / aux_name
-            if aux_path.is_file():
-                shutil.copy2(aux_path, dst_dir / aux_name)
+        for aux_path in sorted(src_dir.glob("*")):
+            name = aux_path.name
+            if not aux_path.is_file() or name.endswith(".safetensors"):
+                continue
+            if name == "model.safetensors.index.json":
+                continue
+            shutil.copy2(aux_path, dst_dir / name)
 
     return {
         "shards_processed": len(shards),
@@ -2608,13 +2619,19 @@ def apply_moe_lancet_recipe_streaming(
 
                 # kind == "routed_expert_packed": 3D (E, out, in) stacked experts.
                 any_expert_edited = False
-                for e_idx in range(int(tensor.shape[0])):
+                orig_expert_device = tensor.device
+                work_tensor = (
+                    tensor.to(device="cuda")
+                    if orig_expert_device.type == "cpu" and torch.cuda.is_available()
+                    else tensor
+                )
+                for e_idx in range(int(work_tensor.shape[0])):
                     s_e = 1.0 if selective is None else float(selective[e_idx])
                     if s_e <= min_selective_weight or s_e <= 1e-8:
                         skipped_routed_experts += 1
                         continue
-                    tensor[e_idx] = _apply_lancet_to_weight(
-                        tensor[e_idx],
+                    work_tensor[e_idx] = _apply_lancet_to_weight(
+                        work_tensor[e_idx],
                         dirs,
                         scale=scale * s_e,
                         quant_snap=use_quant_snap,
@@ -2625,6 +2642,9 @@ def apply_moe_lancet_recipe_streaming(
                     edited_routed_experts += 1
                     any_expert_edited = True
                 if any_expert_edited:
+                    if work_tensor.device != orig_expert_device:
+                        shard_tensors[key] = work_tensor.to(device=orig_expert_device)
+                        del work_tensor
                     edited_layers.append(layer_idx)
 
             # Verify routers survived the shard pass bit-for-bit.

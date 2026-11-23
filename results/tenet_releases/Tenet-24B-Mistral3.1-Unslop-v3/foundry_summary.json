@@ -1,0 +1,106 @@
+{
+  "release_id": "Tenet-24B-Mistral3.1-Unslop-v3",
+  "target": "dense",
+  "model_id": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+  "naive_model": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+  "hoop": "H20",
+  "quant_snap": true,
+  "quant_snap_iters": 4,
+  "beta": 1.0,
+  "eval_suite": "full",
+  "artifacts_dir": "/workspace/tenet_materialized/Tenet-24B-Mistral3.1-Unslop-v3",
+  "started_at": "2026-11-23T22:12:06",
+  "model_info": {
+    "model_id": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+    "architecture": "Mistral3ForConditionalGeneration",
+    "num_hidden_layers": 40,
+    "hidden_size": 5120,
+    "torch_dtype": "torch.bfloat16",
+    "has_tokenizer": true,
+    "tokenizer_class": "MistralCommonBackend",
+    "selected_layers": [
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29
+    ]
+  },
+  "lancet_basis": {
+    "extractor": "streaming_power_iteration_top2",
+    "device": "cuda",
+    "selected_layers": [
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29
+    ],
+    "num_directions": 8,
+    "norms": {
+      "layer_22": 1.414214,
+      "layer_23": 1.414213,
+      "layer_24": 1.414213,
+      "layer_25": 1.414214,
+      "layer_26": 1.414214,
+      "layer_27": 1.414214,
+      "layer_28": 1.414214,
+      "layer_29": 1.414214
+    },
+    "output_path": "/workspace/tenet_materialized/Tenet-24B-Mistral3.1-Unslop-v3/lancet_basis.safetensors"
+  },
+  "cka_quant_recipe": {
+    "source": "build_cka_quant_recipe",
+    "layers": 0
+  },
+  "surgery": {
+    "function": "apply_lancet_recipe_streaming",
+    "output_dir": "/workspace/tenet_materialized/Tenet-24B-Mistral3.1-Unslop-v3",
+    "scale": 0.35,
+    "quant_snap": true,
+    "quant_snap_iters": 4,
+    "result": {
+      "shards_processed": 10,
+      "tensors_modified": 16,
+      "max_row_norm_drift": 0.0011110305786132812,
+      "max_row_crest_factor": 9.00778579711914,
+      "provider_ready": true,
+      "peak_memory_bytes": 532738,
+      "peak_memory_gb": 0.0004961509257555008,
+      "peak_disk_shard_bytes": 4886472248,
+      "quant_snap": true,
+      "quant_snap_iters": 4,
+      "max_block16_crest_factor": "None"
+    }
+  },
+  "fight_card_gate": {
+    "status": "ok",
+    "num_prompts": 24,
+    "total_evaluated": 24,
+    "cot_tag_integrity_rate": 1.0,
+    "length_collapse_rate": 0.0,
+    "slop_and_refusal_rate": 0.0,
+    "mean_response_words": 47.041666666666664,
+    "mean_cot_words": 16.0,
+    "gate_passed": true,
+    "gate_details": "{'cot_tag_integrity': {'value': 1.0, 'threshold_min': 0.995, 'passed': True}, 'length_collapse': {'value': 0.0, 'threshold_max': 0.01, 'passed': True}, 'slop_and_refusal': {'value': 0.0, 'threshold_max': 0.02, 'passed': True}}"
+  },
+  "status": "ok",
+  "vllm_evals": {
+    "status": "ok",
+    "returncode": 0,
+    "eval_json": [
+      "results/external_evals/Tenet-24B-Mistral3.1-Unslop-v3.json"
+    ]
+  },
+  "hf_upload": {
+    "status": "ok",
+    "repo_id": "mr-andrey-isachenko/Tenet-24B-Mistral3.1-Unslop-v3"
+  }
+}
