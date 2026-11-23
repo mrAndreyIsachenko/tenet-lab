@@ -214,7 +214,7 @@ class TestSuiteProfiles:
         assert profile["limit"] is None
         expected = {
             "ifeval",
-            "hendrycks_math_500",
+            "hendrycks_math500",
             "gsm8k_cot",
             "gpqa_diamond_zeroshot",
             "mmlu_pro",
@@ -290,6 +290,37 @@ class TestBuildLmEvalCommand:
         model_args = cmd[cmd.index("--model_args") + 1]
         assert "base_url=http://localhost:8080/v1" in model_args
         assert "--apply_chat_template" in cmd
+
+    def test_vllm_apply_chat_template_disables_thinking(self, vllm_runner, tmp_path):
+        cmd = vllm_runner.build_lm_eval_command(
+            "org/model",
+            tasks=["ifeval"],
+            output_path=tmp_path,
+            backend="vllm",
+            precision="bf16",
+            apply_chat_template=True,
+            enable_thinking=False,
+        )
+        joined = " ".join(cmd)
+        assert "--apply_chat_template" in cmd
+        model_args = cmd[cmd.index("--model_args") + 1]
+        assert "enable_thinking=False" in model_args
+        # With thinking disabled the think_end_token must be dropped.
+        assert "think_end_token" not in model_args
+        assert "think_end_token=</think>" not in joined
+
+    def test_vllm_default_keeps_think_end_token(self, vllm_runner, tmp_path):
+        cmd = vllm_runner.build_lm_eval_command(
+            "org/model",
+            tasks=["ifeval"],
+            output_path=tmp_path,
+            backend="vllm",
+            precision="bf16",
+        )
+        model_args = cmd[cmd.index("--model_args") + 1]
+        assert "think_end_token=</think>" in model_args
+        assert "enable_thinking" not in model_args
+        assert "--apply_chat_template" not in cmd
 
     def test_unsupported_backend_raises(self, vllm_runner, tmp_path):
         with pytest.raises(ValueError):
@@ -414,7 +445,7 @@ class TestEvalArmMmluProSplit:
 
         # Main run: everything except mmlu_pro, at the suite limit (None here).
         assert main_cmd[main_cmd.index("--tasks") + 1] == (
-            "ifeval,hendrycks_math_500,gsm8k_cot,gpqa_diamond_zeroshot"
+            "ifeval,hendrycks_math500,gsm8k_cot,gpqa_diamond_zeroshot"
         )
         assert "--limit" not in main_cmd
         assert main_cmd[main_cmd.index("--output_path") + 1] == str(raw_dir)
@@ -464,6 +495,7 @@ class TestEvalArmMmluProSplit:
                 eqbench_tasks=(),
                 mmlu_pro_limit=25,
                 dry_run=False,
+                resume=False,
             ),
         )
 
@@ -476,6 +508,310 @@ class TestEvalArmMmluProSplit:
         # Scores from both raw_dir and raw_dir / 'mmlu_pro' are merged.
         assert record["scores"] == {"ifeval_acc": 0.5, "mmlu_pro_acc": 0.612}
         assert record["unclosed_think_rate"] == 0.0
+
+
+class TestValidateOpenEvalSanity:
+    def test_near_zero_math_raises(self, vllm_runner):
+        with pytest.raises(vllm_runner.SanityGateError):
+            vllm_runner.validate_open_evals_sanity({"math_500": 0.0, "ifeval_strict": 0.6})
+
+    def test_near_zero_hendrycks_alias_raises(self, vllm_runner):
+        with pytest.raises(vllm_runner.SanityGateError):
+            vllm_runner.validate_open_evals_sanity(
+                {"hendrycks_math500_exact_match": 0.01, "ifeval_strict": 0.6}
+            )
+
+    def test_near_zero_ifeval_raises(self, vllm_runner):
+        with pytest.raises(vllm_runner.SanityGateError):
+            vllm_runner.validate_open_evals_sanity({"math_500": 0.5, "ifeval_strict": 0.05})
+
+    def test_healthy_scores_pass(self, vllm_runner):
+        vllm_runner.validate_open_evals_sanity({"math_500": 0.5, "ifeval_strict": 0.6})
+
+    def test_runaway_mean_response_length_raises(self, vllm_runner):
+        samples = [{"resps": [["x" * 5000]]} for _ in range(10)]
+        with pytest.raises(vllm_runner.SanityGateError):
+            vllm_runner.validate_open_evals_sanity(
+                {"math_500": 0.5, "ifeval_strict": 0.6}, samples, max_gen_toks=1280
+            )
+
+    def test_short_samples_pass(self, vllm_runner):
+        samples = [{"resps": [["x" * 100]]} for _ in range(10)]
+        vllm_runner.validate_open_evals_sanity(
+            {"math_500": 0.5, "ifeval_strict": 0.6}, samples, max_gen_toks=1280
+        )
+
+
+class TestEvalArmChat0ShotSplit:
+    def test_dry_run_splits_chat_0shot_command(self, vllm_runner, tmp_path):
+        raw_dir = tmp_path / "raw" / "tenet"
+        record = vllm_runner._eval_arm(
+            "tenet",
+            "org/model",
+            **_eval_arm_kwargs(vllm_runner, raw_dir, split_chat_0shot=True),
+        )
+
+        assert record["status"] == "dry-run"
+        cmds = record["commands"]
+        # main (non-chat, non-mmlu) + mmlu_pro split + chat_0shot split.
+        assert len(cmds) == 3
+        chat_cmd = cmds[-1]
+        assert chat_cmd[chat_cmd.index("--tasks") + 1] == "ifeval,hendrycks_math500"
+        assert chat_cmd[chat_cmd.index("--output_path") + 1] == str(raw_dir / "chat_0shot")
+        assert "--apply_chat_template" in chat_cmd
+        chat_model_args = chat_cmd[chat_cmd.index("--model_args") + 1]
+        assert "enable_thinking=False" in chat_model_args
+        assert "think_end_token" not in chat_model_args
+        assert f"max_gen_toks={vllm_runner.DEFAULT_CHAT_0SHOT_MAX_GEN_TOKS}" in chat_cmd
+
+        main_cmd = cmds[0]
+        assert main_cmd[main_cmd.index("--tasks") + 1] == "gsm8k_cot,gpqa_diamond_zeroshot"
+        assert "--apply_chat_template" not in main_cmd
+
+    def test_no_split_keeps_single_main_command(self, vllm_runner, tmp_path):
+        raw_dir = tmp_path / "raw" / "tenet"
+        record = vllm_runner._eval_arm(
+            "tenet",
+            "org/model",
+            **_eval_arm_kwargs(
+                vllm_runner,
+                raw_dir,
+                tasks=("ifeval", "gsm8k_cot"),
+                evalplus_tasks=(),
+                eqbench_tasks=(),
+                mmlu_pro_limit=None,
+                split_chat_0shot=False,
+            ),
+        )
+        cmds = record["commands"]
+        assert len(cmds) == 1
+        assert cmds[0][cmds[0].index("--tasks") + 1] == "ifeval,gsm8k_cot"
+        assert "--apply_chat_template" not in cmds[0]
+
+    def test_loaders_ignore_chat_0shot_subdir(self, vllm_runner, tmp_path):
+        raw_dir = tmp_path / "raw" / "tenet"
+        chat_dir = raw_dir / "chat_0shot"
+        chat_dir.mkdir(parents=True)
+        (raw_dir / "main_results.json").write_text(
+            json.dumps({"results": {"ifeval": {"acc,strict-match": 0.6}}}), encoding="utf-8"
+        )
+        (chat_dir / "chat_results.json").write_text(
+            json.dumps({"results": {"ifeval": {"acc,strict-match": 0.9}}}), encoding="utf-8"
+        )
+
+        payload = vllm_runner._load_lm_eval_payload(raw_dir)
+        assert payload is not None
+        assert payload["results"]["ifeval"]["acc,strict-match"] == 0.6
+
+        chat_payload = vllm_runner._load_lm_eval_payload(chat_dir)
+        assert chat_payload is not None
+        assert chat_payload["results"]["ifeval"]["acc,strict-match"] == 0.9
+
+        assert vllm_runner._find_valid_subtask_payload(chat_dir) is not None
+        # Scanning the parent must not pick up the nested chat_0shot payload.
+        parent_payload = vllm_runner._find_valid_subtask_payload(raw_dir)
+        assert parent_payload is not None
+        assert parent_payload["results"]["ifeval"]["acc,strict-match"] == 0.6
+
+
+class TestParseArms:
+    def test_valid_subset(self, vllm_runner):
+        assert vllm_runner._parse_arms("tenet,base") == ("tenet", "base")
+
+    def test_whitespace_and_dedupe_preserve_order(self, vllm_runner):
+        assert vllm_runner._parse_arms(" base , tenet, base ,tenet") == ("base", "tenet")
+
+    def test_invalid_arm_raises(self, vllm_runner):
+        with pytest.raises(ValueError, match="Unknown arm"):
+            vllm_runner._parse_arms("tenet,quantized")
+
+    def test_empty_raises(self, vllm_runner):
+        with pytest.raises(ValueError, match="No valid arms"):
+            vllm_runner._parse_arms("  ,  ")
+
+
+class TestEvalArmResume:
+    @staticmethod
+    def _prepare_dirs(tmp_path: Path) -> tuple[Path, Path]:
+        raw_dir = tmp_path / "raw" / "tenet"
+        mmlu_dir = raw_dir / "mmlu_pro"
+        mmlu_dir.mkdir(parents=True)
+        (raw_dir / "results_ifeval.json").write_text(
+            json.dumps({"results": {"ifeval": {"acc,strict-match": 0.5}}}),
+            encoding="utf-8",
+        )
+        (mmlu_dir / "results_mmlu_pro.json").write_text("{corrupted json", encoding="utf-8")
+        return raw_dir, mmlu_dir
+
+    def _kwargs(self, vllm_runner: Any, raw_dir: Path, **overrides: Any) -> dict[str, Any]:
+        kwargs = _eval_arm_kwargs(
+            vllm_runner,
+            raw_dir,
+            tasks=("ifeval", "mmlu_pro"),
+            evalplus_tasks=(),
+            eqbench_tasks=(),
+            mmlu_pro_limit=25,
+            dry_run=False,
+        )
+        kwargs.update(overrides)
+        return kwargs
+
+    def test_resume_only_runs_missing_subtask(self, vllm_runner, tmp_path, monkeypatch):
+        raw_dir, mmlu_dir = self._prepare_dirs(tmp_path)
+        invoked: list[list[str]] = []
+
+        class _FakeProc:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        def fake_run(cmd, **kwargs):
+            invoked.append(list(cmd))
+            (mmlu_dir / "results_mmlu_pro.json").write_text(
+                json.dumps({"results": {"mmlu_pro": {"acc": 0.612}}}),
+                encoding="utf-8",
+            )
+            return _FakeProc()
+
+        monkeypatch.setattr(vllm_runner.subprocess, "run", fake_run)
+
+        record = vllm_runner._eval_arm(
+            "tenet", "org/model", **self._kwargs(vllm_runner, raw_dir, resume=True)
+        )
+
+        assert record["status"] == "ok"
+        assert len(invoked) == 1
+        assert invoked[0][invoked[0].index("--output_path") + 1] == str(mmlu_dir)
+        assert record["scores"] == {"ifeval_acc": 0.5, "mmlu_pro_acc": 0.612}
+
+    def test_no_resume_reruns_all_subtasks(self, vllm_runner, tmp_path, monkeypatch):
+        raw_dir, mmlu_dir = self._prepare_dirs(tmp_path)
+        invoked: list[list[str]] = []
+
+        class _FakeProc:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        def fake_run(cmd, **kwargs):
+            invoked.append(list(cmd))
+            if "mmlu_pro" in str(kwargs or "") or cmd[cmd.index("--output_path") + 1].endswith(
+                "mmlu_pro"
+            ):
+                (mmlu_dir / "results_mmlu_pro.json").write_text(
+                    json.dumps({"results": {"mmlu_pro": {"acc": 0.612}}}),
+                    encoding="utf-8",
+                )
+            return _FakeProc()
+
+        monkeypatch.setattr(vllm_runner.subprocess, "run", fake_run)
+
+        record = vllm_runner._eval_arm(
+            "tenet", "org/model", **self._kwargs(vllm_runner, raw_dir, resume=False)
+        )
+
+        assert record["status"] == "ok"
+        assert len(invoked) == 2
+
+
+class TestEvalArmRetries:
+    def test_retry_succeeds_with_process_group_cleanup(self, vllm_runner, tmp_path, monkeypatch):
+        raw_dir = tmp_path / "raw" / "tenet"
+        raw_dir.mkdir(parents=True)
+        killed: list[tuple[int, Any]] = []
+        slept: list[float] = []
+        calls: list[list[str]] = []
+
+        class _FakePopen:
+            def __init__(self, cmd, **kwargs):
+                calls.append(list(cmd))
+                self.pid = 4242
+                self.returncode = 0
+
+            def communicate(self):
+                if len(calls) == 1:
+                    self.returncode = 1
+                    return "", "boom"
+                (raw_dir / "results_ifeval.json").write_text(
+                    json.dumps({"results": {"ifeval": {"acc,strict-match": 0.7}}}),
+                    encoding="utf-8",
+                )
+                return "", ""
+
+        def fake_killpg(pgid, sig):
+            killed.append((pgid, sig))
+
+        def fake_sleep(seconds):
+            slept.append(seconds)
+
+        monkeypatch.setattr(vllm_runner.subprocess, "Popen", _FakePopen)
+        monkeypatch.setattr(vllm_runner.os, "killpg", fake_killpg)
+        monkeypatch.setattr(vllm_runner.time, "sleep", fake_sleep)
+
+        record = vllm_runner._eval_arm(
+            "tenet",
+            "org/model",
+            **_eval_arm_kwargs(
+                vllm_runner,
+                raw_dir,
+                tasks=("ifeval",),
+                evalplus_tasks=(),
+                eqbench_tasks=(),
+                dry_run=False,
+                resume=False,
+                max_retries=2,
+                retry_delay_sec=3.5,
+            ),
+        )
+
+        assert record["status"] == "ok"
+        assert record["scores"] == {"ifeval_acc": 0.7}
+        assert len(calls) == 2
+        assert killed == [(4242, vllm_runner.signal.SIGKILL)]
+        assert slept == [3.5]
+
+    def test_retries_exhausted_reports_error(self, vllm_runner, tmp_path, monkeypatch):
+        raw_dir = tmp_path / "raw" / "tenet"
+        raw_dir.mkdir(parents=True)
+        killed: list[tuple[int, Any]] = []
+        slept: list[float] = []
+        calls: list[list[str]] = []
+
+        class _FakePopen:
+            def __init__(self, cmd, **kwargs):
+                calls.append(list(cmd))
+                self.pid = 777
+                self.returncode = 0
+
+            def communicate(self):
+                self.returncode = 1
+                return "", "boom"
+
+        monkeypatch.setattr(vllm_runner.subprocess, "Popen", _FakePopen)
+        monkeypatch.setattr(vllm_runner.os, "killpg", lambda pgid, sig: killed.append((pgid, sig)))
+        monkeypatch.setattr(vllm_runner.time, "sleep", slept.append)
+
+        record = vllm_runner._eval_arm(
+            "tenet",
+            "org/model",
+            **_eval_arm_kwargs(
+                vllm_runner,
+                raw_dir,
+                tasks=("ifeval",),
+                evalplus_tasks=(),
+                eqbench_tasks=(),
+                dry_run=False,
+                resume=False,
+                max_retries=1,
+                retry_delay_sec=0.0,
+            ),
+        )
+
+        assert record["status"] == "error"
+        assert "boom" in record["error"]
+        assert len(calls) == 2
+        assert killed == [(777, vllm_runner.signal.SIGKILL)] * 2
+        assert slept == [0.0]
 
 
 # ---------------------------------------------------------------------------

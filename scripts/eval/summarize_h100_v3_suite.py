@@ -133,6 +133,12 @@ def section1(results: Path) -> str:
         lines.append(title)
         lines.append("")
         lines.append(md_table(rows, columns=["file", "role"]))
+        for path in v2:
+            v2_data = load_json(path)
+            if isinstance(v2_data, dict) and isinstance(v2_data.get("markdown_report"), str):
+                lines.append("")
+                lines.append(v2_data["markdown_report"].strip())
+                lines.append("")
     else:
         lines.append("_External eval files present but none parseable._\n")
     if v3:

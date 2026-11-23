@@ -1,0 +1,123 @@
+{
+  "experiment_id": "h19_loop_unrolled_lancet",
+  "hypothesis_id": "H19",
+  "seed": 2026,
+  "model_id": "Tenet-Nano-6L-Looped-H19",
+  "num_loop_repeats": 3,
+  "loop_layer_range": [
+    1,
+    3
+  ],
+  "requested_loop_layer_range": [
+    1,
+    4
+  ],
+  "k_loop": 2,
+  "top_k_layers": 2,
+  "scale": 1.0,
+  "lambda_cot": 0.5,
+  "quant_snap": true,
+  "quant_snap_iters": 4,
+  "max_block16_crest_factor": 3.2,
+  "candidate_layers": [
+    1,
+    2,
+    3
+  ],
+  "loop_ticks": [
+    0,
+    1,
+    2
+  ],
+  "selected_layers": [
+    1,
+    2
+  ],
+  "scr_profile": {
+    "1": {
+      "scr": 2.48549442,
+      "signal": 0.01211474,
+      "anchor_kl": 0.00249103,
+      "cot_kl": 0.00476429,
+      "collateral_kl": 0.00487318,
+      "rank": 2.0
+    },
+    "2": {
+      "scr": 2.19126707,
+      "signal": 0.00814859,
+      "anchor_kl": 0.00204513,
+      "cot_kl": 0.00334508,
+      "collateral_kl": 0.00371767,
+      "rank": 2.0
+    },
+    "3": {
+      "scr": 1.16632108,
+      "signal": 0.00322688,
+      "anchor_kl": 0.00075252,
+      "cot_kl": 0.0040264,
+      "collateral_kl": 0.00276572,
+      "rank": 2.0
+    }
+  },
+  "methods": {
+    "naive_single_pass": {
+      "selected_layers": [
+        1,
+        2
+      ],
+      "anchor_kl": 0.0038306075148284435,
+      "cot_kl": 0.00940253771841526,
+      "total_collateral_kl": 0.008531876374036074,
+      "target_shift_kl": 0.020504633896052837,
+      "scr": 2.403015465974001,
+      "effective_rank_per_layer": {
+        "1": 2.0,
+        "2": 2.0
+      },
+      "anchor_orthogonality_error": 1.1920928955078125e-07,
+      "target_orthonormality_error": 0.1018463671207428,
+      "max_row_norm_rel_drift": 5.259137765278865e-07,
+      "max_crest_factor": 1.1706382036209106
+    },
+    "full_rank_unrolled_concat": {
+      "selected_layers": [
+        1,
+        2
+      ],
+      "anchor_kl": 0.007636276073753834,
+      "cot_kl": 0.008158893324434757,
+      "total_collateral_kl": 0.011715722735971212,
+      "target_shift_kl": 0.019600966945290565,
+      "scr": 1.67290524722533,
+      "effective_rank_per_layer": {
+        "1": 6.0,
+        "2": 6.0
+      },
+      "anchor_orthogonality_error": 2.384185791015625e-07,
+      "target_orthonormality_error": 0.9287930130958557,
+      "max_row_norm_rel_drift": 4.044816535042628e-07,
+      "max_crest_factor": 1.1706383228302002
+    },
+    "h19_loop_unrolled_svd_biprojection": {
+      "selected_layers": [
+        1,
+        2
+      ],
+      "anchor_kl": 0.004336508922278881,
+      "cot_kl": 0.009049953892827034,
+      "total_collateral_kl": 0.008861485868692398,
+      "target_shift_kl": 0.02157020755112171,
+      "scr": 2.433877793511704,
+      "effective_rank_per_layer": {
+        "1": 2.0,
+        "2": 2.0
+      },
+      "anchor_orthogonality_error": 2.384185791015625e-07,
+      "target_orthonormality_error": 1.1920928955078125e-07,
+      "max_row_norm_rel_drift": 4.5203663034953934e-07,
+      "max_crest_factor": 1.1706383228302002
+    }
+  },
+  "elapsed_seconds": 33.347,
+  "run_path": "results/h19_loop_unrolled_lancet"
+}

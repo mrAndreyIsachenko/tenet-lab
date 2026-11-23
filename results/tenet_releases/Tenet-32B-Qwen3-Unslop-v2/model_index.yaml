@@ -1,0 +1,78 @@
+model-index:
+- name: mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2
+  results:
+  - task:
+      type: text-generation
+    dataset:
+      name: IFEval
+      type: google/IFEval
+    metrics:
+    - name: Prompt-level Strict Accuracy
+      type: ifeval_strict
+      value: 0.844732
+    - name: Instruction-level Strict Accuracy
+      type: ifeval_inst_strict
+      value: 0.888489
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2
+  - task:
+      type: text-generation
+    dataset:
+      name: MATH-500
+      type: HuggingFaceH4/MATH-500
+    metrics:
+    - name: Accuracy
+      type: math_500
+      value: 0.748
+    - name: Accuracy
+      type: hendrycks_math500
+      value: 0.748
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2
+  - task:
+      type: text-generation
+    dataset:
+      name: GSM8K
+      type: openai/gsm8k
+    metrics:
+    - name: Strict Match
+      type: gsm8k_cot_strict
+      value: 0.809704
+    - name: Accuracy
+      type: gsm8k_math_acc
+      value: 0.921911
+    - name: Flexible Extract
+      type: gsm8k_cot_flexible
+      value: 0.921911
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2
+  - task:
+      type: text-generation
+    dataset:
+      name: GPQA Diamond
+      type: Idavidrein/gpqa
+    metrics:
+    - name: Accuracy
+      type: gpqa_diamond
+      value: 0.40404
+    - name: Zero-shot Accuracy
+      type: gpqa_diamond_zeroshot
+      value: 0.40404
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2
+  - task:
+      type: text-generation
+    dataset:
+      name: MMLU-Pro
+      type: TIGER-Lab/MMLU-Pro
+    metrics:
+    - name: Accuracy
+      type: mmlu_pro
+      value: 0.654762
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-32B-Qwen3-Unslop-v2

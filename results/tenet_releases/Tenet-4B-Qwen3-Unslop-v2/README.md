@@ -23,6 +23,84 @@ tags:
 - safetensors
 - gguf
 - conversational
+model-index:
+- name: mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2
+  results:
+  - task:
+      type: text-generation
+    dataset:
+      name: IFEval
+      type: google/IFEval
+    metrics:
+    - name: Prompt-level Strict Accuracy
+      type: ifeval_strict
+      value: 0.805915
+    - name: Instruction-level Strict Accuracy
+      type: ifeval_inst_strict
+      value: 0.859712
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2
+  - task:
+      type: text-generation
+    dataset:
+      name: MATH-500
+      type: HuggingFaceH4/MATH-500
+    metrics:
+    - name: Accuracy
+      type: math_500
+      value: 0.702
+    - name: Accuracy
+      type: hendrycks_math500
+      value: 0.702
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2
+  - task:
+      type: text-generation
+    dataset:
+      name: GSM8K
+      type: openai/gsm8k
+    metrics:
+    - name: Strict Match
+      type: gsm8k_cot_strict
+      value: 0.88931
+    - name: Accuracy
+      type: gsm8k_math_acc
+      value: 0.780136
+    - name: Flexible Extract
+      type: gsm8k_cot_flexible
+      value: 0.780136
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2
+  - task:
+      type: text-generation
+    dataset:
+      name: GPQA Diamond
+      type: Idavidrein/gpqa
+    metrics:
+    - name: Accuracy
+      type: gpqa_diamond
+      value: 0.343434
+    - name: Zero-shot Accuracy
+      type: gpqa_diamond_zeroshot
+      value: 0.343434
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2
+  - task:
+      type: text-generation
+    dataset:
+      name: MMLU-Pro
+      type: TIGER-Lab/MMLU-Pro
+    metrics:
+    - name: Accuracy
+      type: mmlu_pro
+      value: 0.563492
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2
 ---
 
 # Tenet-4B-Qwen3-Unslop-v2
@@ -128,3 +206,18 @@ print(tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_t
 - **Interactive Inspector & Codebase:** [FP8 & Abliteration Inspector Space](https://huggingface.co/spaces/mr-andrey-isachenko/fp8-abliteration-inspector) · [GitHub: mrAndreyIsachenko/tenet-lab](https://github.com/mrAndreyIsachenko/tenet-lab)
 
 > **Collaboration / Hiring:** Built by Andrey Isachenko (Research Engineer — LLM Systems, Post-Training Subspace Surgery, GRPO, Triton/CUDA & Quantization-Aware Survival). Open to research engineering collaborations, consulting, and full-time roles in post-training, inference systems, and alignment/unslop tooling — reach out via [GitHub](https://github.com/mrAndreyIsachenko/tenet-lab) or [Hugging Face](https://huggingface.co/mr-andrey-isachenko).
+
+---
+
+## Full vLLM OpenEvals (Base vs Naive Abliteration vs Tenet v2)
+
+| Benchmark | Metric | Base (`Qwen/Qwen3-4B`) | Naive (`huihui-ai/Qwen3-4B-abliterated`) | **Tenet v2 (`Tenet-4B-Qwen3-Unslop-v2`)** | **Δ vs Base** | **Δ vs Naive** |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: |
+| **GSM8K CoT** (`n=1319`) | Flexible Extract | 77.10% | 79.15% | **78.01%** | +0.91% | **-1.14%** |
+| **GSM8K CoT** (`n=1319`) | Strict Match | 88.78% | 85.97% | **88.93%** | +0.15% | **+2.96%** |
+| **MATH-500** (`n=500`) | Exact Match | 70.60% | 70.20% | **70.20%** | -0.40% | **+0.00%** |
+| **IFEval** (`n=541`) | Prompt-level Strict | 78.56% | 81.33% | **80.59%** | +2.03% | **-0.74%** |
+| **IFEval** (`n=541`) | Instruction-level Strict | 85.01% | 87.17% | **85.97%** | +0.96% | **-1.20%** |
+| **GPQA Diamond** (`n=198`) | Zero-shot Accuracy | 34.34% | 34.34% | **34.34%** | +0.00% | **+0.00%** |
+| **MMLU-Pro** (`n=1008`) | 5-shot CoT Accuracy | 57.44% | 55.75% | **56.35%** | -1.09% | **+0.60%** |
+| **CoT Tag Integrity** | Unclosed `<think>` Rate | 0.00% | 0.00% | **0.00%** | 0.00% | **0.00%** |

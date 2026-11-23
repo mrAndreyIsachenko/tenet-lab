@@ -752,6 +752,7 @@ _OPEN_EVALS_SPECS: dict[str, tuple[str, str, str]] = {
         "Instruction-level Strict Accuracy",
     ),
     "math_500": ("HuggingFaceH4/MATH-500", "MATH-500", "Accuracy"),
+    "hendrycks_math500": ("HuggingFaceH4/MATH-500", "MATH-500", "Accuracy"),
     "hendrycks_math_500": ("HuggingFaceH4/MATH-500", "MATH-500", "Accuracy"),
     "gsm8k_cot_strict": ("openai/gsm8k", "GSM8K", "Strict Match"),
     "gsm8k_math_acc": ("openai/gsm8k", "GSM8K", "Accuracy"),
@@ -790,6 +791,10 @@ def _open_eval_values(metrics: dict[str, Any]) -> dict[str, Any]:
     ``external_benchmarks_comparison['arms']['tenet']`` < ``open_evals``.
     """
     merged: dict[str, Any] = {}
+    if isinstance(metrics.get("scores"), dict):
+        for key, value in metrics["scores"].items():
+            if key in _OPEN_EVALS_SPECS:
+                merged[key] = value
     for key, value in metrics.items():
         if key in _OPEN_EVALS_SPECS:
             merged[key] = value
