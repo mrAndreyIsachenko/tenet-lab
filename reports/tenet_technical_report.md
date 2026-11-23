@@ -312,3 +312,20 @@ $$\Delta W_{\text{safe}} = (I - U_{\text{ablate}} U_{\text{ablate}}^\top) \Delta
 
 1. **`H18` — NVFP4 / Block-16 Quant-Snap Lancet:** на 8 хирургических слоях `Qwen/Qwen3-4B` ([`qwen3_4b_audit.json`](../results/h18_nvfp4_quant_snap/qwen3_4b_audit.json)) quant-snap-осознанная бипроекция `Lancet` снижает NVFP4 (block-16 scaling) subspace re-leakage на **`26.15%`** и INT4-b32 re-leakage на **`28.72%`**; в синтетическом контролируемом аудите — `32.58%` reduction NVFP4 re-leakage и `17.05%` reduction NVFP4 KL. Строгий block-16 crest-гейт при этом не достигнут: `max_block16_crest_factor = 3.3695 > 3.20` (`h18_verified = false`), поэтому `H18` имеет статус `Partial / Pilot` и требует scaling.
 2. **`H19` — Loop-Unrolled SVD Biprojection Lancet:** на 3-repeat weight-tied looped трансформере `Tenet-Nano-6L-Looped-H19` ([`h19_summary.json`](../results/h19_loop_unrolled_lancet/h19_summary.json)) unrolled per-layer SVD бипроекция достигает **`SCR = 2.4339`** против `2.4030` у naive и `1.6729` у concatenated-anchor при ошибке ортонормальности **`1.19e-7`**.
+
+---
+
+## Дополнение 3 (`H20` & Phase 2 `Tenet v3` Pilots): Router-Frozen MoE Streaming и Cross-Family Quant-Snap Surgery
+
+`H20` (статус **`Partial / Pilot`**) переносит `apply_moe_lancet_recipe_streaming` (frozen router gate, fused `gate_up_proj`/`down_proj` streaming projection) и 4-итерационный Quant-Snap из `H18` на два кросс-семейственных пайлота — `Tenet v3`:
+
+1. **`Tenet-24B-Mistral3.1-Unslop-v3` (`Mistral-Small-3.1-24B-Instruct-2503`):** `max_row_crest_factor = 9.01 < 25.0` (provider-ready). Full vLLM OpenEvals (`suite=full`):
+
+   | Метрика | Base | Tenet v3 | Дельта |
+   | :--- | ---: | ---: | :--- |
+   | IFEval Prompt-Strict | 65.99% | **75.79%** | **`+9.80 pp`** (Inst-Strict: `75.42% → 82.73%`, `+7.31 pp`) |
+   | GSM8K Flex | — | 89.84% | дрейф `< 1.1 pp` |
+   | GPQA Diamond | — | 39.39% | дрейф `< 1.1 pp` |
+   | MMLU-Pro | — | 63.49% | дрейф `< 1.1 pp` |
+
+2. **`Tenet-26B-A4B-Gemma4-Unslop-v3` (`google/gemma-4-26b-a4b-it`, MoE):** Router-Frozen MoE Streaming Top-2 Power-Iteration + Quant-Snap. В 0-shot Chat-режиме модель удерживает **IFEval Strict `86.32%`** (`90.41%` Inst-Strict) и **MATH-500 `75.00%`**; при этом зафиксирована чувствительность MoE router/expert к 5-shot CoT-промптам: GSM8K падает с `66.34%` (Base) до **`21.83%`** при 5-shot `<|thought|>` — задокументированный pilot-вывод о необходимости router-aware few-shot обработки в будущих итерациях.
