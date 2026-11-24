@@ -1,5 +1,5 @@
 {
-  "release_id": "Tenet-26B-A4B-Gemma4-Unslop-v3",
+  "release_id": "Tenet-26B-A4B-Gemma4-Unslop-v2",
   "target": "moe",
   "model_id": "google/gemma-4-26b-a4b-it",
   "naive_model": "google/gemma-4-26b-a4b-it",
@@ -8,7 +8,7 @@
   "quant_snap_iters": 4,
   "beta": 1.0,
   "eval_suite": "full",
-  "artifacts_dir": "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3",
+  "artifacts_dir": "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2",
   "started_at": "2026-11-23T20:18:05",
   "model_info": {
     "model_id": "google/gemma-4-26b-a4b-it",
@@ -53,7 +53,7 @@
       "layer_21": 1.414214,
       "layer_22": 1.414214
     },
-    "output_path": "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3/lancet_basis.safetensors"
+    "output_path": "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2/lancet_basis.safetensors"
   },
   "cka_quant_recipe": {
     "source": "build_cka_quant_recipe",
@@ -61,7 +61,7 @@
   },
   "surgery": {
     "function": "apply_moe_lancet_recipe_streaming",
-    "output_dir": "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3",
+    "output_dir": "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2",
     "scale": 0.35,
     "quant_snap": true,
     "quant_snap_iters": 4,
@@ -95,13 +95,13 @@
       "/workspace/tenet-lab/.venv/bin/python",
       "/workspace/tenet-lab/scripts/eval/run_vllm_open_evals.py",
       "--release-id",
-      "Tenet-26B-A4B-Gemma4-Unslop-v3",
+      "Tenet-26B-A4B-Gemma4-Unslop-v2",
       "--base-model",
       "google/gemma-4-26b-a4b-it",
       "--naive-model",
       "google/gemma-4-26b-a4b-it",
       "--tenet-repo",
-      "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3",
+      "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2",
       "--suite",
       "full",
       "--backend",
@@ -122,7 +122,7 @@
       "--resume"
     ],
     "eval_json": [
-      "/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v3.json"
+      "/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2.json"
     ],
     "export_model_index": {
       "returncode": 0,
@@ -131,8 +131,8 @@
   },
   "hf_upload": {
     "status": "ok",
-    "repo_id": "mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v3",
-    "folder": "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3"
+    "repo_id": "mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2",
+    "folder": "/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2"
   },
   "drop_local_weights": {
     "dropped_count": 2,

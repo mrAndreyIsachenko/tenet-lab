@@ -36,9 +36,9 @@ NAIVE_4B_MODEL="${NAIVE_4B_MODEL:-huihui-ai/Qwen3-4B-abliterated}"
 NAIVE_8B_MODEL="${NAIVE_8B_MODEL:-huihui-ai/Qwen3-8B-abliterated}"
 NAIVE_32B_MODEL="${NAIVE_32B_MODEL:-huihui-ai/Qwen3-32B-abliterated}"
 TENET_V3_MOE_MODEL="${TENET_V3_MOE_MODEL:-google/gemma-4-26b-a4b-it}"
-TENET_V3_MOE_RELEASE="${TENET_V3_MOE_RELEASE:-Tenet-26B-A4B-Gemma4-Unslop-v3}"
+TENET_V3_MOE_RELEASE="${TENET_V3_MOE_RELEASE:-Tenet-26B-A4B-Gemma4-Unslop-v2}"
 TENET_V3_DENSE_MODEL="${TENET_V3_DENSE_MODEL:-mistralai/Mistral-Small-3.1-24B-Instruct-2503}"
-TENET_V3_DENSE_RELEASE="${TENET_V3_DENSE_RELEASE:-Tenet-24B-Mistral3.1-Unslop-v3}"
+TENET_V3_DENSE_RELEASE="${TENET_V3_DENSE_RELEASE:-Tenet-24B-Mistral3.1-Unslop-v2}"
 MMLU_PRO_LIMIT="${MMLU_PRO_LIMIT:-0}"
 DENSE_THINK_END_TOKEN="${DENSE_THINK_END_TOKEN:-}"
 NUM_GPUS="${NUM_GPUS:-1}"
@@ -99,9 +99,9 @@ Environment knobs (defaults):
   NAIVE_8B_MODEL          huihui-ai/Qwen3-8B-abliterated
   NAIVE_32B_MODEL         huihui-ai/Qwen3-32B-abliterated
   TENET_V3_MOE_MODEL      google/gemma-4-26b-a4b-it
-  TENET_V3_MOE_RELEASE    Tenet-26B-A4B-Gemma4-Unslop-v3
+  TENET_V3_MOE_RELEASE    Tenet-26B-A4B-Gemma4-Unslop-v2
   TENET_V3_DENSE_MODEL    mistralai/Mistral-Small-3.1-24B-Instruct-2503
-  TENET_V3_DENSE_RELEASE  Tenet-24B-Mistral3.1-Unslop-v3
+  TENET_V3_DENSE_RELEASE  Tenet-24B-Mistral3.1-Unslop-v2
   V3_EVAL_SUITE           full
   AUTO_STOP_POD           0     (1 or --auto-stop-pod = stop the RunPod pod
                                  via `runpodctl stop pod` after the suite)

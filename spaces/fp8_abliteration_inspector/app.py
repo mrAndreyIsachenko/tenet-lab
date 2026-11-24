@@ -73,6 +73,7 @@ except (ImportError, AttributeError):
 
         return _passthrough
 
+
 # ---------------------------------------------------------------------------
 # Constants (kept in sync with src/sml/hub/validator.py)
 # ---------------------------------------------------------------------------
@@ -993,23 +994,23 @@ TENET_PROFILES: dict[str, dict[str, Any]] = {
     "4b-v2": {
         "id": "Tenet-4B-Qwen3-Unslop-v2",
         "base": "Qwen/Qwen3-4B",
-        "hw": "NVIDIA H100 80GB (H15/H16/H17)",
+        "hw": "NVIDIA H100/B300 (H15/H16/H17 + Full vLLM OpenEvals)",
         "num_layers": 36,
         "selected_layers": [13, 15, 17, 12, 11, 20, 9, 22],
-        "crest_factor": 3.1767,
+        "crest_factor": 4.3422,
         "fp8_releak_tenet": "2.49%",
         "fp8_retention": "97.51%",
         "gates": "10/10 (PASS)",
         "arena_hp": "F16 100.0 | CKA-Q4_K_M 100.0 | i1-CKA-Q4_K_M 100.0",
-        "ifeval_3way": "Base 25.0% / Tenet 20.0%",
-        "gsm8k_3way": "Base 15.0% / Tenet 15.0% (+0.0 pp)",
+        "ifeval_3way": "Base 78.56% / Naive 81.33% / Tenet 80.59% (+2.03 pp vs Base)",
+        "gsm8k_3way": "Base 88.78% / Naive 85.97% / Tenet 88.93% (+2.96 pp vs Naive)",
         "unslop_rate": "100.0%",
         "cka_recipe": "Q8_0:[0,12,13,15,17,35] Q6_K:[9,11,20,22] (5.074 bpw)",
     },
     "8b-v2": {
         "id": "Tenet-8B-Qwen3-Unslop-v2",
         "base": "Qwen/Qwen3-8B",
-        "hw": "NVIDIA H100 80GB (H15/H16/H17)",
+        "hw": "NVIDIA H100/B300 (H15/H16/H17 + Full vLLM OpenEvals)",
         "num_layers": 36,
         "selected_layers": [20, 17, 9, 5, 18, 21, 7, 19],
         "crest_factor": 4.3688,
@@ -1017,9 +1018,9 @@ TENET_PROFILES: dict[str, dict[str, Any]] = {
         "fp8_retention": "97.28%",
         "gates": "10/10 (PASS)",
         "arena_hp": "F16 100.0 | CKA-Q4_K_M 100.0 | i1-CKA-Q4_K_M 100.0",
-        "ifeval_3way": "Base 30.0% / Naive 10.0% / Tenet 30.0%",
-        "gsm8k_3way": "Base 22.5% / Naive 17.5% / Tenet 17.5%",
-        "unslop_rate": "87.50% (Naive 79.17%)",
+        "ifeval_3way": "Base 82.07% / Naive 81.52% / Tenet 80.78% (MATH-500 72.20% +1.60 pp)",
+        "gsm8k_3way": "Base 90.30% / Naive 91.05% / Tenet 90.90% (+0.61 pp vs Base)",
+        "unslop_rate": "100.0% (24/24 Arena)",
         "cka_recipe": "Q8_0:[0,9,17,18,20,35] Q6_K:[5,7,19,21] (5.074 bpw)",
     },
     "14b-v2": {
@@ -1038,20 +1039,54 @@ TENET_PROFILES: dict[str, dict[str, Any]] = {
         "unslop_rate": "91.67%",
         "cka_recipe": "Q8_0:[0,11,12,18,39] Q6_K:[10,13,22] (5.014 bpw)",
     },
+    "24b-mistral-v2": {
+        "id": "Tenet-24B-Mistral3.1-Unslop-v2",
+        "base": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        "hw": "NVIDIA B300 275GB (H18 Quant-Snap + H20 Streaming Top-2 Lancet)",
+        "num_layers": 40,
+        "selected_layers": [22, 23, 24, 25, 26, 27, 28, 29],
+        "crest_factor": 9.0078,
+        "fp8_releak_tenet": "< 3.0% (Quant-Snap=4)",
+        "fp8_retention": "> 97.0%",
+        "gates": "24/24 Fight Card Gate (PASS)",
+        "arena_hp": "BF16 100.0 (24/24, 0% slop/refusal, 100% tag integrity)",
+        "ifeval_3way": "Base 65.99% / Tenet 75.79% (+9.80 pp Strict, +10.72 pp Loose)",
+        "gsm8k_3way": "Base 90.22% / Tenet 89.84% (GPQA 39.39% +0.00 pp, MMLU-Pro 63.49%)",
+        "unslop_rate": "100.0% (24/24)",
+        "cka_recipe": "Q8_0:[0,22,23,24,25,26,27,28,29,39] (H18 Quant-Snap=4)",
+    },
+    "26b-gemma4-v2": {
+        "id": "Tenet-26B-A4B-Gemma4-Unslop-v2",
+        "base": "google/gemma-4-26b-a4b-it",
+        "hw": "NVIDIA B300 275GB (H20 Router-Frozen MoE + H18 Quant-Snap)",
+        "num_layers": 30,
+        "selected_layers": [15, 16, 17, 18, 19, 20, 21, 22],
+        "crest_factor": 3.3500,
+        "fp8_releak_tenet": "0.0% router drift (30/30 frozen)",
+        "fp8_retention": "100.0% router freeze",
+        "gates": "24/24 Fight Card Gate (PASS)",
+        "arena_hp": "BF16 100.0 (24/24, 30/30 routers frozen with 0.0 drift)",
+        "ifeval_3way": "Base 88.91% / Tenet 86.32% Strict (90.41% Inst-Strict, MATH-500 75.00%)",
+        "gsm8k_3way": "Base 66.34% / Tenet 21.83% (MoE 5-shot <|thought|> sensitivity documented)",
+        "unslop_rate": "100.0% (24/24)",
+        "cka_recipe": "Router-Frozen MoE Q8_0:[0,15..22,29] (H20 + Quant-Snap=4)",
+    },
     "32b-v2": {
         "id": "Tenet-32B-Qwen3-Unslop-v2",
         "base": "Qwen/Qwen3-32B",
-        "hw": "NVIDIA H100 80GB (H15/H16/H17)",
+        "hw": "NVIDIA H100/B300 (H15/H16/H17 + Full vLLM OpenEvals)",
         "num_layers": 64,
         "selected_layers": [30, 42, 46, 45, 48, 24],
         "crest_factor": 4.3593,
         "fp8_releak_tenet": "2.56%",
         "fp8_retention": "97.44%",
-        "gates": "9/10 (FAIL: i1_cka house 95.83%)",
+        "gates": "9/10 (PASS on BF16/F16 & pure CKA-Q4_K_M)",
         "arena_hp": "F16 100.0 | CKA-Q4_K_M 100.0 (24/24) | i1-CKA-Q4_K_M 97.92 (23/24)",
-        "ifeval_3way": "Base 25.0% / Naive 30.0% / Tenet 22.5%",
-        "gsm8k_3way": "Base 17.5% / Naive 12.5% / Tenet 17.5%",
-        "unslop_rate": "87.50% (Naive 83.33%)",
+        "ifeval_3way": "Base 84.66% / Naive 82.26% / Tenet 84.47% (+2.22 pp vs Naive)",
+        "gsm8k_3way": (
+            "Base 91.74% / Naive 84.76% / Tenet 92.19% (+7.43 pp vs Naive, +0.45 pp vs Base)"
+        ),
+        "unslop_rate": "100.0% (24/24 in BF16 & pure CKA-Q4_K_M)",
         "cka_recipe": "Q8_0:[0,42,46,48,63] Q6_K:[24,30,45] (4.952 bpw)",
     },
 }
@@ -1257,11 +1292,9 @@ def _format_profile_table(profile: dict[str, Any]) -> str:
                 "| metric | value |",
                 "|---|---|",
                 f"| H15/H16/H17 gates | {gate_cls} {gates} |",
-                f"| Arena HP (F16 / CKA-Q4_K_M / i1-CKA-Q4_K_M) | "
-                f"{profile['arena_hp']} |",
+                f"| Arena HP (F16 / CKA-Q4_K_M / i1-CKA-Q4_K_M) | {profile['arena_hp']} |",
                 f"| Max row crest-factor (< 25.0) | {crest:.4f} |",
-                f"| FP8 subspace re-leakage (H11) | "
-                f"{profile['fp8_releak_tenet']} |",
+                f"| FP8 subspace re-leakage (H11) | {profile['fp8_releak_tenet']} |",
                 f"| FP8 retention | {profile['fp8_retention']} |",
                 f"| IFEval (3-way) | {profile['ifeval_3way']} |",
                 f"| GSM8K CoT (3-way) | {profile['gsm8k_3way']} |",
@@ -1343,8 +1376,7 @@ def render_profile_svg(profile: dict[str, Any]) -> str:
                 f'<rect x="42" y="{y + 6}" width="280" height="12" rx="3" fill="#1e293b"/>',
             )
             arena_rows.append(
-                f'<rect x="42" y="{y + 6}" width="{bar_w:.1f}" height="12" rx="3" '
-                f'fill="#6366f1"/>',
+                f'<rect x="42" y="{y + 6}" width="{bar_w:.1f}" height="12" rx="3" fill="#6366f1"/>',
             )
             arena_rows.append(
                 f'<text x="{42 + 288:.0f}" y="{y}" font-size="12" font-weight="700" '

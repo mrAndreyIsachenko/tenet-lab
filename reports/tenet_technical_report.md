@@ -319,7 +319,7 @@ $$\Delta W_{\text{safe}} = (I - U_{\text{ablate}} U_{\text{ablate}}^\top) \Delta
 
 `H20` (статус **`Partial / Pilot`**) переносит `apply_moe_lancet_recipe_streaming` (frozen router gate, fused `gate_up_proj`/`down_proj` streaming projection) и 4-итерационный Quant-Snap из `H18` на два кросс-семейственных пайлота — `Tenet v3`:
 
-1. **`Tenet-24B-Mistral3.1-Unslop-v3` (`Mistral-Small-3.1-24B-Instruct-2503`):** `max_row_crest_factor = 9.01 < 25.0` (provider-ready). Full vLLM OpenEvals (`suite=full`):
+1. **`Tenet-24B-Mistral3.1-Unslop-v2` (`Mistral-Small-3.1-24B-Instruct-2503`):** `max_row_crest_factor = 9.01 < 25.0` (provider-ready). Full vLLM OpenEvals (`suite=full`):
 
    | Метрика | Base | Tenet v3 | Дельта |
    | :--- | ---: | ---: | :--- |
@@ -328,4 +328,4 @@ $$\Delta W_{\text{safe}} = (I - U_{\text{ablate}} U_{\text{ablate}}^\top) \Delta
    | GPQA Diamond | — | 39.39% | дрейф `< 1.1 pp` |
    | MMLU-Pro | — | 63.49% | дрейф `< 1.1 pp` |
 
-2. **`Tenet-26B-A4B-Gemma4-Unslop-v3` (`google/gemma-4-26b-a4b-it`, MoE):** Router-Frozen MoE Streaming Top-2 Power-Iteration + Quant-Snap. В 0-shot Chat-режиме модель удерживает **IFEval Strict `86.32%`** (`90.41%` Inst-Strict) и **MATH-500 `75.00%`**; при этом зафиксирована чувствительность MoE router/expert к 5-shot CoT-промптам: GSM8K падает с `66.34%` (Base) до **`21.83%`** при 5-shot `<|thought|>` — задокументированный pilot-вывод о необходимости router-aware few-shot обработки в будущих итерациях.
+2. **`Tenet-26B-A4B-Gemma4-Unslop-v2` (`google/gemma-4-26b-a4b-it`, MoE):** Router-Frozen MoE Streaming Top-2 Power-Iteration + Quant-Snap. В 0-shot Chat-режиме модель удерживает **IFEval Strict `86.32%`** (`90.41%` Inst-Strict) и **MATH-500 `75.00%`**; при этом зафиксирована чувствительность MoE router/expert к 5-shot CoT-промптам: GSM8K падает с `66.34%` (Base) до **`21.83%`** при 5-shot `<|thought|>` — задокументированный pilot-вывод о необходимости router-aware few-shot обработки в будущих итерациях.

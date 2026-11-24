@@ -66,3 +66,20 @@ After any environment setup, package install, or script modification on a pod:
 2. **Isolate multi-file codebase exploration in `research` subagents (`Model: "flash"`):**
    - Never perform >3 exploratory `read_file` calls in the main session.
    - Always pass bounded `StartLine` and `EndLine` windows on files over 150 lines.
+
+---
+
+## 4. Release Cadence & Versioning Policy (`Tenet` Model Family)
+
+To prevent version inflation (`v1 → v2 → v3` on every iterative run or benchmark fix) and match industry AI lab standards (Qwen, AllenAI/OLMo, Nous Research):
+
+1. **No Version Bump (Same `vN`, Model Card / Quant Artifact Update Only):**
+   - Re-running or expanding external evaluations (`OpenEvals`, `--split-chat-0shot`, `EvalPlus`), fixing harness flags, or publishing new quantization formats (`CKA-Q4_K_M`, `i1-CKA-Q4_K_M`, `FP8`, `NVFP4`) on unchanged base surgical recipes **never** increments the version number. Update the existing Model Card / JSON index or publish format suffixes under the same `vN`.
+2. **Minor / Point Revision (`v3.1`, `v3.2` — at most once every 2–4 weeks):**
+   - Used for recipe calibration improvements within the same algorithmic paradigm (e.g., SCR threshold tuning, layer-selection refinement, GRPO length-window calibration, or adding a new scale within an existing generation) that demonstrate a verified `+2–3 pp` gain on OpenEvals with zero regression on existing gates.
+   - Internal exploratory runs and ablations stay in `results/` under descriptive run IDs (`h18_...`, `rc1`, `pilot`) and are **not** minted as new public major versions.
+3. **Major Generation (`v3`, `v4` — every 2–6 months, paradigm shift only):**
+   - Reserved strictly for fundamental algorithmic or architectural leaps verified across the full scale ladder (`4B / 8B / 24B–32B+`), where a new pre-registered hypothesis stack systematically outperforms the current generation across both Arena/unslop gates and full `OpenEvals`:
+     - **`v1`:** Dual-Anchor Bi-Projected Lancet (`H9`) + Subspace-Safe GRPO (`H10`) + FP8 Crest Readiness (`H11`) on non-thinking models (`Qwen2.5`, `Llama-3.1`, `Mistral-Nemo`).
+     - **`v2` (Current Frozen Generation):** Thinking-Safe Phase-Segmented Tri-Anchor Lancet (`H15`) + Dual-Window Length-Calibrated GRPO (`H16`) + CKA-GGUF (`H14`) + Cross-Family Dense & Router-Frozen MoE Streaming Quant-Snap Surgery (`H18` + `H20`) across `Qwen3-4B/8B/14B/32B`, `Mistral-Small-3.1-24B`, and `Gemma-4-26B-A4B MoE`.
+     - **`v3` (Future Gate):** Requires a verified next-generation paradigm (e.g., Closed-Loop Activation-Guided MoE routing + Online Unslop GRPO + full `H18` block-16 crest gate closure `< 3.20` + native `FP8`/`NVFP4`/`CKA-GGUF` release artifacts).

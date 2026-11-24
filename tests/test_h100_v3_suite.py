@@ -370,8 +370,8 @@ def test_run_h100_v3_suite_shell_syntax_and_dry_run() -> None:
         '[cleanup_hf_model_cache(m) for m in ["Qwen/Qwen3-4B", '
         '"huihui-ai/Qwen3-4B-abliterated", "mr-andrey-isachenko/Tenet-4B-Qwen3-Unslop-v2"]]'
     ) in out
-    assert "Tenet-26B-A4B-Gemma4-Unslop-v3" in out  # moe release default
-    assert "Tenet-24B-Mistral3.1-Unslop-v3" in out  # dense release default
+    assert "Tenet-26B-A4B-Gemma4-Unslop-v2" in out  # moe release default
+    assert "Tenet-24B-Mistral3.1-Unslop-v2" in out  # dense release default
     assert "Tenet-26B-Gemma4-MoE-Unslop-v3" not in out  # old default removed
     assert "Tenet-24B-Mistral-Small-3.1-Unslop-v3" not in out  # old default removed
 
