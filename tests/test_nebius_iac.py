@@ -137,6 +137,18 @@ def test_makefile_nebius_iac_targets() -> None:
         assert target in mk_text
 
 
+def test_github_actions_nebius_workflow() -> None:
+    """Verify .github/workflows/nebius-infra.yml is valid YAML with workflow_dispatch."""
+    wf_path = REPO_ROOT / ".github" / "workflows" / "nebius-infra.yml"
+    assert wf_path.is_file()
+    wf = yaml.safe_load(wf_path.read_text(encoding="utf-8"))
+    # PyYAML parses bare `on:` as boolean True unless quoted
+    on_block = wf.get("on") if "on" in wf else wf.get(True)
+    assert isinstance(on_block, dict) and "workflow_dispatch" in on_block
+    inputs = on_block["workflow_dispatch"]["inputs"]
+    assert "action" in inputs and "gpu_preset" in inputs
+
+
 def test_cli_terraform_fmt_and_ansible_syntax() -> None:
     """Run terraform fmt -check and ansible-playbook --syntax-check when tools are installed."""
     if shutil.which("terraform"):
