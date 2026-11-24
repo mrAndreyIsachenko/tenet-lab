@@ -1,4 +1,4 @@
-.PHONY: help sync test lint format verify-h1 verify-env compare-adaptation run-surgery verify-h9 verify-h10 verify-h11 verify-h12 build-tenet train-smoke profile-h2-local gpu-smoke smoke report clean pod-preflight pod-sync-daemon pod-sync-stop pod-launch pod-wait
+.PHONY: help sync test lint format verify-h1 verify-env compare-adaptation run-surgery verify-h9 verify-h10 verify-h11 verify-h12 build-tenet train-smoke profile-h2-local gpu-smoke smoke report clean pod-preflight pod-sync-daemon pod-sync-stop pod-launch pod-wait nebius-preflight nebius-start nebius-stop nebius-s3-pull nebius-mlflow-backfill
 
 HARNESS ?= harness
 POD_HOST ?=
@@ -35,6 +35,11 @@ help:
 	@echo "  make pod-sync-stop      Stop the local sync daemon (harness pod sync --stop)"
 	@echo "  make pod-launch         Launch a pod command via harness pod launch"
 	@echo "  make pod-wait           Wait for pod checkpoint via harness pod wait"
+	@echo "  make nebius-preflight   Run Nebius GPU VM & storage preflight checks"
+	@echo "  make nebius-start       Start the Nebius GPU instance"
+	@echo "  make nebius-stop        Stop the Nebius GPU instance (\$0/hr GPU billing)"
+	@echo "  make nebius-s3-pull     Sync results/ down from Nebius Object Storage"
+	@echo "  make nebius-mlflow-backfill  Backfill MLflow history from local runs"
 
 sync:
 	uv sync
@@ -113,6 +118,21 @@ pod-launch:
 pod-wait:
 	@test -n "$(POD_HOST)" || { echo "POD_HOST is required (make pod-wait POD_HOST=<host>)"; exit 1; }
 	$(HARNESS) pod wait --host "$(POD_HOST)" --workdir "$(POD_WORKDIR)" --max-wait-sec "$(POD_MAX_WAIT_SEC)" --local-dir "$(POD_LOCAL_DIR)"
+
+nebius-preflight:
+	bash scripts/remote/nebius_ctl.sh preflight
+
+nebius-start:
+	bash scripts/remote/nebius_ctl.sh start
+
+nebius-stop:
+	bash scripts/remote/nebius_ctl.sh stop
+
+nebius-s3-pull:
+	bash scripts/remote/nebius_ctl.sh s3-sync-down
+
+nebius-mlflow-backfill:
+	uv run python scripts/hub/backfill_mlflow_history.py
 
 report:
 	uv run sml report --results-dir results --output reports/sprint1/summary.md
