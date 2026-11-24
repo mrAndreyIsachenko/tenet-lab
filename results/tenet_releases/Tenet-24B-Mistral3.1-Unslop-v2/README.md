@@ -218,8 +218,8 @@ PARAMETER temperature 0.7
 ```
 
 ```bash
-ollama create tenet-24b-mistral3.1-unslop-v3 -f Modelfile
-ollama run tenet-24b-mistral3.1-unslop-v3
+ollama create tenet-24b-mistral3.1-unslop-v2 -f Modelfile
+ollama run tenet-24b-mistral3.1-unslop-v2
 ```
 
 ### MLX

@@ -51,3 +51,12 @@ results/external_evals/*/raw/
 .env.*
 !.env.example
 .harness/
+
+# Terraform & generated Ansible inventory
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+infra/ansible/inventory/hosts.yml

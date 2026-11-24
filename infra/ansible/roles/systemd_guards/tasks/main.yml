@@ -1,0 +1,38 @@
+---
+- name: Install tenet-s3-sync systemd service
+  ansible.builtin.template:
+    src: tenet-s3-sync.service.j2
+    dest: /etc/systemd/system/tenet-s3-sync.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Install tenet-s3-sync systemd timer (60s interval)
+  ansible.builtin.template:
+    src: tenet-s3-sync.timer.j2
+    dest: /etc/systemd/system/tenet-s3-sync.timer
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Install tenet-idle-watchdog systemd service
+  ansible.builtin.template:
+    src: tenet-idle-watchdog.service.j2
+    dest: /etc/systemd/system/tenet-idle-watchdog.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Flush systemd reload handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start tenet-s3-sync.timer
+  ansible.builtin.systemd:
+    name: tenet-s3-sync.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Enable and start tenet-idle-watchdog.service
+  ansible.builtin.systemd:
+    name: tenet-idle-watchdog.service
+    enabled: true
+    state: started
+    daemon_reload: true

@@ -1,0 +1,11 @@
+[Unit]
+Description=Tenet v3 Continuous Nebius Object Storage Sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ tenet_user }}
+WorkingDirectory={{ tenet_workdir }}
+EnvironmentFile={{ tenet_workdir }}/.env
+ExecStart=/usr/bin/env bash {{ tenet_workdir }}/scripts/remote/nebius_ctl.sh s3-sync-up

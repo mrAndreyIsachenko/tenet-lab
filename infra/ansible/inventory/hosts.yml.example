@@ -1,0 +1,9 @@
+all:
+  hosts:
+    nebius-gpu:
+      ansible_host: 127.0.0.1
+      ansible_user: ubuntu
+      nebius_instance_id: computeinstance-example
+      nebius_s3_bucket: tenet-v3-artifacts
+      mlflow_tracking_uri: https://mlflow.example.nebius.cloud
+      nebius_region: eu-north1

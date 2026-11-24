@@ -1,0 +1,17 @@
+---
+- name: Bootstrap Nebius AI Cloud GPU node for Tenet v3
+  hosts: all
+  become: true
+  vars:
+    tenet_user: "{{ ansible_user | default('ubuntu') }}"
+    tenet_workdir: /mnt/nvme/tenet-lab
+    tenet_repo_url: "{{ lookup('env', 'TENET_REPO_URL') | default('https://github.com/mr-andrey-isachenko/small-model-lab.git', true) }}"
+    tenet_repo_version: "{{ lookup('env', 'TENET_REPO_VERSION') | default('main', true) }}"
+    s5cmd_version: "2.3.0"
+    idle_watchdog_minutes: 15
+    idle_watchdog_util_pct: 5
+
+  roles:
+    - nvme_scratch
+    - runtime
+    - systemd_guards

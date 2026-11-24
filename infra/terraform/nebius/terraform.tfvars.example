@@ -1,0 +1,10 @@
+parent_id             = "project-e00example"
+region                = "eu-north1"
+gpu_preset            = "wave1"
+boot_disk_size_gb     = 200
+nvme_scratch_size_gb  = 1024
+s3_bucket_name        = "tenet-v3-artifacts"
+ssh_public_key_path   = "~/.ssh/id_ed25519.pub"
+ssh_user              = "ubuntu"
+instance_stopped      = false
+mlflow_admin_password = "replace-with-strong-password"

@@ -1,0 +1,75 @@
+---
+- name: Install base system packages
+  ansible.builtin.apt:
+    name:
+      - git
+      - curl
+      - jq
+      - xfsprogs
+      - tmux
+      - htop
+      - rsync
+      - ca-certificates
+    state: present
+    update_cache: true
+
+- name: Check if s5cmd is installed
+  ansible.builtin.command: which s5cmd
+  register: s5cmd_check
+  failed_when: false
+  changed_when: false
+
+- name: Install s5cmd for fast Nebius Object Storage sync
+  ansible.builtin.shell: |
+    set -euo pipefail
+    TMP_DIR=$(mktemp -d)
+    curl -fsSL "https://github.com/peak/s5cmd/releases/download/v{{ s5cmd_version }}/s5cmd_{{ s5cmd_version }}_Linux-64bit.tar.gz" -o "${TMP_DIR}/s5cmd.tar.gz"
+    tar -xzf "${TMP_DIR}/s5cmd.tar.gz" -C "${TMP_DIR}" s5cmd
+    install -m 0755 "${TMP_DIR}/s5cmd" /usr/local/bin/s5cmd
+    rm -rf "${TMP_DIR}"
+  args:
+    executable: /bin/bash
+  when: s5cmd_check.rc != 0
+
+- name: Check if uv is installed
+  ansible.builtin.command: which uv
+  register: uv_check
+  failed_when: false
+  changed_when: false
+
+- name: Install uv package manager
+  ansible.builtin.shell: |
+    set -euo pipefail
+    curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+  args:
+    executable: /bin/bash
+  when: uv_check.rc != 0
+
+- name: Sync Small Model Lab repository to /mnt/nvme/tenet-lab
+  ansible.builtin.git:
+    repo: "{{ tenet_repo_url }}"
+    dest: "{{ tenet_workdir }}"
+    version: "{{ tenet_repo_version }}"
+    force: false
+  become_user: "{{ tenet_user }}"
+
+- name: Write runtime .env file for Tenet v3
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ tenet_workdir }}/.env"
+    owner: "{{ tenet_user }}"
+    group: "{{ tenet_user }}"
+    mode: "0600"
+
+- name: Ensure .venv exists via uv sync if missing
+  ansible.builtin.command:
+    cmd: uv sync
+    chdir: "{{ tenet_workdir }}"
+    creates: "{{ tenet_workdir }}/.venv/bin/python"
+  become_user: "{{ tenet_user }}"
+
+- name: Verify runtime Python packages (vllm, lm_eval, mlflow, evalplus)
+  ansible.builtin.command:
+    cmd: "{{ tenet_workdir }}/.venv/bin/python -c 'import vllm, lm_eval, mlflow, evalplus; print(\"runtime_ok\")'"
+  register: runtime_verify
+  changed_when: false
