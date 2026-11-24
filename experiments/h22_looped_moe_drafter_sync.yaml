@@ -1,0 +1,51 @@
+experiment_id: h22_looped_moe_drafter_sync
+hypothesis_id: H22
+hypothesis: >
+  Looped MoE Drafter-Sync Lancet — executing loop_ticks loop-unrolled layer
+  ticks, extracting per-tick contrastive directions
+  (s_e = p_target / (p_target + beta * p_anchor + eps)), SVD-compressing them
+  to k_loop directions, damping the shared expert by shared_expert_damping,
+  and synchronizing the speculative drafter modules (dspark, dfly2, drafter,
+  mtp_heads, eh_proj) with the edited target weights reduces drafter-target
+  divergence, achieving at least min_kl_reduction_pct collateral KL reduction
+  versus a non-synced looped edit while keeping anchor behavior intact.
+prediction: >
+  drafter_sync is applied to drafter_modules, per-tick selectivity s_e with
+  s_e <= min_selectivity_threshold skipped, shared expert damping
+  shared_expert_damping applied, collateral KL reduced by at least
+  min_kl_reduction_pct versus non-synced baseline.
+acceptance_criterion: >
+  drafter_sync == true AND drafter_modules [dspark, dfly2, drafter, mtp_heads,
+  eh_proj] are synced AND selective expert scaling s_e preserves anchor-only
+  experts (s_e <= min_selectivity_threshold skipped) AND collateral_kl_reduction_pct
+  >= min_kl_reduction_pct
+seed: 2026
+model_config_path: configs/model/sml_nano.yaml
+data_config_path: configs/data/tinystories.yaml
+hardware_config_path: configs/hardware/m4_pro_mps.yaml
+train:
+  batch_size_tokens: 4096
+  micro_batch_size: 2
+  seq_len: 512
+  max_steps: 27
+  lr: 0.0005
+  min_lr_ratio: 0.1
+  weight_decay: 0.05
+  beta1: 0.9
+  beta2: 0.95
+  grad_clip: 1.0
+  schedule: wsd
+  warmup_steps: 2
+  decay_fraction: 0.2
+  precision: bf16
+  compile: false
+surgery:
+  loop_ticks: 3
+  k_loop: 2
+  beta: 0.35
+  min_selectivity_threshold: 0.25
+  shared_expert_damping: 0.40
+  drafter_sync: true
+  min_kl_reduction_pct: 35.0
+  drafter_modules: [dspark, dfly2, drafter, mtp_heads, eh_proj]
+  target_architectures: [Tenet-26B-A3B-Inkling2-Unslop-v3, Tenet-125B-A6B-Qwen3.8-Unslop-v3, Tenet-220B-A12B-Hy4-Unslop-v3]

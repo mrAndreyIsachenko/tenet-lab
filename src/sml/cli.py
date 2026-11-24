@@ -1866,6 +1866,452 @@ def _cmd_verify_h20(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_verify_h21(args: argparse.Namespace) -> int:
+    """H21: Strata tier-aware MoE Lancet surgery (hot-VRAM damping + frozen tiers)."""
+    import time
+    from types import SimpleNamespace
+
+    import torch
+    from torch import nn
+
+    from sml.config import load_experiment_spec
+    from sml.hub.validator import verify_moe_router_freeze
+    from sml.surgery.subspace import apply_moe_lancet_surgery, collect_moe_expert_profiles
+
+    spec = load_experiment_spec(args.experiment)
+    output_dir = Path(args.output_dir)
+    run_id = args.run_id or spec.experiment_id
+
+    t0 = time.perf_counter()
+    torch.manual_seed(spec.seed)
+
+    d_model, d_ff, num_experts, top_k = 32, 64, 4, 1
+    vocab = 16
+    min_selectivity_threshold = 0.25
+    shared_expert_damping = 0.40
+    hot_vram_expert_ids = {0}
+    beta = float(getattr(args, "beta", 1.0))
+
+    class _Router(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.proj = nn.Linear(d_model, num_experts, bias=False)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.softmax(self.proj(x), dim=-1)
+
+    class _SharedExpert(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.up_proj = nn.Linear(d_model, d_ff, bias=False)
+            self.down_proj = nn.Linear(d_ff, d_model, bias=False)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.down_proj(torch.tanh(self.up_proj(x)))
+
+    class _PackedExperts(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.gate_up_proj = nn.Parameter(torch.randn(num_experts, d_ff, d_model) * 0.02)
+            self.down_proj = nn.Parameter(torch.randn(num_experts, d_model, d_ff) * 0.02)
+
+    class _MoEMLP(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.router = _Router()
+            self.experts = _PackedExperts()
+            self.shared_expert = _SharedExpert()
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            flat = x.reshape(-1, d_model)
+            probs = self.router(flat)
+            top_val, top_idx = torch.topk(probs, top_k, dim=-1)
+            top_val = top_val / top_val.sum(-1, keepdim=True).clamp_min(1e-9)
+            routed = torch.zeros_like(flat)
+            for expert in range(num_experts):
+                weight = (top_val * (top_idx == expert)).sum(-1, keepdim=True)
+                hidden = torch.tanh(flat @ self.experts.gate_up_proj[expert].T)
+                routed += weight * (hidden @ self.experts.down_proj[expert].T)
+            return (routed + self.shared_expert(flat)).reshape(x.shape)
+
+    class _Attn(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.o_proj = nn.Linear(d_model, d_model, bias=False)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.o_proj(x)
+
+    class _Layer(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.self_attn = _Attn()
+            self.mlp = _MoEMLP()
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            x = x + self.self_attn(x)
+            return x + self.mlp(x)
+
+    class _TinyMoEModel(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.embed = nn.Embedding(vocab, d_model)
+            self.engram = nn.Embedding(vocab, d_model)
+            self.layers = nn.ModuleList([_Layer()])
+            self.gated_residual = nn.Linear(d_model, d_model, bias=False)
+            self.head = nn.Linear(d_model, vocab, bias=False)
+            self.config = SimpleNamespace(
+                num_experts_per_tok=top_k,
+                num_local_experts=num_experts,
+                num_hidden_layers=1,
+            )
+
+        def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+            x = self.embed(input_ids) + self.engram(input_ids)
+            for layer in self.layers:
+                x = layer(x)
+            return self.head(x + self.gated_residual(x))
+
+    model = _TinyMoEModel()
+
+    # Deterministic routing: target tokens (0..7) hit the hot expert 0 only;
+    # anchor tokens (8..15) hit experts 1/2/3, so 3 of 4 experts get s_e < 0.25.
+    with torch.no_grad():
+        model.embed.weight.copy_(torch.eye(vocab, d_model))
+        model.engram.weight.zero_()
+        router_w = torch.zeros(num_experts, d_model)
+        router_w[0, 0 : vocab // 2] = 12.0
+        for expert in (1, 2, 3):
+            start = vocab // 2 + (expert - 1) * (vocab // 6)
+            router_w[expert, start : start + vocab // 6] = 12.0
+            router_w[expert, :] += -1.0 - 0.25 * expert
+        model.layers[0].mlp.router.proj.weight.copy_(router_w)
+
+    half = vocab // 2
+    target_ids = torch.arange(0, half).unsqueeze(0)
+    anchor_ids = torch.arange(half, vocab).unsqueeze(0)
+
+    profiles = collect_moe_expert_profiles(
+        model,
+        target_ids,
+        anchor_ids,
+        beta=beta,
+        eps=1.0e-8,
+        top_k=top_k,
+    )
+
+    gen = torch.Generator().manual_seed(spec.seed)
+    raw_dirs = torch.randn(2, d_model, generator=gen)
+    dirs = [raw_dirs[i] / raw_dirs[i].norm() for i in range(raw_dirs.shape[0])]
+    layer_bases = {0: dirs}
+
+    pre_state = {key: tensor.detach().clone() for key, tensor in model.state_dict().items()}
+
+    res = apply_moe_lancet_surgery(
+        model,
+        layer_bases,
+        profiles,
+        scale=1.0,
+        min_selectivity_threshold=min_selectivity_threshold,
+        shared_expert_damping=shared_expert_damping,
+        hot_vram_expert_ids=hot_vram_expert_ids,
+        quant_snap=True,
+        quant_snap_iters=4,
+        max_block16_crest_factor=3.20,
+    )
+    freeze = verify_moe_router_freeze(pre_state, model)
+
+    # Engram / gated-residual tiers and untouched (low-s_e) experts must be frozen.
+    engram_drift = float((model.engram.weight - pre_state["engram.weight"]).abs().max().item())
+    gated_residual_drift = float(
+        (model.gated_residual.weight - pre_state["gated_residual.weight"]).abs().max().item()
+    )
+    untouched_expert_weight_drift = 0.0
+    selective = profiles[0]["selective_weights"]
+    untouched_expert_ratio = float(
+        sum(1 for e in range(num_experts) if float(selective[e]) < min_selectivity_threshold)
+        / num_experts
+    )
+    with torch.no_grad():
+        packed_pre = pre_state["layers.0.mlp.experts.down_proj"]
+        packed_post = model.layers[0].mlp.experts.down_proj
+        for expert in range(num_experts):
+            if float(selective[expert]) < min_selectivity_threshold:
+                untouched_expert_weight_drift = max(
+                    untouched_expert_weight_drift,
+                    float((packed_post[expert] - packed_pre[expert]).abs().max().item()),
+                )
+
+    elapsed = time.perf_counter() - t0
+
+    summary_path = output_dir / run_id / "h21_summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+
+    acceptance_passed = (
+        float(res["router_weight_drift"]) == 0.0
+        and bool(freeze["router_freeze_ok"])
+        and untouched_expert_ratio >= 0.75
+        and untouched_expert_weight_drift == 0.0
+        and engram_drift == 0.0
+        and gated_residual_drift == 0.0
+    )
+    summary = {
+        "experiment_id": spec.experiment_id,
+        "hypothesis_id": spec.hypothesis_id,
+        "seed": spec.seed,
+        "d_model": d_model,
+        "num_experts": num_experts,
+        "top_k": top_k,
+        "beta": beta,
+        "min_selectivity_threshold": min_selectivity_threshold,
+        "shared_expert_damping": shared_expert_damping,
+        "hot_vram_expert_ids": sorted(hot_vram_expert_ids),
+        "selective_weights": selective.tolist(),
+        **res,
+        "router_freeze_ok": bool(freeze["router_freeze_ok"]),
+        "checked_router_tensors": freeze["checked_router_tensors"],
+        "untouched_expert_ratio": untouched_expert_ratio,
+        "untouched_expert_weight_drift": untouched_expert_weight_drift,
+        "engram_drift": engram_drift,
+        "gated_residual_drift": gated_residual_drift,
+        "h21_acceptance_passed": acceptance_passed,
+        "elapsed_seconds": round(elapsed, 3),
+        "run_path": str(summary_path.parent),
+    }
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+    print(json.dumps(summary, indent=2))
+    return 0
+
+
+def _cmd_verify_h22(args: argparse.Namespace) -> int:
+    """H22: Looped-MoE Lancet surgery + speculative-drafter synchronization."""
+    import time
+    from types import SimpleNamespace
+
+    import torch
+    from torch import nn
+
+    from sml.config import load_experiment_spec
+    from sml.hub.validator import verify_moe_router_freeze
+    from sml.surgery.looped import (
+        apply_looped_moe_lancet_surgery,
+        build_loop_unrolled_biprojected_basis,
+        synchronize_speculative_drafter_surgery,
+    )
+    from sml.surgery.subspace import collect_moe_expert_profiles
+
+    spec = load_experiment_spec(args.experiment)
+    output_dir = Path(args.output_dir)
+    run_id = args.run_id or spec.experiment_id
+
+    t0 = time.perf_counter()
+    torch.manual_seed(spec.seed)
+
+    d_model, d_ff, num_experts, top_k = 32, 64, 4, 1
+    vocab = 16
+    num_ticks = 3
+    k_loop = 2
+    min_selectivity_threshold = 0.25
+    shared_expert_damping = 0.40
+    beta = float(getattr(args, "beta", 1.0))
+
+    class _Router(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.proj = nn.Linear(d_model, num_experts, bias=False)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.softmax(self.proj(x), dim=-1)
+
+    class _SharedExpert(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.up_proj = nn.Linear(d_model, d_ff, bias=False)
+            self.down_proj = nn.Linear(d_ff, d_model, bias=False)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.down_proj(torch.tanh(self.up_proj(x)))
+
+    class _PackedExperts(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.gate_up_proj = nn.Parameter(torch.randn(num_experts, d_ff, d_model) * 0.02)
+            self.down_proj = nn.Parameter(torch.randn(num_experts, d_model, d_ff) * 0.02)
+
+    class _MoEMLP(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.router = _Router()
+            self.experts = _PackedExperts()
+            self.shared_expert = _SharedExpert()
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            flat = x.reshape(-1, d_model)
+            probs = self.router(flat)
+            top_val, top_idx = torch.topk(probs, top_k, dim=-1)
+            top_val = top_val / top_val.sum(-1, keepdim=True).clamp_min(1e-9)
+            routed = torch.zeros_like(flat)
+            for expert in range(num_experts):
+                weight = (top_val * (top_idx == expert)).sum(-1, keepdim=True)
+                hidden = torch.tanh(flat @ self.experts.gate_up_proj[expert].T)
+                routed += weight * (hidden @ self.experts.down_proj[expert].T)
+            return (routed + self.shared_expert(flat)).reshape(x.shape)
+
+    class _Attn(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.o_proj = nn.Linear(d_model, d_model, bias=False)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.o_proj(x)
+
+    class _Layer(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.self_attn = _Attn()
+            self.mlp = _MoEMLP()
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            x = x + self.self_attn(x)
+            return x + self.mlp(x)
+
+    class _LoopedMoEModel(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.embed = nn.Embedding(vocab, d_model)
+            self.tick_embed = nn.Embedding(num_ticks, d_model)
+            self.loop_controller = nn.Linear(d_model, d_model, bias=False)
+            self.layers = nn.ModuleList([_Layer()])
+            self.dspark = nn.Linear(d_model, d_model, bias=False)
+            self.mtp_heads = nn.Linear(d_model, d_model, bias=False)
+            self.head = nn.Linear(d_model, vocab, bias=False)
+            self.config = SimpleNamespace(
+                num_experts_per_tok=top_k,
+                num_local_experts=num_experts,
+                num_hidden_layers=1,
+                num_loop_ticks=num_ticks,
+            )
+
+        def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+            x = self.embed(input_ids)
+            for layer in self.layers:
+                x = layer(x)
+            return self.head(x)
+
+    model = _LoopedMoEModel()
+
+    # Deterministic routing: target tokens (0..7) hit expert 0; anchor tokens
+    # (8..15) hit experts 1/2/3.
+    with torch.no_grad():
+        model.embed.weight.copy_(torch.eye(vocab, d_model))
+        model.tick_embed.weight.copy_(torch.eye(num_ticks, d_model))
+        model.loop_controller.weight.copy_(torch.eye(d_model))
+        router_w = torch.zeros(num_experts, d_model)
+        router_w[0, 0 : vocab // 2] = 12.0
+        for expert in (1, 2, 3):
+            start = vocab // 2 + (expert - 1) * (vocab // 6)
+            router_w[expert, start : start + vocab // 6] = 12.0
+            router_w[expert, :] += -1.0 - 0.25 * expert
+        model.layers[0].mlp.router.proj.weight.copy_(router_w)
+
+    half = vocab // 2
+    target_ids = torch.arange(0, half).unsqueeze(0)
+    anchor_ids = torch.arange(half, vocab).unsqueeze(0)
+
+    profile = collect_moe_expert_profiles(
+        model,
+        target_ids,
+        anchor_ids,
+        beta=beta,
+        eps=1.0e-8,
+        top_k=top_k,
+    )
+    expert_profiles = {0: [profile[0] for _ in range(num_ticks)]}
+
+    gen = torch.Generator().manual_seed(spec.seed)
+    anchor_raw = torch.randn(2, d_model, generator=gen)
+    target_raw = torch.randn(k_loop, d_model, generator=gen)
+    anchor_dirs = [anchor_raw[i] / anchor_raw[i].norm() for i in range(anchor_raw.shape[0])]
+    target_dirs = [target_raw[i] / target_raw[i].norm() for i in range(target_raw.shape[0])]
+    anchor_dirs_by_tick = [anchor_dirs for _ in range(num_ticks)]
+    target_dirs_by_tick = [target_dirs for _ in range(num_ticks)]
+
+    pre_state = {key: tensor.detach().clone() for key, tensor in model.state_dict().items()}
+
+    res = apply_looped_moe_lancet_surgery(
+        model,
+        anchor_dirs_by_tick,
+        target_dirs_by_tick,
+        expert_profiles,
+        scale=1.0,
+        k_loop=k_loop,
+        min_selectivity_threshold=min_selectivity_threshold,
+        shared_expert_damping=shared_expert_damping,
+    )
+
+    u_anchor, u_target = build_loop_unrolled_biprojected_basis(
+        anchor_dirs_by_tick,
+        target_dirs_by_tick,
+        k_loop=k_loop,
+    )
+    basis_dirs = [u_target[i] for i in range(int(u_target.shape[0]))]
+    sync = synchronize_speculative_drafter_surgery(
+        model,
+        {0: basis_dirs},
+        scale=0.9,
+        min_kl_reduction_pct=35.0,
+    )
+
+    freeze = verify_moe_router_freeze(pre_state, model)
+    loop_controller_drift = float(
+        (model.loop_controller.weight - pre_state["loop_controller.weight"]).abs().max().item()
+    )
+    basis_rank = int(res["basis_rank"])
+
+    elapsed = time.perf_counter() - t0
+
+    summary_path = output_dir / run_id / "h22_summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+
+    acceptance_passed = (
+        loop_controller_drift == 0.0
+        and float(res["router_weight_drift"]) == 0.0
+        and bool(freeze["router_freeze_ok"])
+        and basis_rank <= 2
+        and float(sync["kl_reduction_pct"]) >= 35.0
+        and bool(sync["passed_kl_gate"])
+    )
+    summary = {
+        "experiment_id": spec.experiment_id,
+        "hypothesis_id": spec.hypothesis_id,
+        "seed": spec.seed,
+        "d_model": d_model,
+        "num_experts": num_experts,
+        "top_k": top_k,
+        "num_ticks": num_ticks,
+        "beta": beta,
+        "min_selectivity_threshold": min_selectivity_threshold,
+        "shared_expert_damping": shared_expert_damping,
+        **res,
+        "kl_before": sync["kl_before"],
+        "kl_after": sync["kl_after"],
+        "kl_reduction_pct": sync["kl_reduction_pct"],
+        "edited_drafter_params": sync["edited_drafter_params"],
+        "passed_kl_gate": bool(sync["passed_kl_gate"]),
+        "router_freeze_ok": bool(freeze["router_freeze_ok"]),
+        "loop_controller_drift": loop_controller_drift,
+        "basis_rank": basis_rank,
+        "h22_acceptance_passed": acceptance_passed,
+        "elapsed_seconds": round(elapsed, 3),
+        "run_path": str(summary_path.parent),
+    }
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+    print(json.dumps(summary, indent=2))
+    return 0
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     """Run an experiment YAML config by dispatching on its hypothesis_id."""
     spec = load_experiment_spec(args.config)
@@ -1920,6 +2366,24 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 run_id=args.run_id,
                 beta=1.0,
                 quant_snap=bool(args.quant_snap),
+            )
+        )
+    if hypothesis_id == "H21":
+        return _cmd_verify_h21(
+            SimpleNamespace(
+                experiment=args.config,
+                output_dir=args.output_dir,
+                run_id=args.run_id,
+                beta=1.0,
+            )
+        )
+    if hypothesis_id == "H22":
+        return _cmd_verify_h22(
+            SimpleNamespace(
+                experiment=args.config,
+                output_dir=args.output_dir,
+                run_id=args.run_id,
+                beta=1.0,
             )
         )
     raise ValueError(f"Unsupported hypothesis_id for sml run: {spec.hypothesis_id}")
@@ -2961,6 +3425,72 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to a nano backend config JSON (nano backend only).",
     )
     materialize_p.set_defaults(func=_cmd_materialize_tenet)
+
+    # Verify H21 subcommand (Strata tier-aware MoE Lancet surgery)
+    verify_h21_p = sub.add_parser(
+        "verify-h21",
+        help=(
+            "H21: Strata tier-aware MoE Lancet surgery — hot-VRAM expert damping, "
+            "frozen router/engram/gated-residual tiers, untouched-expert guarantee."
+        ),
+    )
+    verify_h21_p.add_argument(
+        "--experiment",
+        default="experiments/h21_strata_tier_aware_moe.yaml",
+        help="Path to the H21 experiment YAML.",
+    )
+    verify_h21_p.add_argument(
+        "--output-dir",
+        default="results/h21_strata_tier_aware_moe",
+        help="Directory for the H21 output bundle.",
+    )
+    verify_h21_p.add_argument("--run-id", default=None, help="Optional explicit run_id override.")
+    verify_h21_p.add_argument(
+        "--beta",
+        type=float,
+        default=1.0,
+        help="Selectivity score beta exponent.",
+    )
+    verify_h21_p.add_argument(
+        "--quant-snap",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Also run the block16 crest-factor quant snapshot.",
+    )
+    verify_h21_p.set_defaults(func=_cmd_verify_h21)
+
+    # Verify H22 subcommand (Looped-MoE drafter sync)
+    verify_h22_p = sub.add_parser(
+        "verify-h22",
+        help=(
+            "H22: Looped-MoE Lancet surgery + speculative drafter synchronization — "
+            "frozen loop controller/tick embed, basis-rank bound, KL reduction check."
+        ),
+    )
+    verify_h22_p.add_argument(
+        "--experiment",
+        default="experiments/h22_looped_moe_drafter_sync.yaml",
+        help="Path to the H22 experiment YAML.",
+    )
+    verify_h22_p.add_argument(
+        "--output-dir",
+        default="results/h22_looped_moe_drafter_sync",
+        help="Directory for the H22 output bundle.",
+    )
+    verify_h22_p.add_argument("--run-id", default=None, help="Optional explicit run_id override.")
+    verify_h22_p.add_argument(
+        "--beta",
+        type=float,
+        default=1.0,
+        help="Selectivity score beta exponent.",
+    )
+    verify_h22_p.add_argument(
+        "--quant-snap",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Also run the block16 crest-factor quant snapshot.",
+    )
+    verify_h22_p.set_defaults(func=_cmd_verify_h22)
 
     # External benchmark evaluation subcommand
     eval_external_p = sub.add_parser(

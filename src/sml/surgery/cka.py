@@ -39,27 +39,59 @@ def get_transformer_layers(model: torch.nn.Module) -> torch.nn.ModuleList:
 
 _ROUTER_WEIGHT_KEY_RE = re.compile(
     r"\.(?:"
-    r"(?:mlp\.)?(?:gate|router)(?:\.proj)?"
+    r"(?:mlp\.)?(?:gate|router|routing_weights)(?:\.proj)?"
     r"|block_sparse_moe\.gate"
     r")\.(?:weight|bias|e_score_correction_bias)$"
 )
 
+# Structural controller/memory tables that must be hard-frozen (exactly 0.0
+# drift) during surgery: Engram N-gram memory tables, 4-branch Gated
+# Residual / iHC hyper-connections, and Looped MoE loop controllers. Any
+# key containing one of these tokens in a name segment is frozen whole.
+_FROZEN_STRUCTURE_TOKENS = (
+    "engram",
+    "ngram_table",
+    "memory_table",
+    "gated_residual",
+    "residual_gate",
+    "ihc",
+    "hyper_conn",
+    "loop_controller",
+    "loop_gate",
+    "tick_embed",
+)
+
+
+def _is_frozen_structure_key(key: str) -> bool:
+    """Return True when ``key`` names a frozen structural controller/memory table."""
+    return any(
+        token in segment for segment in key.lower().split(".") for token in _FROZEN_STRUCTURE_TOKENS
+    )
+
 
 def is_router_weight_key(key: str) -> bool:
     """
-    Return True when ``key`` names a router/gate parameter of a MoE layer.
+    Return True when ``key`` names a router/gate parameter of a MoE layer
+    or a frozen structural controller/memory table.
 
     Matches routing weights and biases such as ``...mlp.gate.weight``,
     ``...mlp.router.weight`` / ``...mlp.router.bias``,
-    ``...mlp.router.proj.weight`` (wrapped-router layouts),
-    ``...router.weight`` / ``...router.proj.weight`` and
-    ``...block_sparse_moe.gate.weight`` (Mixtral-style), plus DeepSeek-style
-    ``...gate.e_score_correction_bias`` correction biases.
+    ``...mlp.routing_weights.weight``, ``...mlp.router.proj.weight``
+    (wrapped-router layouts), ``...router.weight`` /
+    ``...router.proj.weight`` and ``...block_sparse_moe.gate.weight``
+    (Mixtral-style), plus DeepSeek-style ``...gate.e_score_correction_bias``
+    correction biases.
+
+    Also hard-freezes Engram N-gram memory tables (``engram``,
+    ``ngram_table``, ``memory_table``), 4-branch Gated Residual / iHC
+    hyper-connections (``gated_residual``, ``residual_gate``, ``ihc``,
+    ``hyper_conn``) and Looped MoE loop controllers (``loop_controller``,
+    ``loop_gate``, ``tick_embed``) wherever they appear in the key.
 
     Per-expert ``gate_proj`` / ``gate_up_proj`` weights are *not* router
     parameters and are never matched.
     """
-    return _ROUTER_WEIGHT_KEY_RE.search(key) is not None
+    return _ROUTER_WEIGHT_KEY_RE.search(key) is not None or _is_frozen_structure_key(key)
 
 
 def _resolve_module_path(root: Any, dotted_path: str) -> Any:
@@ -96,7 +128,23 @@ def get_moe_layer_components(layer: torch.nn.Module) -> dict[str, Any]:
     Returns:
         Dict with keys:
 
-        - ``o_proj``: ``layer.self_attn.o_proj`` when present, else ``None``.
+        - ``o_proj``: ``layer.self_attn.o_proj`` when present, else the
+          first hybrid attention output projection (Gated DeltaNet / QSA /
+          IndexPool / SWA) when the layer has no dense ``o_proj``, else
+          ``None``.
+        - ``hybrid_attn_out_projs``: list of hybrid linear/sparse attention
+          output projection modules (``linear_attn.out_proj``,
+          ``gdn.out_proj``, ``deltanet.o_proj``, ``qsa.o_proj``,
+          ``index_pool.o_proj``, ``swa.o_proj``); empty for pure dense
+          attention layers.
+        - ``latent_experts``: the ``LatentMoE`` module
+          (``latent_experts``) when present, else a dict of the
+          ``latent_down_proj`` / ``latent_up_proj`` projections when only
+          those exist, else ``None``.
+        - ``drafter_heads``: dict of embedded speculative drafter / MTP
+          head submodules (``dspark``, ``dfly2``, ``drafter``,
+          ``mtp_heads``, ``eh_proj``) keyed by dotted module name; empty
+          when the layer carries none.
         - ``router``: the router/gate module (the wrapper itself when the
           router keeps its Linear in a ``.proj`` submodule, so callers can
           hook the wrapper's forward).
@@ -109,9 +157,32 @@ def get_moe_layer_components(layer: torch.nn.Module) -> dict[str, Any]:
         - ``routed_experts_packed``: 3D ``(E, out_features, in_features)``
           ``experts.down_proj`` parameter/tensor when experts are packed,
           else ``None``.
-        - ``is_moe``: True when the layer has a router or routed experts.
+        - ``is_moe``: True when the layer has a router, routed experts or
+          latent experts.
     """
     o_proj = _resolve_module_path(layer, "self_attn.o_proj")
+
+    # Hybrid linear/sparse attention output projections (Gated DeltaNet,
+    # QSA, IndexPool/SWA layouts). Dense o_proj takes precedence; when it
+    # is absent, fall back to the first hybrid projection found.
+    hybrid_attn_out_projs = [
+        module
+        for module in (
+            _resolve_module_path(layer, path)
+            for path in (
+                "self_attn.linear_attn.out_proj",
+                "linear_attn.out_proj",
+                "gdn.out_proj",
+                "deltanet.o_proj",
+                "qsa.o_proj",
+                "index_pool.o_proj",
+                "swa.o_proj",
+            )
+        )
+        if module is not None
+    ]
+    if o_proj is None and hybrid_attn_out_projs:
+        o_proj = hybrid_attn_out_projs[0]
 
     router = None
     for path in ("mlp.gate", "mlp.router", "router", "block_sparse_moe.gate"):
@@ -148,14 +219,49 @@ def get_moe_layer_components(layer: torch.nn.Module) -> dict[str, Any]:
         if mlp_down is not None:
             shared_down_proj = mlp_down
 
-    is_moe = router is not None or has_routed_experts
+    # LatentMoE: dedicated latent expert pool with its own down/up projections.
+    latent_experts = None
+    for path in ("mlp.latent_experts", "latent_experts"):
+        candidate = _resolve_module_path(layer, path)
+        if candidate is not None:
+            latent_experts = candidate
+            break
+    if latent_experts is None:
+        latent_projs: dict[str, Any] = {}
+        for path in ("mlp.latent_down_proj", "latent_down_proj"):
+            candidate = _resolve_module_path(layer, path)
+            if candidate is not None:
+                latent_projs["latent_down_proj"] = candidate
+                break
+        for path in ("mlp.latent_up_proj", "latent_up_proj"):
+            candidate = _resolve_module_path(layer, path)
+            if candidate is not None:
+                latent_projs["latent_up_proj"] = candidate
+                break
+        if latent_projs:
+            latent_experts = latent_projs
+
+    # Embedded speculative drafters / MTP heads (dspark, dfly2, drafter,
+    # mtp_heads, eh_proj) wherever they appear under this layer.
+    drafter_tokens = ("dspark", "dfly2", "drafter", "mtp_heads", "eh_proj")
+    drafter_heads: dict[str, torch.nn.Module] = {}
+    for name, module in layer.named_modules():
+        if not name:
+            continue
+        if any(token in segment for segment in name.lower().split(".") for token in drafter_tokens):
+            drafter_heads[name] = module
+
+    is_moe = router is not None or has_routed_experts or latent_experts is not None
 
     return {
         "o_proj": o_proj,
+        "hybrid_attn_out_projs": hybrid_attn_out_projs,
         "router": router,
         "shared_down_proj": shared_down_proj,
         "routed_experts_unpacked": routed_experts_unpacked,
         "routed_experts_packed": routed_experts_packed,
+        "latent_experts": latent_experts,
+        "drafter_heads": drafter_heads,
         "is_moe": is_moe,
     }
 

@@ -2190,6 +2190,43 @@ def _apply_lancet_to_weight(
     )
 
 
+def _apply_tiered_lancet_to_weight(
+    weight: torch.Tensor,
+    dirs: list[torch.Tensor],
+    *,
+    scale: float,
+    quant_snap: bool,
+    quant_snap_iters: int,
+    quant_snap_eta: float,
+    max_block16_crest_factor: float | None,
+    hot: bool,
+) -> torch.Tensor:
+    """Apply the Strata-tier-aware Lancet edit to a single 2D weight.
+
+    Hot (VRAM-resident) experts and shared experts get FP8/Q8-style row-crest
+    hygiene plus a row-norm-preserving projection without 4-bit block-16
+    snapping; cold experts keep the quantization-aware subspace snap when
+    ``quant_snap`` is on.
+    """
+    if hot:
+        cf = 3.20 if max_block16_crest_factor is None else min(max_block16_crest_factor, 3.20)
+        proj_input = weight
+        if cf > 0:
+            proj_input = regularize_microblock_crest_factor(weight, block_size=16, max_block_cf=cf)
+        return project_out_subspace_norm_preserving(
+            proj_input, dirs, scale=scale, preserve_row_norm=True
+        )
+    return _apply_lancet_to_weight(
+        weight,
+        dirs,
+        scale=scale,
+        quant_snap=quant_snap,
+        quant_snap_iters=quant_snap_iters,
+        quant_snap_eta=quant_snap_eta,
+        max_block16_crest_factor=max_block16_crest_factor,
+    )
+
+
 def _set_module_weight(module: torch.nn.Module, new_weight: torch.Tensor) -> None:
     """Replace a Linear's weight in-place, keeping ``requires_grad`` semantics."""
     orig = module.weight
@@ -2249,6 +2286,9 @@ def apply_moe_lancet_surgery(
     *,
     scale: float = 1.0,
     min_selective_weight: float = 0.0,
+    min_selectivity_threshold: float = 0.25,
+    shared_expert_damping: float = 0.40,
+    hot_vram_expert_ids: set[int] | None = None,
     quant_snap: bool | None = None,
     quant_snap_iters: int = 4,
     quant_snap_eta: float = 0.75,
@@ -2295,6 +2335,8 @@ def apply_moe_lancet_surgery(
     layers = get_transformer_layers(model)
     dirs_map = _resolve_per_layer_directions(layer_bases, len(layers))
 
+    hot_expert_ids = hot_vram_expert_ids if hot_vram_expert_ids is not None else set()
+    total_routed_experts = 0
     edited_layers: list[int] = []
     edited_shared_experts = 0
     edited_routed_experts = 0
@@ -2333,18 +2375,20 @@ def apply_moe_lancet_surgery(
                 )
 
             # Shared expert down projection (None for pure dense layers).
+            # Shared experts are always treated as the hot tier and damped.
             shared_down = components["shared_down_proj"]
             if shared_down is not None:
                 _set_module_weight(
                     shared_down,
-                    _apply_lancet_to_weight(
+                    _apply_tiered_lancet_to_weight(
                         shared_down.weight,
                         dirs,
-                        scale=scale,
+                        scale=scale * shared_expert_damping,
                         quant_snap=use_quant_snap,
                         quant_snap_iters=quant_snap_iters,
                         quant_snap_eta=quant_snap_eta,
                         max_block16_crest_factor=max_block16_crest_factor,
+                        hot=(hot_vram_expert_ids is not None or shared_expert_damping != 1.0),
                     ),
                 )
                 edited_shared_experts += 1
@@ -2362,12 +2406,13 @@ def apply_moe_lancet_surgery(
                 if down is None:
                     continue
                 s_e = 1.0 if selective is None else float(selective[expert_idx])
-                if s_e <= min_selective_weight or s_e <= 1e-8:
+                total_routed_experts += 1
+                if s_e < max(min_selective_weight, min_selectivity_threshold):
                     skipped_routed_experts += 1
                     continue
                 _set_module_weight(
                     down,
-                    _apply_lancet_to_weight(
+                    _apply_tiered_lancet_to_weight(
                         down.weight,
                         dirs,
                         scale=float(s_e) * scale,
@@ -2375,6 +2420,7 @@ def apply_moe_lancet_surgery(
                         quant_snap_iters=quant_snap_iters,
                         quant_snap_eta=quant_snap_eta,
                         max_block16_crest_factor=max_block16_crest_factor,
+                        hot=expert_idx in hot_expert_ids,
                     ),
                 )
                 edited_routed_experts += 1
@@ -2384,10 +2430,11 @@ def apply_moe_lancet_surgery(
                 num_experts = int(packed.shape[0])
                 for expert_idx in range(num_experts):
                     s_e = 1.0 if selective is None else float(selective[expert_idx])
-                    if s_e <= min_selective_weight or s_e <= 1e-8:
+                    total_routed_experts += 1
+                    if s_e < max(min_selective_weight, min_selectivity_threshold):
                         skipped_routed_experts += 1
                         continue
-                    packed.data[expert_idx] = _apply_lancet_to_weight(
+                    packed.data[expert_idx] = _apply_tiered_lancet_to_weight(
                         packed.data[expert_idx],
                         dirs,
                         scale=float(s_e) * scale,
@@ -2395,6 +2442,7 @@ def apply_moe_lancet_surgery(
                         quant_snap_iters=quant_snap_iters,
                         quant_snap_eta=quant_snap_eta,
                         max_block16_crest_factor=max_block16_crest_factor,
+                        hot=expert_idx in hot_expert_ids,
                     )
                     edited_routed_experts += 1
 
@@ -2405,6 +2453,9 @@ def apply_moe_lancet_surgery(
         "edited_shared_experts": edited_shared_experts,
         "edited_routed_experts": edited_routed_experts,
         "skipped_routed_experts": skipped_routed_experts,
+        "untouched_expert_ratio": (
+            skipped_routed_experts / total_routed_experts if total_routed_experts else 0.0
+        ),
         "router_weight_drift": float(router_weight_drift),
         "quant_snap": use_quant_snap,
         "max_block16_crest_factor": max_block16_crest_factor,
@@ -2479,6 +2530,9 @@ def apply_moe_lancet_recipe_streaming(
     *,
     scale: float = 1.0,
     min_selective_weight: float = 0.0,
+    min_selectivity_threshold: float = 0.25,
+    shared_expert_damping: float = 0.40,
+    hot_vram_expert_ids: set[int] | None = None,
     quant_snap: bool | None = None,
     quant_snap_iters: int = 4,
     quant_snap_eta: float = 0.75,
@@ -2550,6 +2604,8 @@ def apply_moe_lancet_recipe_streaming(
     edited_shared_experts = 0
     edited_routed_experts = 0
     skipped_routed_experts = 0
+    total_routed_experts = 0
+    hot_expert_ids = hot_vram_expert_ids if hot_vram_expert_ids is not None else set()
     router_weight_drift = 0.0
     max_row_crest_factor = 1.0
 
@@ -2576,15 +2632,28 @@ def apply_moe_lancet_recipe_streaming(
                     continue
 
                 if kind in ("o_proj", "shared_down_proj"):
-                    shard_tensors[key] = _apply_lancet_to_weight(
-                        tensor,
-                        dirs,
-                        scale=scale,
-                        quant_snap=use_quant_snap,
-                        quant_snap_iters=quant_snap_iters,
-                        quant_snap_eta=quant_snap_eta,
-                        max_block16_crest_factor=max_block16_crest_factor,
-                    )
+                    if kind == "shared_down_proj":
+                        # Shared experts: hot tier, damped scale, no 4-bit snap.
+                        shard_tensors[key] = _apply_tiered_lancet_to_weight(
+                            tensor,
+                            dirs,
+                            scale=scale * shared_expert_damping,
+                            quant_snap=use_quant_snap,
+                            quant_snap_iters=quant_snap_iters,
+                            quant_snap_eta=quant_snap_eta,
+                            max_block16_crest_factor=max_block16_crest_factor,
+                            hot=(hot_vram_expert_ids is not None or shared_expert_damping != 1.0),
+                        )
+                    else:
+                        shard_tensors[key] = _apply_lancet_to_weight(
+                            tensor,
+                            dirs,
+                            scale=scale,
+                            quant_snap=use_quant_snap,
+                            quant_snap_iters=quant_snap_iters,
+                            quant_snap_eta=quant_snap_eta,
+                            max_block16_crest_factor=max_block16_crest_factor,
+                        )
                     if kind == "o_proj":
                         edited_o_proj += 1
                     else:
@@ -2601,10 +2670,11 @@ def apply_moe_lancet_recipe_streaming(
 
                 if kind == "routed_expert_unpacked":
                     s_e = 1.0 if selective is None else float(selective[expert_idx])
-                    if s_e <= min_selective_weight or s_e <= 1e-8:
+                    total_routed_experts += 1
+                    if s_e < max(min_selective_weight, min_selectivity_threshold):
                         skipped_routed_experts += 1
                         continue
-                    shard_tensors[key] = _apply_lancet_to_weight(
+                    shard_tensors[key] = _apply_tiered_lancet_to_weight(
                         tensor,
                         dirs,
                         scale=scale * s_e,
@@ -2612,6 +2682,7 @@ def apply_moe_lancet_recipe_streaming(
                         quant_snap_iters=quant_snap_iters,
                         quant_snap_eta=quant_snap_eta,
                         max_block16_crest_factor=max_block16_crest_factor,
+                        hot=expert_idx in hot_expert_ids,
                     )
                     edited_routed_experts += 1
                     edited_layers.append(layer_idx)
@@ -2627,10 +2698,11 @@ def apply_moe_lancet_recipe_streaming(
                 )
                 for e_idx in range(int(work_tensor.shape[0])):
                     s_e = 1.0 if selective is None else float(selective[e_idx])
-                    if s_e <= min_selective_weight or s_e <= 1e-8:
+                    total_routed_experts += 1
+                    if s_e < max(min_selective_weight, min_selectivity_threshold):
                         skipped_routed_experts += 1
                         continue
-                    work_tensor[e_idx] = _apply_lancet_to_weight(
+                    work_tensor[e_idx] = _apply_tiered_lancet_to_weight(
                         work_tensor[e_idx],
                         dirs,
                         scale=scale * s_e,
@@ -2638,6 +2710,7 @@ def apply_moe_lancet_recipe_streaming(
                         quant_snap_iters=quant_snap_iters,
                         quant_snap_eta=quant_snap_eta,
                         max_block16_crest_factor=max_block16_crest_factor,
+                        hot=e_idx in hot_expert_ids,
                     )
                     edited_routed_experts += 1
                     any_expert_edited = True
@@ -2688,6 +2761,9 @@ def apply_moe_lancet_recipe_streaming(
         "edited_shared_experts": edited_shared_experts,
         "edited_routed_experts": edited_routed_experts,
         "skipped_routed_experts": skipped_routed_experts,
+        "untouched_expert_ratio": (
+            skipped_routed_experts / total_routed_experts if total_routed_experts else 0.0
+        ),
         "router_weight_drift": float(router_weight_drift),
         "max_row_crest_factor": float(max_row_crest_factor),
         "max_block16_crest_factor": max_block16_crest_factor,
