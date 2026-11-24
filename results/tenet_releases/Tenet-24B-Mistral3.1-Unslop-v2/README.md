@@ -21,11 +21,11 @@ tags:
 - conversational
 ---
 
-# Tenet-24B-Mistral3.1-Unslop-v3
+# Tenet-24B-Mistral3.1-Unslop-v2
 
 ## Model overview
 
-**Tenet-24B-Mistral3.1-Unslop-v3** is a Tenet fine-tune of [`mistralai/Mistral-Small-3.1-24B-Instruct-2503`](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503),
+**Tenet-24B-Mistral3.1-Unslop-v2** is a Tenet fine-tune of [`mistralai/Mistral-Small-3.1-24B-Instruct-2503`](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503),
 surgical de-refusal and de-slop work by the **Lancet** engine, finalized
 with gated unslop GRPO and exported as a provider-ready FP8 (E4M3)
 checkpoint. No custom code, no `trust_remote_code`, no `auto_map`:
@@ -54,7 +54,7 @@ coding ability is reinforced rather than damaged.
 
 ## Intended Use & Safety Alignment Scope
 
-**Tenet-24B-Mistral3.1-Unslop-v3** is intended for aligned assistant use. Lancet subspace
+**Tenet-24B-Mistral3.1-Unslop-v2** is intended for aligned assistant use. Lancet subspace
 steering mitigates false-positive over-refusals (blanket refusals of
 benign prompts) and stylistic AI-slop drift (purple prose, moralizing
 preambles, "tapestry" vocabulary) while preserving the analytical,
@@ -145,7 +145,7 @@ WHERE status = 401 GROUP BY ip", "note": "here is the query you asked for"}
 ### vLLM (FP8)
 
 ```bash
-vllm serve Tenet-24B-Mistral3.1-Unslop-v3 --quantization fp8 --max-model-len 32768
+vllm serve Tenet-24B-Mistral3.1-Unslop-v2 --quantization fp8 --max-model-len 32768
 ```
 
 ### Transformers
@@ -153,7 +153,7 @@ vllm serve Tenet-24B-Mistral3.1-Unslop-v3 --quantization fp8 --max-model-len 327
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-model_id = "Tenet-24B-Mistral3.1-Unslop-v3"
+model_id = "Tenet-24B-Mistral3.1-Unslop-v2"
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 model = AutoModelForCausalLM.from_pretrained(
     model_id, torch_dtype="auto", device_map="auto"
@@ -169,13 +169,13 @@ print(tokenizer.decode(output[0][inputs.shape[-1]:], skip_special_tokens=True))
 ### llama.cpp (CKA-Quant GGUF)
 
 ```bash
-llama-cli -m ./Tenet-24B-Mistral3.1-Unslop-v3-CKA-Quant-Q4_K_M.gguf -ngl 99 -n 256 \
+llama-cli -m ./Tenet-24B-Mistral3.1-Unslop-v2-CKA-Quant-Q4_K_M.gguf -ngl 99 -n 256 \
     -p "Return a DuckDB SQL tool call for failed logins by source IP."
 ```
 
 ## Community GGUF / Local Inference (llama.cpp, Ollama, LM Studio)
 
-Community `mradermacher/Tenet-24B-Mistral3.1-Unslop-v3-i1-GGUF` / `mradermacher/Tenet-24B-Mistral3.1-Unslop-v3-GGUF`
+Community `mradermacher/Tenet-24B-Mistral3.1-Unslop-v2-i1-GGUF` / `mradermacher/Tenet-24B-Mistral3.1-Unslop-v2-GGUF`
 builds are upcoming and tracked. Until they land, quantize locally with the
 CKA-guided recipe shipped in this bundle -
 [`quantize_cka_gguf.sh`](https://github.com/mrAndreyIsachenko/tenet-lab) +
@@ -195,7 +195,7 @@ quantization without re-leaking refusal or slop behaviour.
 ### vLLM (FP8)
 
 ```bash
-vllm serve Tenet-24B-Mistral3.1-Unslop-v3 --quantization fp8
+vllm serve Tenet-24B-Mistral3.1-Unslop-v2 --quantization fp8
 ```
 
 ```python
@@ -203,7 +203,7 @@ from openai import OpenAI
 
 client = OpenAI(base_url="http://localhost:8000/v1")
 response = client.chat.completions.create(
-    model="Tenet-24B-Mistral3.1-Unslop-v3",
+    model="Tenet-24B-Mistral3.1-Unslop-v2",
     messages=[{"role": "user", "content": "Hello!"}],
 )
 print(response.choices[0].message.content)
@@ -213,7 +213,7 @@ print(response.choices[0].message.content)
 
 ```text
 # Modelfile
-FROM ./Tenet-24B-Mistral3.1-Unslop-v3-Q4_K_M.gguf
+FROM ./Tenet-24B-Mistral3.1-Unslop-v2-Q4_K_M.gguf
 PARAMETER temperature 0.7
 ```
 
@@ -226,14 +226,14 @@ ollama run tenet-24b-mistral3.1-unslop-v3
 
 ```bash
 mlx_lm.generate \
-    --model Tenet-24B-Mistral3.1-Unslop-v3 \
+    --model Tenet-24B-Mistral3.1-Unslop-v2 \
     --prompt "Explain norm-preserving subspace surgery." \
     --max-tokens 512
 ```
 
 ### OpenRouter
 
-Tenet-24B-Mistral3.1-Unslop-v3 is served on OpenRouter by FP8-native providers with zero
+Tenet-24B-Mistral3.1-Unslop-v2 is served on OpenRouter by FP8-native providers with zero
 `trust_remote_code` required - the config ships no `auto_map` and no
 custom modeling code, so hosts need only standard support:
 
@@ -250,7 +250,7 @@ client = OpenAI(
     api_key="$OPENROUTER_API_KEY",
 )
 response = client.chat.completions.create(
-    model="Tenet-24B-Mistral3.1-Unslop-v3",
+    model="Tenet-24B-Mistral3.1-Unslop-v2",
     messages=[{"role": "user", "content": "Hello!"}],
 )
 ```

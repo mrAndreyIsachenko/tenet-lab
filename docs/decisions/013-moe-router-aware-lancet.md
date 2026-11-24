@@ -28,7 +28,7 @@ Additionally, `Small Model Lab` needed first-class module mapping, `safetensors`
    - `routed_experts[e].down_proj`—supporting both unpacked `ModuleList` experts and packed/fused 3D `(E, out_features, in_features)` tensors in `safetensors`—are projected with effective scale `scale * s_e`, skipping anchor-only experts (`s_e <= min_selective_weight`).
 4. **Architecture & `v3` Naming Support:**
    - `get_transformer_layers` and `get_moe_layer_components` (`src/sml/surgery/cka.py`) support `model.language_model.model.layers`, `model.language_model.layers`, `model.model.layers`, and `model.layers`.
-   - `CANONICAL_TENET_NAMES` and `_TENET_NAME_PATTERN` (`src/sml/hub/model_card.py`) support `Tenet-26B-A4B-Gemma4-Unslop-v3`, `Tenet-30B-A3B-Qwen3-Unslop-v3`, and `Tenet-24B-Mistral3.1-Unslop-v3` with 100% backward compatibility for `v1`/`v2`.
+   - `CANONICAL_TENET_NAMES` and `_TENET_NAME_PATTERN` (`src/sml/hub/model_card.py`) support `Tenet-26B-A4B-Gemma4-Unslop-v2`, `Tenet-30B-A3B-Qwen3-Unslop-v3`, and `Tenet-24B-Mistral3.1-Unslop-v2` with 100% backward compatibility for `v1`/`v2`.
    - `SUPPORTED_ARCHITECTURES` (`src/sml/hub/validator.py`) adds `Gemma4ForCausalLM`, `Gemma4ForConditionalGeneration`, and `Mistral3ForConditionalGeneration`, and `_inspect_weights` inspects 3D packed expert slices for `max_block16_crest_factor`, outliers, and NaN/Inf.
 
 ## Pre-Registered Acceptance Criteria (H20)

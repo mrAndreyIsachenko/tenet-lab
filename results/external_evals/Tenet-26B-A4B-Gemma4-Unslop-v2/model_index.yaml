@@ -1,5 +1,5 @@
 model-index:
-- name: /workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3
+- name: /workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
   results:
   - task:
       type: text-generation
@@ -15,7 +15,7 @@ model-index:
       value: 0.904077
     source:
       name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3
+      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
   - task:
       type: text-generation
     dataset:
@@ -30,7 +30,7 @@ model-index:
       value: 0.75
     source:
       name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3
+      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
   - task:
       type: text-generation
     dataset:
@@ -48,7 +48,7 @@ model-index:
       value: 0.218347
     source:
       name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3
+      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
   - task:
       type: text-generation
     dataset:
@@ -63,7 +63,7 @@ model-index:
       value: 0.287879
     source:
       name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3
+      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
   - task:
       type: text-generation
     dataset:
@@ -75,4 +75,4 @@ model-index:
       value: 0.255952
     source:
       name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v3
+      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2

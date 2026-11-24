@@ -1,5 +1,5 @@
 {
-  "release_id": "Tenet-24B-Mistral3.1-Unslop-v3",
+  "release_id": "Tenet-24B-Mistral3.1-Unslop-v2",
   "target": "dense",
   "model_id": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
   "naive_model": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
@@ -8,7 +8,7 @@
   "quant_snap_iters": 4,
   "beta": 1.0,
   "eval_suite": "full",
-  "artifacts_dir": "/workspace/tenet_materialized/Tenet-24B-Mistral3.1-Unslop-v3",
+  "artifacts_dir": "/workspace/tenet_materialized/Tenet-24B-Mistral3.1-Unslop-v2",
   "started_at": "2026-11-23T22:12:06",
   "model_info": {
     "model_id": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
@@ -53,7 +53,7 @@
       "layer_28": 1.414214,
       "layer_29": 1.414214
     },
-    "output_path": "/workspace/tenet_materialized/Tenet-24B-Mistral3.1-Unslop-v3/lancet_basis.safetensors"
+    "output_path": "/workspace/tenet_materialized/Tenet-24B-Mistral3.1-Unslop-v2/lancet_basis.safetensors"
   },
   "cka_quant_recipe": {
     "source": "build_cka_quant_recipe",
@@ -61,7 +61,7 @@
   },
   "surgery": {
     "function": "apply_lancet_recipe_streaming",
-    "output_dir": "/workspace/tenet_materialized/Tenet-24B-Mistral3.1-Unslop-v3",
+    "output_dir": "/workspace/tenet_materialized/Tenet-24B-Mistral3.1-Unslop-v2",
     "scale": 0.35,
     "quant_snap": true,
     "quant_snap_iters": 4,
@@ -96,11 +96,11 @@
     "status": "ok",
     "returncode": 0,
     "eval_json": [
-      "results/external_evals/Tenet-24B-Mistral3.1-Unslop-v3.json"
+      "results/external_evals/Tenet-24B-Mistral3.1-Unslop-v2.json"
     ]
   },
   "hf_upload": {
     "status": "ok",
-    "repo_id": "mr-andrey-isachenko/Tenet-24B-Mistral3.1-Unslop-v3"
+    "repo_id": "mr-andrey-isachenko/Tenet-24B-Mistral3.1-Unslop-v2"
   }
 }
