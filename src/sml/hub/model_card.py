@@ -27,6 +27,12 @@ CANONICAL_TENET_NAMES = (
     "Tenet-26B-A4B-Gemma4-Unslop-v3",
     "Tenet-30B-A3B-Qwen3-Unslop-v3",
     "Tenet-24B-Mistral3.1-Unslop-v3",
+    "Tenet-15B-A2B-Qwen3.6-Unslop-v3",
+    "Tenet-26B-A3B-Inkling2-Unslop-v3",
+    "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+    "Tenet-32B-A3B-GLM4.5-Unslop-v3",
+    "Tenet-125B-A6B-Qwen3.8-Unslop-v3",
+    "Tenet-220B-A12B-Hy4-Unslop-v3",
 )
 
 # Matches every canonical Tenet revision (v1, v2, v3, ...) in both the
@@ -107,6 +113,7 @@ def generate_tenet_model_card(
     max_abs_weight = _optional_metric_line(metrics, "max_abs_weight", "Max absolute weight")
     why_tenet = _why_tenet_table(metrics)
     external_benchmarks = _external_benchmarks_section(metrics)
+    strata_section = _strata_section(model_id, metrics, recipe_metadata)
     pareto_asset = _pareto_asset_section(metrics, include_pareto_asset)
     side_by_side = _side_by_side_section()
     quickstart = _quickstart_section(model_id)
@@ -173,7 +180,7 @@ explicitly out of scope and unsupported by this release.
 
 Max row crest-factor: {max_row_crest_factor}
 
-{max_abs_weight}{pareto_asset}{why_tenet}{external_benchmarks}{side_by_side}{quickstart}{community_gguf}\
+{max_abs_weight}{pareto_asset}{why_tenet}{external_benchmarks}{strata_section}{side_by_side}{quickstart}{community_gguf}\
 ## Deployment & inference
 
 ### vLLM (FP8)
@@ -506,6 +513,62 @@ _MRADERMACHER_GGUF_MODELS: tuple[str, ...] = (
     "Tenet-8B-Llama3.1-Unslop-v1",
     "Tenet-12B-Nemo-Unslop-v1",
 )
+
+
+def _strata_section(
+    model_id: str,
+    metrics: dict[str, Any],
+    recipe_metadata: dict[str, Any] | None,
+) -> str:
+    """Render the Strata Engine, Speculative Decoding & Nebius Benchmark Passport section.
+
+    Renders for v3 checkpoints or whenever any Strata/H21/H22 telemetry key
+    is present in ``metrics`` or ``recipe_metadata``; missing values fall
+    back to ``n/a``.
+    """
+    _STRATA_KEYS = (
+        "expert_cache_hit_rate",
+        "coactivation_graph_drift",
+        "speculative_acceptance_rate",
+        "untouched_expert_ratio",
+        "peak_host_ram_mb",
+    )
+    recipe = recipe_metadata or {}
+    combined = {**recipe, **metrics}
+    has_telemetry = any(key in combined for key in _STRATA_KEYS)
+    revision_match = re.search(r"-v(\d+)$", model_id)
+    revision = int(revision_match.group(1)) if revision_match else 0
+    if not (revision >= 3 or has_telemetry):
+        return ""
+
+    def _value(key: str) -> str:
+        raw = combined.get(key)
+        numeric = _numeric_metric_value(raw) if raw is not None else None
+        return _format_value(numeric) if numeric is not None else "n/a"
+
+    def _pct(key: str) -> str:
+        raw = _numeric_metric_value(combined.get(key)) if combined.get(key) is not None else None
+        if raw is None:
+            return "n/a"
+        return f"{raw * 100:.1f}%" if raw <= 1.0 else f"{raw:.1f}"
+
+    return f"""## Strata Engine, Speculative Decoding & Nebius Benchmark Passport
+
+{model_id} ships with **Strata** telemetry (H21 expert-cache / coactivation
+graph and H22 speculative decoding passes). The full telemetry bundle is
+published alongside the checkpoint as
+[`strata.toml`](strata.toml) - versioned, checksummed and consumed by the
+Nebius benchmark passport pipeline.
+
+| Telemetry | Value |
+| --- | --- |
+| `expert_cache_hit_rate` (H21) | {_pct("expert_cache_hit_rate")} |
+| `coactivation_graph_drift` (H21) | {_value("coactivation_graph_drift")} |
+| `speculative_acceptance_rate` (H22) | {_pct("speculative_acceptance_rate")} |
+| `untouched_expert_ratio` | {_pct("untouched_expert_ratio")} |
+| `peak_host_ram_mb` | {_value("peak_host_ram_mb")} |
+
+"""
 
 
 def _community_gguf_section(model_id: str) -> str:

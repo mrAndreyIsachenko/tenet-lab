@@ -49,7 +49,26 @@ MOE_V3_ARCHITECTURES = {
     "Gemma4ForCausalLM",
     "Gemma4ForConditionalGeneration",
     "Mistral3ForConditionalGeneration",
+    "Qwen3MoeForCausalLM",
+    "Qwen3NextForCausalLM",
+    "Qwen3_6MoeForCausalLM",
+    "Qwen3_8MoeForCausalLM",
+    "Glm4MoeForCausalLM",
+    "Inkling2ForCausalLM",
+    "Hunyuan4MoeForCausalLM",
+    "Hy4MoeForCausalLM",
 }
+
+# Canonical Tenet v3 lineup (6 MoE models) whose config architectures
+# above are validated by ``verify_provider_readiness``.
+TENET_V3_MODEL_NAMES = (
+    "Tenet-15B-A2B-Qwen3.6-Unslop-v3",
+    "Tenet-26B-A3B-Inkling2-Unslop-v3",
+    "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+    "Tenet-32B-A3B-GLM4.5-Unslop-v3",
+    "Tenet-125B-A6B-Qwen3.8-Unslop-v3",
+    "Tenet-220B-A12B-Hy4-Unslop-v3",
+)
 
 SUPPORTED_ARCHITECTURES = STANDARD_ARCHITECTURES | MOE_V3_ARCHITECTURES
 

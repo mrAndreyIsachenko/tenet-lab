@@ -1,0 +1,53 @@
+experiment_id: h21_strata_tier_aware_moe
+hypothesis_id: H21
+hypothesis: >
+  Strata Tier-Aware MoE Lancet Surgery — profiling per-expert routing affinity
+  under target vs. anchor inputs (s_e = p_target / (p_target + beta * p_anchor + eps)),
+  freezing the router bit-for-bit, applying the edit at full scale to
+  self_attn.o_proj and shared_expert.down_proj, damping the shared expert by
+  shared_expert_damping, and scaling each routed expert's edit by its
+  selective weight s_e (skipping experts with s_e <= min_selectivity_threshold)
+  improves target-domain behavior without degrading anchor behavior, while
+  keeping FP8/NVFP4-friendly weight hygiene (max_block16_crest_factor <= 3.20)
+  and leaving at least untouched_expert_ratio_min of routed experts untouched.
+prediction: >
+  router_weight_drift == 0.0, anchor_only_expert_weight_drift == 0.0,
+  selective expert scaling s_e preserves anchor-only experts,
+  untouched_expert_ratio >= untouched_expert_ratio_min,
+  max_block16_crest_factor <= 3.20.
+acceptance_criterion: >
+  router_weight_drift == 0.0 AND anchor_only_expert_weight_drift == 0.0 AND
+  selective expert scaling s_e preserves anchor-only experts (s_e <=
+  min_selectivity_threshold skipped) AND untouched_expert_ratio >=
+  untouched_expert_ratio_min AND max_block16_crest_factor <= 3.20
+seed: 2026
+model_config_path: configs/model/sml_nano.yaml
+data_config_path: configs/data/tinystories.yaml
+hardware_config_path: configs/hardware/m4_pro_mps.yaml
+train:
+  batch_size_tokens: 4096
+  micro_batch_size: 2
+  seq_len: 512
+  max_steps: 27
+  lr: 0.0005
+  min_lr_ratio: 0.1
+  weight_decay: 0.05
+  beta1: 0.9
+  beta2: 0.95
+  grad_clip: 1.0
+  schedule: wsd
+  warmup_steps: 2
+  decay_fraction: 0.2
+  precision: bf16
+  compile: false
+surgery:
+  beta: 0.35
+  eps: 0.05
+  top_k: 4
+  min_selectivity_threshold: 0.25
+  shared_expert_damping: 0.40
+  quant_snap: hybrid_nvfp4_int4
+  quant_snap_iters: 4
+  max_block16_crest_factor: 3.20
+  untouched_expert_ratio_min: 0.75
+  target_architectures: [Tenet-15B-A2B-Qwen3.6-Unslop-v3, Tenet-26B-A3B-Inkling2-Unslop-v3, Tenet-35B-A3B-Qwen3.6-Unslop-v3, Tenet-32B-A3B-GLM4.5-Unslop-v3, Tenet-125B-A6B-Qwen3.8-Unslop-v3, Tenet-220B-A12B-Hy4-Unslop-v3]
