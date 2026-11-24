@@ -1,0 +1,38 @@
+{
+  "experiment_id": "h21_strata_tier_aware_moe",
+  "hypothesis_id": "H21",
+  "seed": 2026,
+  "d_model": 32,
+  "num_experts": 4,
+  "top_k": 1,
+  "beta": 1.0,
+  "min_selectivity_threshold": 0.25,
+  "shared_expert_damping": 0.4,
+  "hot_vram_expert_ids": [
+    0
+  ],
+  "selective_weights": [
+    0.8888888955116272,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "edited_layers": [
+    0
+  ],
+  "edited_shared_experts": 1,
+  "edited_routed_experts": 1,
+  "skipped_routed_experts": 3,
+  "untouched_expert_ratio": 0.75,
+  "router_weight_drift": 0.0,
+  "quant_snap": true,
+  "max_block16_crest_factor": 3.2,
+  "router_freeze_ok": true,
+  "checked_router_tensors": 3,
+  "untouched_expert_weight_drift": 0.0,
+  "engram_drift": 0.0,
+  "gated_residual_drift": 0.0,
+  "h21_acceptance_passed": true,
+  "elapsed_seconds": 0.003,
+  "run_path": "results/h21_strata_tier_aware_moe/h21_strata_tier_aware_moe"
+}

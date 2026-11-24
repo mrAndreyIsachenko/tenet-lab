@@ -1,4 +1,4 @@
-.PHONY: help sync test lint format verify-h1 verify-env compare-adaptation run-surgery verify-h9 verify-h10 verify-h11 verify-h12 build-tenet train-smoke profile-h2-local gpu-smoke smoke report clean pod-preflight pod-sync-daemon pod-sync-stop pod-launch pod-wait nebius-preflight nebius-start nebius-stop nebius-s3-pull nebius-mlflow-backfill
+.PHONY: help sync test lint format verify-h1 verify-env compare-adaptation run-surgery verify-h9 verify-h10 verify-h11 verify-h12 build-tenet train-smoke profile-h2-local gpu-smoke smoke report clean pod-preflight pod-sync-daemon pod-sync-stop pod-launch pod-wait nebius-preflight nebius-start nebius-stop nebius-s3-pull nebius-mlflow-backfill nebius-up nebius-down nebius-iac-validate
 
 HARNESS ?= harness
 POD_HOST ?=
@@ -40,6 +40,9 @@ help:
 	@echo "  make nebius-stop        Stop the Nebius GPU instance (\$0/hr GPU billing)"
 	@echo "  make nebius-s3-pull     Sync results/ down from Nebius Object Storage"
 	@echo "  make nebius-mlflow-backfill  Backfill MLflow history from local runs"
+	@echo "  make nebius-up          Provision Nebius IaC (Terraform) & bootstrap VM (Ansible)"
+	@echo "  make nebius-down        Stop Nebius GPU VM via Terraform / nebius_ctl.sh"
+	@echo "  make nebius-iac-validate  Validate Terraform & Ansible IaC definitions"
 
 sync:
 	uv sync
@@ -120,19 +123,34 @@ pod-wait:
 	$(HARNESS) pod wait --host "$(POD_HOST)" --workdir "$(POD_WORKDIR)" --max-wait-sec "$(POD_MAX_WAIT_SEC)" --local-dir "$(POD_LOCAL_DIR)"
 
 nebius-preflight:
-	bash scripts/remote/nebius_ctl.sh preflight
+	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; bash scripts/remote/nebius_ctl.sh preflight'
 
 nebius-start:
-	bash scripts/remote/nebius_ctl.sh start
+	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; bash scripts/remote/nebius_ctl.sh start'
 
 nebius-stop:
-	bash scripts/remote/nebius_ctl.sh stop
+	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; bash scripts/remote/nebius_ctl.sh stop'
 
 nebius-s3-pull:
-	bash scripts/remote/nebius_ctl.sh s3-sync-down
+	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; bash scripts/remote/nebius_ctl.sh s3-sync-down'
 
 nebius-mlflow-backfill:
-	uv run python scripts/hub/backfill_mlflow_history.py
+	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; uv run python scripts/hub/backfill_mlflow_history.py'
+
+nebius-up:
+	cd infra/terraform/nebius && terraform init && terraform apply -auto-approve
+	cd infra/ansible && ansible-playbook playbook.yml
+
+nebius-down:
+	@if [ -f infra/terraform/nebius/terraform.tfstate ]; then \
+		cd infra/terraform/nebius && terraform apply -auto-approve -var="instance_stopped=true"; \
+	else \
+		bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; bash scripts/remote/nebius_ctl.sh stop'; \
+	fi
+
+nebius-iac-validate:
+	cd infra/terraform/nebius && terraform fmt -check -recursive && terraform init -backend=false && terraform validate
+	cd infra/ansible && ansible-playbook -i localhost, --syntax-check playbook.yml
 
 report:
 	uv run sml report --results-dir results --output reports/sprint1/summary.md

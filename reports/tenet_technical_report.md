@@ -315,13 +315,13 @@ $$\Delta W_{\text{safe}} = (I - U_{\text{ablate}} U_{\text{ablate}}^\top) \Delta
 
 ---
 
-## Дополнение 3 (`H20` & Phase 2 `Tenet v3` Pilots): Router-Frozen MoE Streaming и Cross-Family Quant-Snap Surgery
+## Дополнение 3 (`H20` & Cross-Family `Tenet v2` Expansion): Router-Frozen MoE Streaming и Cross-Family Quant-Snap Surgery
 
-`H20` (статус **`Partial / Pilot`**) переносит `apply_moe_lancet_recipe_streaming` (frozen router gate, fused `gate_up_proj`/`down_proj` streaming projection) и 4-итерационный Quant-Snap из `H18` на два кросс-семейственных пайлота — `Tenet v3`:
+`H20` (статус **`Partial / Pilot`**) переносит `apply_moe_lancet_recipe_streaming` (frozen router gate, fused `gate_up_proj`/`down_proj` streaming projection) и 4-итерационный Quant-Snap из `H18` на два кросс-семейственных релиза поколения `Tenet v2`:
 
 1. **`Tenet-24B-Mistral3.1-Unslop-v2` (`Mistral-Small-3.1-24B-Instruct-2503`):** `max_row_crest_factor = 9.01 < 25.0` (provider-ready). Full vLLM OpenEvals (`suite=full`):
 
-   | Метрика | Base | Tenet v3 | Дельта |
+   | Метрика | Base | Tenet v2 | Дельта |
    | :--- | ---: | ---: | :--- |
    | IFEval Prompt-Strict | 65.99% | **75.79%** | **`+9.80 pp`** (Inst-Strict: `75.42% → 82.73%`, `+7.31 pp`) |
    | GSM8K Flex | — | 89.84% | дрейф `< 1.1 pp` |

@@ -1,0 +1,71 @@
+---
+- name: Ensure /mnt/nvme mountpoint exists
+  ansible.builtin.file:
+    path: /mnt/nvme
+    state: directory
+    mode: "0755"
+
+- name: Detect unmounted NVMe or virtio-nvme-scratch block device
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if mountpoint -q /mnt/nvme; then
+      echo "ALREADY_MOUNTED"
+      exit 0
+    fi
+    if [ -b /dev/disk/by-id/virtio-nvme-scratch ]; then
+      readlink -f /dev/disk/by-id/virtio-nvme-scratch
+      exit 0
+    fi
+    for dev in /dev/nvme*n1; do
+      [ -b "$dev" ] || continue
+      if ! lsblk -no MOUNTPOINT "$dev" | grep -qE '^/'; then
+        echo "$dev"
+        exit 0
+      fi
+    done
+    echo "NONE"
+  args:
+    executable: /bin/bash
+  register: nvme_device
+  changed_when: false
+
+- name: Format scratch device as XFS if no filesystem is present
+  ansible.builtin.shell: |
+    set -euo pipefail
+    DEV="{{ nvme_device.stdout | trim }}"
+    if ! blkid "$DEV" >/dev/null 2>&1; then
+      mkfs.xfs -f "$DEV"
+    fi
+  args:
+    executable: /bin/bash
+  when:
+    - nvme_device.stdout | trim != "ALREADY_MOUNTED"
+    - nvme_device.stdout | trim != "NONE"
+
+- name: Mount scratch device at /mnt/nvme with noatime
+  ansible.builtin.shell: |
+    set -euo pipefail
+    DEV="{{ nvme_device.stdout | trim }}"
+    UUID=$(blkid -s UUID -o value "$DEV")
+    if ! grep -q "/mnt/nvme" /etc/fstab; then
+      echo "UUID=${UUID} /mnt/nvme xfs defaults,noatime,nofail 0 2" >> /etc/fstab
+    fi
+    mount /mnt/nvme
+  args:
+    executable: /bin/bash
+  when:
+    - nvme_device.stdout | trim != "ALREADY_MOUNTED"
+    - nvme_device.stdout | trim != "NONE"
+
+- name: Create Tenet workspace directories on /mnt/nvme
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ tenet_user }}"
+    group: "{{ tenet_user }}"
+    mode: "0755"
+  loop:
+    - "{{ tenet_workdir }}"
+    - "{{ tenet_workdir }}/results"
+    - "{{ tenet_workdir }}/tenet_materialized"
+    - "{{ tenet_workdir }}/hf_cache"

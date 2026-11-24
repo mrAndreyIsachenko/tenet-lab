@@ -1,0 +1,129 @@
+name: Nebius IaC (Terraform + Ansible)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "IaC action to execute"
+        required: true
+        default: "validate"
+        type: choice
+        options:
+          - validate
+          - plan
+          - up
+          - down
+          - destroy
+      gpu_preset:
+        description: "Nebius GPU preset tier"
+        required: true
+        default: "wave1"
+        type: choice
+        options:
+          - wave1
+          - wave2
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "1"
+  TF_VAR_parent_id: ${{ secrets.NEBIUS_PARENT_ID }}
+  TF_VAR_gpu_preset: ${{ inputs.gpu_preset }}
+  TF_VAR_mlflow_admin_password: ${{ secrets.MLFLOW_ADMIN_PASSWORD }}
+  NEBIUS_IAM_TOKEN: ${{ secrets.NEBIUS_IAM_TOKEN }}
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+jobs:
+  nebius-iac:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform/nebius
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Configure SSH keypair for VM provisioning
+        if: ${{ inputs.action != 'validate' }}
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          if [ -n "${{ secrets.NEBIUS_SSH_PUBLIC_KEY }}" ]; then
+            printf '%s\n' "${{ secrets.NEBIUS_SSH_PUBLIC_KEY }}" > ~/.ssh/id_ed25519.pub
+            chmod 644 ~/.ssh/id_ed25519.pub
+          else
+            ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 >/dev/null
+          fi
+          if [ -n "${{ secrets.NEBIUS_SSH_PRIVATE_KEY }}" ]; then
+            printf '%s\n' "${{ secrets.NEBIUS_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          fi
+
+      - name: Restore Terraform state cache
+        if: ${{ inputs.action != 'validate' }}
+        uses: actions/cache@v4
+        with:
+          path: infra/terraform/nebius/terraform.tfstate
+          key: nebius-tfstate-${{ inputs.gpu_preset }}-${{ github.run_id }}
+          restore-keys: |
+            nebius-tfstate-${{ inputs.gpu_preset }}-
+
+      - name: Terraform fmt & validate
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false
+          terraform validate
+
+      - name: Terraform plan
+        if: ${{ inputs.action == 'plan' }}
+        run: |
+          terraform init
+          terraform plan -input=false -no-color
+
+      - name: Terraform apply (provision Nebius GPU VM + MLflow + S3)
+        if: ${{ inputs.action == 'up' }}
+        run: |
+          terraform init
+          terraform apply -input=false -auto-approve -no-color
+          {
+            echo "### Nebius IaC Outputs"
+            echo "- \`nebius_instance_id\`: \`$(terraform output -raw nebius_instance_id)\`"
+            echo "- \`nebius_ssh_host\`: \`$(terraform output -raw nebius_ssh_host)\`"
+            echo "- \`nebius_s3_bucket\`: \`$(terraform output -raw nebius_s3_bucket)\`"
+            echo "- \`mlflow_tracking_uri\`: \`$(terraform output -raw mlflow_tracking_uri)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Ansible & bootstrap GPU VM
+        if: ${{ inputs.action == 'up' }}
+        working-directory: infra/ansible
+        run: |
+          python3 -m pip install --user --quiet ansible-core
+          export PATH="$HOME/.local/bin:$PATH"
+          HOST_IP=$(awk '/ansible_host:/ {print $2}' inventory/hosts.yml)
+          for i in $(seq 1 36); do
+            if nc -z -w 3 "$HOST_IP" 22 2>/dev/null; then
+              break
+            fi
+            sleep 5
+          done
+          ansible-playbook playbook.yml
+
+      - name: Stop Nebius GPU VM ($0/hr GPU billing)
+        if: ${{ inputs.action == 'down' }}
+        run: |
+          terraform init
+          terraform apply -input=false -auto-approve -no-color -var="instance_stopped=true"
+
+      - name: Destroy Nebius IaC resources
+        if: ${{ inputs.action == 'destroy' }}
+        run: |
+          terraform init
+          terraform destroy -input=false -auto-approve -no-color
