@@ -227,12 +227,16 @@ stop_pod_if_requested() {
   if [[ "${AUTO_STOP_POD}" != "1" ]]; then
     return 0
   fi
+  if [[ -n "${NEBIUS_INSTANCE_ID:-}" ]]; then
+    run_cmd nebius compute instance stop --id "${NEBIUS_INSTANCE_ID}"
+    return 0
+  fi
   if [[ -f /etc/rp_environment && "${DRY_RUN}" != "1" ]]; then
     # shellcheck disable=SC1091
     source /etc/rp_environment
   fi
   if [[ -z "${RUNPOD_POD_ID:-}" ]]; then
-    echo "[auto-stop] AUTO_STOP_POD=1 but RUNPOD_POD_ID is not set; skipping pod stop"
+    echo "[auto-stop] AUTO_STOP_POD=1 but neither NEBIUS_INSTANCE_ID nor RUNPOD_POD_ID is set; skipping pod stop"
     return 0
   fi
   run_cmd runpodctl stop pod "${RUNPOD_POD_ID}"

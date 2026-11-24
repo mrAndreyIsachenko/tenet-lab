@@ -21,6 +21,8 @@ while true; do
             echo "[sml-watchdog] Idle limit reached. Shutting down instance to prevent wasted GPU billing."
             if command -v runpodctl >/dev/null 2>&1 && [ -n "${RUNPOD_POD_ID:-}" ]; then
                 runpodctl stop pod "${RUNPOD_POD_ID}"
+            elif command -v nebius >/dev/null 2>&1 && [ -n "${NEBIUS_INSTANCE_ID:-}" ]; then
+                nebius compute instance stop --id "${NEBIUS_INSTANCE_ID}"
             else
                 sudo shutdown -h now || poweroff || kill -TERM 1
             fi

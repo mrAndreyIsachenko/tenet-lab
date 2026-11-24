@@ -42,6 +42,11 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+try:  # optional dependency: streaming subtask metrics is best-effort
+    from sml.tracking.nebius_mlflow import log_open_evals_subtask
+except ImportError:  # pragma: no cover - exercised only when src is not importable
+    log_open_evals_subtask = None  # type: ignore[assignment]
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 DEFAULT_THINK_START_TOKEN = "<think>"
@@ -662,6 +667,7 @@ def _eval_arm(
     retry_delay_sec: float = 15.0,
     split_chat_0shot: bool = False,
     sanity_gate: bool = False,
+    release_id: str | None = None,
 ) -> dict[str, Any]:
     raw_dir.mkdir(parents=True, exist_ok=True)
 
@@ -777,7 +783,18 @@ def _eval_arm(
             print(f"[{arm}] WARNING: no lm-eval results JSON found under {sub_dir}", flush=True)
             continue
         payload_found = True
-        scores.update(_flatten_lm_eval_scores(results))
+        sub_scores = _flatten_lm_eval_scores(results)
+        scores.update(sub_scores)
+        if log_open_evals_subtask is not None:
+            try:
+                log_open_evals_subtask(
+                    release_id or raw_dir.parent.name,
+                    arm,
+                    sub_dir.name,
+                    sub_scores,
+                )
+            except Exception as exc:  # best-effort streaming; never break evals
+                print(f"[{arm}] WARNING: MLflow subtask logging failed: {exc}", flush=True)
         if lm_eval_version is None:
             lm_eval_version = results.get("git_hash") or results.get("config", {}).get(
                 "lm_eval_version"
@@ -999,6 +1016,7 @@ def main() -> int:
             retry_delay_sec=args.retry_delay_sec,
             split_chat_0shot=args.split_chat_0shot,
             sanity_gate=args.sanity_gate,
+            release_id=args.release_id,
         )
         if not args.dry_run:
             tmp_path = summary_path.with_suffix(".json.tmp")
