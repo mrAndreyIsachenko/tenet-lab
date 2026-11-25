@@ -1,5 +1,5 @@
 model-index:
-- name: /workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
+- name: Tenet-26B-A4B-Gemma4-Unslop-v2
   results:
   - task:
       type: text-generation
@@ -15,7 +15,7 @@ model-index:
       value: 0.904077
     source:
       name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2
   - task:
       type: text-generation
     dataset:
@@ -30,49 +30,4 @@ model-index:
       value: 0.75
     source:
       name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
-  - task:
-      type: text-generation
-    dataset:
-      name: GSM8K
-      type: openai/gsm8k
-    metrics:
-    - name: Strict Match
-      type: gsm8k_cot_strict
-      value: 0.21304
-    - name: Accuracy
-      type: gsm8k_math_acc
-      value: 0.218347
-    - name: Flexible Extract
-      type: gsm8k_cot_flexible
-      value: 0.218347
-    source:
-      name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
-  - task:
-      type: text-generation
-    dataset:
-      name: GPQA Diamond
-      type: Idavidrein/gpqa
-    metrics:
-    - name: Accuracy
-      type: gpqa_diamond
-      value: 0.287879
-    - name: Zero-shot Accuracy
-      type: gpqa_diamond_zeroshot
-      value: 0.287879
-    source:
-      name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
-  - task:
-      type: text-generation
-    dataset:
-      name: MMLU-Pro
-      type: TIGER-Lab/MMLU-Pro
-    metrics:
-    - name: Accuracy
-      type: mmlu_pro
-      value: 0.255952
-    source:
-      name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2

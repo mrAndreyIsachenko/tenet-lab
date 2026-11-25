@@ -72,7 +72,8 @@ V1_REMOVE_IDS: set[tuple[str, str]] = {
 V2_TITLE = "Tenet v2 — Thinking-Safe Tri-Anchor Unslop & Domain CKA-GGUF"
 V2_DESC = (
     "Tri-Anchor CoT Lancet (H15), Anti-Padding GRPO (H16), "
-    "24-Seed Fight Card Gate (H17, 100 HP), Domain i1-CKA-Q4_K_M GGUF (H14+)."
+    "24-Seed Fight Card Gate (H17, 100 HP), Domain i1-CKA-Q4_K_M GGUF (H14+), "
+    "router-frozen MoE FP8 (H20)."
 )
 
 V2_REQUIRED_ITEMS: list[tuple[str, str, str]] = [
@@ -91,12 +92,32 @@ V2_REQUIRED_ITEMS: list[tuple[str, str, str]] = [
         "0% collapse.",
     ),
     (
+        "mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2",
+        "model",
+        "Tenet v2 26B MoE (Gemma-4-26B-A4B-it, <think> CoT Tri-Anchor Lancet H15 + H18 "
+        "+ H20 router-frozen FP8): IFEval 86.3%, MATH-500 75.0%.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-24B-Mistral3.1-Unslop-v2",
+        "model",
+        "Tenet v2 24B (Mistral-Small-3.1-24B, <think> CoT Tri-Anchor Lancet H15 + H18 FP8): "
+        "GSM8K 89.8%, MMLU-Pro 63.5%, IFEval 75.8%.",
+    ),
+    (
         "mr-andrey-isachenko/fp8-abliteration-inspector",
         "space",
         "Interactive static Space to audit abliterated & Tenet checkpoints for FP8 E4M3 "
         "re-leakage, Row Crest-Factor < 25.0, and CKA-guided GGUF quantization.",
     ),
 ]
+
+# Official Tenet v2 GGUF companion repositories (full quant ladder:
+# IQ4_XS, Q4_K_M, Q5_K_M, Q6_K, Q8_0) with the CKA-protected surgical
+# subspace recipe baked into each quant.
+_GGUF_LADDER_NOTE = (
+    "Official Tenet v2 GGUF companion repo: CKA-protected quant ladder "
+    "(IQ4_XS, Q4_K_M, Q5_K_M, Q6_K, Q8_0) preserving the surgical subspace recipe."
+)
 
 V2_OPTIONAL_ITEMS: list[tuple[str, str, str]] = [
     (
@@ -110,6 +131,36 @@ V2_OPTIONAL_ITEMS: list[tuple[str, str, str]] = [
         "model",
         "Tenet v2 32B (Qwen3-32B, <think> CoT Tri-Anchor Lancet H15 + Length-Calibrated GRPO H16 "
         "+ Domain i1-CKA-Q4_K_M GGUF): H100 streaming shard release.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF",
+        "model",
+        f"{_GGUF_LADDER_NOTE} Parent: Tenet-26B-A4B-Gemma4-Unslop-v2.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-Mistral-Small-3.1-24B-Abliterated-Unslop-v2-GGUF",
+        "model",
+        f"{_GGUF_LADDER_NOTE} Parent: Tenet-24B-Mistral3.1-Unslop-v2.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-Qwen3-4B-Abliterated-Unslop-v2-GGUF",
+        "model",
+        f"{_GGUF_LADDER_NOTE} Parent: Tenet-4B-Qwen3-Unslop-v2.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-Qwen3-8B-Abliterated-Unslop-v2-GGUF",
+        "model",
+        f"{_GGUF_LADDER_NOTE} Parent: Tenet-8B-Qwen3-Unslop-v2.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-Qwen3-14B-Abliterated-Unslop-v2-GGUF",
+        "model",
+        f"{_GGUF_LADDER_NOTE} Parent: Tenet-14B-Qwen3-Unslop-v2.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-Qwen3-32B-Abliterated-Unslop-v2-GGUF",
+        "model",
+        f"{_GGUF_LADDER_NOTE} Parent: Tenet-32B-Qwen3-Unslop-v2.",
     ),
 ]
 

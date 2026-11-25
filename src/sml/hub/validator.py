@@ -17,6 +17,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 try:
     import torch
     import torch.nn as nn
@@ -702,3 +704,96 @@ def _iter_tensors(payload: Any, prefix: str = ""):
             yield from _iter_tensors(value, name)
     else:
         yield prefix or "<root>", payload
+
+
+GGUF_LADDER_QUANTS: tuple[str, ...] = ("IQ4_XS", "Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0")
+
+
+def verify_gguf_repo_metadata(
+    readme_text: str,
+    *,
+    expected_parent_repo: str | None = None,
+    existing_files: list[str] | None = None,
+    expected_quants: tuple[str, ...] = GGUF_LADDER_QUANTS,
+) -> dict[str, Any]:
+    """Validate YAML frontmatter and file ladder of a GGUF repo README."""
+    checks: dict[str, bool] = {}
+    errors: list[str] = []
+
+    fm: dict[str, Any] = {}
+    lines = readme_text.splitlines()
+    if lines and lines[0].strip() == "---":
+        try:
+            end = next(index for index in range(1, len(lines)) if lines[index].strip() == "---")
+        except StopIteration:
+            end = None
+        if end is None:
+            errors.append("readme: unterminated YAML frontmatter block")
+        else:
+            try:
+                loaded = yaml.safe_load("\n".join(lines[1:end]))
+            except yaml.YAMLError as exc:
+                loaded = None
+                errors.append(f"readme: invalid YAML frontmatter ({exc})")
+            if loaded is None:
+                pass
+            elif not isinstance(loaded, dict):
+                errors.append("readme: YAML frontmatter is not a mapping")
+            else:
+                fm = loaded
+
+    checks["library_name_gguf"] = fm.get("library_name") == "gguf"
+    if not checks["library_name_gguf"]:
+        errors.append("readme: frontmatter library_name must be 'gguf'")
+    checks["pipeline_tag_text_generation"] = fm.get("pipeline_tag") == "text-generation"
+    if not checks["pipeline_tag_text_generation"]:
+        errors.append("readme: frontmatter pipeline_tag must be 'text-generation'")
+    checks["base_model_relation_quantized"] = fm.get("base_model_relation") == "quantized"
+    if not checks["base_model_relation_quantized"]:
+        errors.append("readme: frontmatter base_model_relation must be 'quantized'")
+    checks["base_model_present"] = isinstance(fm.get("base_model"), str) and bool(
+        fm.get("base_model", "").strip()
+    )
+    if not checks["base_model_present"]:
+        errors.append("readme: frontmatter base_model must be a non-empty string")
+    checks["quantized_by_present"] = isinstance(fm.get("quantized_by"), str) and bool(
+        fm.get("quantized_by", "").strip()
+    )
+    if not checks["quantized_by_present"]:
+        errors.append("readme: frontmatter quantized_by must be a non-empty string")
+    if expected_parent_repo is not None:
+        checks["expected_parent_match"] = fm.get("base_model") == expected_parent_repo
+        if not checks["expected_parent_match"]:
+            errors.append(
+                f"readme: frontmatter base_model {fm.get('base_model')!r} does not "
+                f"match expected parent repo {expected_parent_repo!r}"
+            )
+
+    if existing_files is not None:
+        filenames = [Path(f).name for f in existing_files]
+        gguf_files = [f for f in filenames if f.endswith(".gguf")]
+        found_quants = [
+            q for q in expected_quants if any(f.endswith(f"-{q}.gguf") for f in gguf_files)
+        ]
+        missing_quants = [q for q in expected_quants if q not in found_quants]
+        checks["gguf_ladder_complete"] = len(missing_quants) == 0
+        if missing_quants:
+            errors.append("files: missing GGUF quant ladder entries: " + ", ".join(missing_quants))
+        has_recipe = "cka_quant_recipe.json" in filenames
+        has_modelfile = "Modelfile" in filenames
+    else:
+        found_quants = []
+        missing_quants = []
+        has_recipe = False
+        has_modelfile = False
+
+    return {
+        "ready": len(errors) == 0,
+        "errors": errors,
+        "checks": checks,
+        "frontmatter": fm,
+        "found_quants": found_quants,
+        "missing_quants": missing_quants,
+        "has_recipe": has_recipe,
+        "has_modelfile": has_modelfile,
+    }
