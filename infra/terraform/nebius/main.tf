@@ -137,12 +137,6 @@ resource "nebius_compute_v1_instance" "gpu" {
     }
   ]
 
-  local_disks = {
-    passthrough_group = {
-      requested = true
-    }
-  }
-
   network_interfaces = [
     {
       name       = "eth0"

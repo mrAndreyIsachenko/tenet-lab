@@ -77,6 +77,6 @@ variable "mlflow_admin_password" {
 
 variable "mlflow_cluster_size" {
   type        = string
-  default     = "small"
-  description = "Managed MLflow cluster size (small, medium)."
+  default     = "medium"
+  description = "Managed MLflow cluster size (medium)."
 }
