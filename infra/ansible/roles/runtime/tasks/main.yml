@@ -45,13 +45,17 @@
     executable: /bin/bash
   when: uv_check.rc != 0
 
-- name: Sync Small Model Lab repository to /mnt/nvme/tenet-lab
-  ansible.builtin.git:
-    repo: "{{ tenet_repo_url }}"
-    dest: "{{ tenet_workdir }}"
-    version: "{{ tenet_repo_version }}"
-    force: false
-  become_user: "{{ tenet_user }}"
+- name: Sync Small Model Lab repository to /mnt/nvme/tenet-lab via rsync
+  ansible.builtin.command:
+    cmd: >-
+      rsync -az --delete
+      --exclude '.git' --exclude '.venv' --exclude '.terraform'
+      --exclude 'results/*/models' --exclude '/shards' --exclude '/data'
+      -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+      "{{ playbook_dir }}/../../"
+      "{{ tenet_user }}@{{ ansible_host }}:{{ tenet_workdir }}/"
+  delegate_to: localhost
+  become: false
 
 - name: Write runtime .env file for Tenet v3
   ansible.builtin.template:
@@ -63,13 +67,37 @@
 
 - name: Ensure .venv exists via uv sync if missing
   ansible.builtin.command:
-    cmd: uv sync
+    cmd: uv sync --extra data --extra parity --extra eval
     chdir: "{{ tenet_workdir }}"
     creates: "{{ tenet_workdir }}/.venv/bin/python"
   become_user: "{{ tenet_user }}"
 
+- name: Ensure .venv ownership belongs to tenet_user
+  ansible.builtin.file:
+    path: "{{ tenet_workdir }}/.venv"
+    state: directory
+    owner: "{{ tenet_user }}"
+    group: "{{ tenet_user }}"
+    recurse: true
+
+- name: Check if vllm, mlflow, and evalplus are installed in .venv
+  ansible.builtin.command:
+    cmd: "{{ tenet_workdir }}/.venv/bin/python -c 'import vllm, lm_eval, mlflow, evalplus'"
+  become_user: "{{ tenet_user }}"
+  register: runtime_pkg_check
+  failed_when: false
+  changed_when: false
+
+- name: Install vllm, mlflow, and evalplus into .venv
+  ansible.builtin.command:
+    cmd: uv pip install vllm mlflow evalplus
+    chdir: "{{ tenet_workdir }}"
+  become_user: "{{ tenet_user }}"
+  when: runtime_pkg_check.rc != 0
+
 - name: Verify runtime Python packages (vllm, lm_eval, mlflow, evalplus)
   ansible.builtin.command:
     cmd: "{{ tenet_workdir }}/.venv/bin/python -c 'import vllm, lm_eval, mlflow, evalplus; print(\"runtime_ok\")'"
+  become_user: "{{ tenet_user }}"
   register: runtime_verify
   changed_when: false
