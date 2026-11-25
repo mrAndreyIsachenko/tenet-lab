@@ -56,18 +56,29 @@ MOE_V3_ARCHITECTURES = {
     "Qwen3_6MoeForCausalLM",
     "Qwen3_8MoeForCausalLM",
     "Glm4MoeForCausalLM",
+    "Glm4MoeLiteForCausalLM",
     "Inkling2ForCausalLM",
+    "Inkling2ForConditionalGeneration",
+    "Inkling2LoopForConditionalGeneration",
+    "Qwen3_5MoeForConditionalGeneration",
+    "Qwen4ExpForConditionalGeneration",
     "Hunyuan4MoeForCausalLM",
+    "HYV4FlashForConditionalGeneration",
     "Hy4MoeForCausalLM",
 }
 
 # Canonical Tenet v3 lineup (6 MoE models) whose config architectures
 # above are validated by ``verify_provider_readiness``.
 TENET_V3_MODEL_NAMES = (
+    # Legacy backward-compat entries.
     "Tenet-15B-A2B-Qwen3.6-Unslop-v3",
+    "Tenet-32B-A3B-GLM4.5-Unslop-v3",
+    # Updated v3 lineup.
+    "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+    "Tenet-15B-A2B-Inkling2-Unslop-v3",
     "Tenet-26B-A3B-Inkling2-Unslop-v3",
     "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
-    "Tenet-32B-A3B-GLM4.5-Unslop-v3",
+    "Tenet-106B-A12B-GLM4.5-Unslop-v3",
     "Tenet-125B-A6B-Qwen3.8-Unslop-v3",
     "Tenet-220B-A12B-Hy4-Unslop-v3",
 )
@@ -81,6 +92,41 @@ MAX_ABS_WEIGHT_THRESHOLD = 50.0
 MAX_ROW_CREST_FACTOR_THRESHOLD = 128.0
 
 RECIPE_FILENAME = "lancet_recipe.json"
+
+# Weight-key layer prefixes used by multimodal / nested HF configs, most
+# specific first. ``strip_layer_prefix`` tries each in order.
+WEIGHT_LAYER_PREFIXES: tuple[str, ...] = (
+    "model.language_model.layers.",
+    "language_model.model.layers.",
+    "language_model.layers.",
+    "model.layers.",
+    "layers.",
+)
+
+
+def resolve_text_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Return the nested ``text_config`` when present, else ``config`` itself."""
+    text_config = config.get("text_config")
+    if isinstance(text_config, dict):
+        return text_config
+    return config
+
+
+def strip_layer_prefix(key: str) -> tuple[int, str] | None:
+    """Split a weight key into ``(layer_idx, suffix)`` under any known prefix.
+
+    Returns ``None`` when the key does not match a known layer prefix.
+    """
+    for prefix in WEIGHT_LAYER_PREFIXES:
+        if not key.startswith(prefix):
+            continue
+        remainder = key[len(prefix) :]
+        idx, sep, suffix = remainder.partition(".")
+        if sep and idx.isdigit():
+            return int(idx), suffix
+    return None
+
+
 RECIPE_BASIS_FILENAME = "lancet_basis.safetensors"
 RECIPE_SCHEMA_VERSION = "1.0"
 RECIPE_BASIS_NORM_TOLERANCE = 1e-4
@@ -123,7 +169,7 @@ def verify_provider_readiness(checkpoint_dir: Path | str) -> dict[str, Any]:
         checkpoint / "tokenizer_config.json", errors, "tokenizer_config.json"
     )
     if tokenizer_ok:
-        _check_chat_template(tokenizer_config, checks, errors)
+        _check_chat_template(tokenizer_config, checks, errors, checkpoint_dir=checkpoint)
     else:
         checks["valid_chat_template"] = False
 
@@ -453,13 +499,14 @@ def _check_config_dimensions(
     if not isinstance(payload, dict):
         errors.append("config.json must contain a JSON object")
         return
-    hidden_size = payload.get("hidden_size")
+    text_cfg = resolve_text_config(payload)
+    hidden_size = text_cfg.get("hidden_size", payload.get("hidden_size"))
     if hidden_size is not None and hidden_size != d_model:
         errors.append(
             f"config.json: 'hidden_size' ({hidden_size}) does not match recipe "
             f"'d_model' ({d_model})"
         )
-    config_layers = payload.get("num_hidden_layers")
+    config_layers = text_cfg.get("num_hidden_layers", payload.get("num_hidden_layers"))
     if config_layers is not None and config_layers != num_layers:
         errors.append(
             f"config.json: 'num_hidden_layers' ({config_layers}) does not match "
@@ -513,6 +560,8 @@ def _check_architecture(
     """Require a non-empty ``architectures`` list with a supported entry."""
     entries = config.get("architectures")
     if not isinstance(entries, list) or not entries:
+        entries = resolve_text_config(config).get("architectures")
+    if not isinstance(entries, list) or not entries:
         checks["standard_architecture"] = False
         errors.append("config.json: 'architectures' must be a non-empty list")
         return
@@ -530,8 +579,11 @@ def _check_no_trust_remote_code(
     errors: list[str],
 ) -> None:
     """Reject custom ``auto_map`` code and ``trust_remote_code`` opt-ins."""
-    has_auto_map = "auto_map" in config
-    trusts_remote = bool(config.get("trust_remote_code"))
+    text_cfg = resolve_text_config(config)
+    has_auto_map = "auto_map" in config or (text_cfg is not config and "auto_map" in text_cfg)
+    trusts_remote = bool(config.get("trust_remote_code")) or (
+        text_cfg is not config and bool(text_cfg.get("trust_remote_code"))
+    )
     if has_auto_map:
         checks["no_trust_remote_code"] = False
         errors.append("config.json: 'auto_map' present (remote code required)")
@@ -544,9 +596,19 @@ def _check_chat_template(
     tokenizer_config: dict[str, Any],
     checks: dict[str, bool],
     errors: list[str],
+    *,
+    checkpoint_dir: Path | None = None,
 ) -> None:
     """Require a usable chat template and no ``trust_remote_code``."""
     template = tokenizer_config.get("chat_template")
+    if not _has_chat_template(template) and checkpoint_dir is not None:
+        jinja = checkpoint_dir / "chat_template.jinja"
+        try:
+            jinja_text = jinja.read_text(encoding="utf-8")
+        except OSError:
+            jinja_text = ""
+        if jinja_text.strip():
+            template = jinja_text
     if not _has_chat_template(template):
         checks["valid_chat_template"] = False
         errors.append("tokenizer_config.json: 'chat_template' is missing or empty")

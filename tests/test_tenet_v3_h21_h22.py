@@ -256,19 +256,67 @@ def test_get_moe_layer_components_recognizes_drafters(attr):
 # ---------------------------------------------------------------------------
 def test_canonical_tenet_names_and_architectures_cover_v3_release():
     from sml.hub.model_card import CANONICAL_TENET_NAMES
+    from sml.hub.validator import SUPPORTED_ARCHITECTURES
 
-    try:
-        from sml.hub.model_card import SUPPORTED_ARCHITECTURES
-    except ImportError:
-        try:
-            from sml.hub.release import SUPPORTED_ARCHITECTURES  # type: ignore[no-redef]
-        except ImportError:
-            SUPPORTED_ARCHITECTURES = None  # type: ignore[assignment]
+    extra_models = [
+        "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+        "Tenet-15B-A2B-Inkling2-Unslop-v3",
+        "Tenet-106B-A12B-GLM4.5-Unslop-v3",
+        "Tenet-26B-A4B-Gemma4-Unslop-v2",
+    ]
 
-    for name in CANONICAL_MODELS:
+    for name in CANONICAL_MODELS + extra_models:
         assert name in CANONICAL_TENET_NAMES
-        if SUPPORTED_ARCHITECTURES is not None:
-            assert name in SUPPORTED_ARCHITECTURES
+
+    expected_architectures = {
+        "Inkling2LoopForConditionalGeneration",
+        "Inkling2ForConditionalGeneration",
+        "Qwen3_5MoeForConditionalGeneration",
+        "Glm4MoeLiteForCausalLM",
+        "Glm4MoeForCausalLM",
+        "Qwen4ExpForConditionalGeneration",
+        "HYV4FlashForConditionalGeneration",
+    }
+    assert expected_architectures <= SUPPORTED_ARCHITECTURES
+
+    foundry = _load_foundry()
+    specs = foundry.TENET_V3_MODEL_SPECS
+    # ``Tenet-15B-A2B-Qwen3.6-Unslop-v3`` stays a canonical card name but has no
+    # dedicated foundry spec (superseded by the Inkling2 15B release).
+    spec_names = [name for name in CANONICAL_MODELS if name != "Tenet-15B-A2B-Qwen3.6-Unslop-v3"]
+    for name in spec_names + extra_models:
+        assert name in specs
+
+    assert specs["Tenet-30B-A3B-GLM4.7-Unslop-v3"]["base_model"] == "zai-org/GLM-4.7-Flash"
+    assert specs["Tenet-30B-A3B-GLM4.7-Unslop-v3"]["has_drafter"] is True
+    assert specs["Tenet-30B-A3B-GLM4.7-Unslop-v3"]["looped"] is False
+
+    assert (
+        specs["Tenet-15B-A2B-Inkling2-Unslop-v3"]["base_model"]
+        == "thinkingmachines/Inkling-2-Small"
+    )
+    assert specs["Tenet-15B-A2B-Inkling2-Unslop-v3"]["looped"] is False
+
+    assert (
+        specs["Tenet-26B-A3B-Inkling2-Unslop-v3"]["base_model"] == "thinkingmachines/Inkling-2-Mini"
+    )
+    assert specs["Tenet-26B-A3B-Inkling2-Unslop-v3"]["looped"] is True
+    assert specs["Tenet-26B-A3B-Inkling2-Unslop-v3"]["has_drafter"] is True
+
+    assert specs["Tenet-35B-A3B-Qwen3.6-Unslop-v3"]["base_model"] == "Qwen/Qwen3.6-35B-A3B"
+    assert (
+        specs["Tenet-35B-A3B-Qwen3.6-Unslop-v3"]["naive_model"]
+        == "huihui-ai/Huihui-Qwen3.6-35B-A3B-abliterated"
+    )
+
+    assert specs["Tenet-106B-A12B-GLM4.5-Unslop-v3"]["base_model"] == "zai-org/GLM-4.5-Air"
+    assert specs["Tenet-32B-A3B-GLM4.5-Unslop-v3"]["base_model"] == "zai-org/GLM-4.5-Air"
+
+    assert specs["Tenet-125B-A6B-Qwen3.8-Unslop-v3"]["base_model"] == "Qwen/Qwen3.8-Flash-Next"
+    assert specs["Tenet-220B-A12B-Hy4-Unslop-v3"]["base_model"] == "tencent/Hy4-flash"
+
+    assert specs["Tenet-26B-A4B-Gemma4-Unslop-v2"]["base_model"] == "google/gemma-4-26B-A4B-it"
+    assert specs["Tenet-26B-A4B-Gemma4-Unslop-v2"]["think_end_token"] == "<|thought|>"
 
 
 def test_generate_tenet_model_card_renders_strata_passport():
@@ -526,3 +574,381 @@ def test_foundry_mlflow_mirror_logging(tmp_path):
     assert mirrors
     payload = json.loads(mirrors[0].read_text())
     assert payload
+
+
+# ---------------------------------------------------------------------------
+# 7. Validator text_config unwrapping, foundry model-dir resolution,
+#    streaming sharded checkpoints and open-evals / cleanup flags
+# ---------------------------------------------------------------------------
+def test_validator_unwraps_text_config_for_conditional_generation(tmp_path):
+    from safetensors.torch import save_file
+
+    from sml.hub.validator import verify_provider_readiness
+
+    gen = torch.Generator().manual_seed(11)
+    (tmp_path / "config.json").write_text(
+        json.dumps(
+            {
+                "architectures": ["Inkling2LoopForConditionalGeneration"],
+                "text_config": {"hidden_size": 16, "num_hidden_layers": 2},
+            }
+        )
+    )
+    (tmp_path / "tokenizer_config.json").write_text(json.dumps({}))
+    (tmp_path / "chat_template.jinja").write_text("{{ messages }}")
+    save_file(
+        {
+            "model.language_model.layers.0.self_attn.o_proj.weight": torch.randn(
+                16, 16, generator=gen
+            )
+            * 0.25
+        },
+        str(tmp_path / "model.safetensors"),
+    )
+    basis = torch.nn.functional.normalize(torch.randn(2, 16, generator=gen), dim=1)
+    save_file(
+        {"layer_0": basis[0:1].contiguous(), "layer_1": basis[1:2].contiguous()},
+        str(tmp_path / "lancet_basis.safetensors"),
+    )
+    (tmp_path / "lancet_recipe.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "d_model": 16,
+                "num_layers": 2,
+                "selected_layers": [0, 1],
+                "layer_weights": {"0": 1.0, "1": 1.0},
+            }
+        )
+    )
+
+    result = verify_provider_readiness(tmp_path)
+    assert result["ready"] is True
+
+    cfg = json.loads((tmp_path / "config.json").read_text())
+    cfg["text_config"]["hidden_size"] = 32
+    (tmp_path / "config.json").write_text(json.dumps(cfg))
+
+    broken = verify_provider_readiness(tmp_path)
+    assert broken["ready"] is False
+    assert any("hidden_size" in str(err) for err in broken.get("errors", []))
+
+
+def test_foundry_resolve_model_dir_downloads_real_base_model(tmp_path, monkeypatch):
+    foundry = _load_foundry()
+
+    calls: list[dict] = []
+
+    def _fake_snapshot_download(repo_id, **kwargs):
+        calls.append({"repo_id": repo_id, **kwargs})
+        return str(tmp_path)
+
+    import huggingface_hub
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", _fake_snapshot_download)
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "hf_home"))
+    monkeypatch.delenv("TENET_V3_MODEL_DIR", raising=False)
+
+    resolved = foundry._resolve_model_dir("Tenet-35B-A3B-Qwen3.6-Unslop-v3", None, download=True)
+    assert str(resolved) == str(tmp_path)
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["repo_id"] == "Qwen/Qwen3.6-35B-A3B"
+    assert call.get("cache_dir") == str(tmp_path / "hf_home")
+    assert call.get("local_files_only") is not True
+    assert "local_files_only" not in call
+    assert "allow_patterns" not in call
+
+
+def test_foundry_streaming_sharded_checkpoint_with_drafter_and_engram(tmp_path):
+    foundry = _load_foundry()
+
+    foundry_src = (SCRIPTS_DIR / "run_tenet_v3_foundry.py").read_text(encoding="utf-8")
+    assert "from_pretrained(" not in foundry_src
+    # The script's docstring legitimately mentions ``torch.randn(64)`` as an
+    # anti-pattern; only a real fixed-size noise tensor allocation is banned.
+    assert "torch.randn(64, 64" not in foundry_src
+
+    from safetensors import safe_open
+    from safetensors.torch import save_file
+
+    from sml.hub.validator import verify_provider_readiness
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "architectures": ["Inkling2LoopForConditionalGeneration"],
+                "text_config": {
+                    "hidden_size": 16,
+                    "num_hidden_layers": 2,
+                    "num_local_experts": 4,
+                },
+            }
+        )
+    )
+    (src_dir / "tokenizer_config.json").write_text(
+        json.dumps({"tokenizer_class": "PreTrainedTokenizerFast"})
+    )
+    (src_dir / "chat_template.jinja").write_text(
+        "{% for m in messages %}{{ m.content }}{% endfor %}"
+    )
+
+    gen = torch.Generator().manual_seed(77)
+
+    def _small(*shape: int) -> torch.Tensor:
+        return torch.randn(*shape, generator=gen) * 0.25
+
+    shard1: dict[str, torch.Tensor] = {}
+    shard2: dict[str, torch.Tensor] = {}
+    weight_map: dict[str, str] = {}
+    for idx, shard in ((0, shard1), (1, shard2)):
+        prefix = f"model.language_model.layers.{idx}"
+        shard[f"{prefix}.self_attn.o_proj.weight"] = _small(16, 16)
+        shard[f"{prefix}.mlp.router.weight"] = _small(4, 16)
+        shard[f"{prefix}.mlp.shared_expert.down_proj.weight"] = _small(16, 24)
+        for e in range(4):
+            shard[f"{prefix}.mlp.experts.{e}.down_proj.weight"] = _small(16, 24)
+        name = f"model-0000{idx + 1}-of-00002.safetensors"
+        for key in shard:
+            weight_map[key] = name
+    shard1["model.engram.memory_table.weight"] = _small(8, 16)
+    shard1["model.loop_controller.weight"] = _small(4, 16)
+    weight_map["model.engram.memory_table.weight"] = "model-00001-of-00002.safetensors"
+    weight_map["model.loop_controller.weight"] = "model-00001-of-00002.safetensors"
+    shard2["model.dspark.out_proj.weight"] = _small(16, 16)
+    shard2["model.mtp.0.eh_proj.weight"] = _small(16, 32)
+    weight_map["model.dspark.out_proj.weight"] = "model-00002-of-00002.safetensors"
+    weight_map["model.mtp.0.eh_proj.weight"] = "model-00002-of-00002.safetensors"
+
+    save_file(shard1, str(src_dir / "model-00001-of-00002.safetensors"))
+    save_file(shard2, str(src_dir / "model-00002-of-00002.safetensors"))
+    (src_dir / "model.safetensors.index.json").write_text(json.dumps({"weight_map": weight_map}))
+
+    out_dir = tmp_path / "out"
+    mat_dir = tmp_path / "mat"
+    rc = foundry.main(
+        [
+            "--model-id",
+            "Tenet-26B-A3B-Inkling2-Unslop-v3",
+            "--model-dir",
+            str(src_dir),
+            "--output-dir",
+            str(out_dir),
+            "--materialized-dir",
+            str(mat_dir),
+            "--run-fight-card-gate",
+        ]
+    )
+    assert rc == 0
+
+    summary = json.loads(
+        (out_dir / foundry.DEFAULT_RELEASE_ID / "foundry_summary.json").read_text()
+    )
+    assert summary["h21"]["mode"] == "streaming"
+    assert summary["h21"]["h21_verified"] is True
+    assert summary["h22"]["h22_verified"] is True
+    assert summary["h22"]["looped"]["basis_rank"] <= 2
+    assert summary["h22"]["drafter"]["mode"] == "streaming"
+    assert summary["h22"]["drafter"]["passed_kl_gate"] is True
+    assert summary["h22"]["drafter"]["kl_reduction_pct"] >= 35.0
+    assert summary["h22"]["drafter"]["edited_drafter_params"] == 2
+    assert summary["fight_card_gate"]["gate_passed"] is True
+    assert summary["fight_card_gate"]["total_evaluated"] == 24
+
+    assert verify_provider_readiness(mat_dir)["ready"] is True
+
+    with safe_open(mat_dir / "lancet_basis.safetensors", framework="pt", device="cpu") as f:
+        basis_keys = set(f.keys())
+        assert {"layer_0", "layer_1"} <= basis_keys
+        for key in ("layer_0", "layer_1"):
+            assert f.get_tensor(key).shape[1] == 16
+            assert f.get_tensor(key).shape[0] <= 2
+
+    def _mat_tensor(key: str) -> torch.Tensor:
+        for shard in sorted(mat_dir.glob("*.safetensors")):
+            if shard.name == "lancet_basis.safetensors":
+                continue
+            with safe_open(shard, framework="pt", device="cpu") as f:
+                if key in set(f.keys()):
+                    return f.get_tensor(key)
+        raise AssertionError(f"key {key} missing from materialized checkpoint")
+
+    for frozen_key in (
+        "model.language_model.layers.0.mlp.router.weight",
+        "model.language_model.layers.1.mlp.router.weight",
+        "model.engram.memory_table.weight",
+        "model.loop_controller.weight",
+    ):
+        src_t = shard1[frozen_key] if frozen_key in shard1 else shard2[frozen_key]
+        assert torch.equal(_mat_tensor(frozen_key), src_t), frozen_key
+
+    for drafter_key in ("model.dspark.out_proj.weight", "model.mtp.0.eh_proj.weight"):
+        assert not torch.equal(_mat_tensor(drafter_key), shard2[drafter_key]), drafter_key
+
+
+def test_foundry_open_evals_and_cleanup_flags(tmp_path, monkeypatch):
+    import subprocess
+
+    foundry = _load_foundry()
+
+    from safetensors.torch import save_file
+
+    hf_home = tmp_path / "hf_home"
+    ckpt_dir = hf_home / "base_ckpt"
+    ckpt_dir.mkdir(parents=True)
+    (ckpt_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "architectures": ["Qwen3_5MoeForConditionalGeneration"],
+                "hidden_size": 16,
+                "num_hidden_layers": 1,
+            }
+        )
+    )
+    (ckpt_dir / "tokenizer_config.json").write_text(json.dumps({"chat_template": "{{ messages }}"}))
+    gen = torch.Generator().manual_seed(5)
+    tensors = {
+        "model.layers.0.self_attn.o_proj.weight": torch.randn(16, 16, generator=gen) * 0.25,
+        "model.layers.0.mlp.router.weight": torch.randn(4, 16, generator=gen) * 0.25,
+        "model.mtp.0.eh_proj.weight": torch.randn(16, 16, generator=gen) * 0.25,
+    }
+    for e in range(4):
+        tensors[f"model.layers.0.mlp.experts.{e}.down_proj.weight"] = (
+            torch.randn(16, 16, generator=gen) * 0.25
+        )
+    save_file(tensors, str(ckpt_dir / "model.safetensors"))
+
+    commands: list[list[str]] = []
+
+    def _fake_run(cmd, **kwargs):
+        commands.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+
+    hf_calls: list[tuple] = []
+
+    class _DummyHfApi:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def create_repo(self, **kwargs):
+            hf_calls.append(("create_repo", kwargs))
+            return kwargs.get("repo_id")
+
+        def upload_folder(self, **kwargs):
+            hf_calls.append(("upload_folder", kwargs))
+            return {}
+
+    monkeypatch.setattr("huggingface_hub.HfApi", _DummyHfApi)
+
+    # ---- Case A: smoke eval suite for the Gemma4 v2 release ----
+    monkeypatch.setenv("HF_HOME", str(hf_home))
+    foundry.main(
+        [
+            "--model-id",
+            "Tenet-26B-A4B-Gemma4-Unslop-v2",
+            "--model-dir",
+            str(ckpt_dir),
+            "--output-dir",
+            str(tmp_path / "out_gemma"),
+            "--materialized-dir",
+            str(tmp_path / "mat_gemma"),
+            "--run-open-evals",
+            "--eval-suite",
+            "smoke",
+        ]
+    )
+    eval_cmds = [c for c in commands if any("run_vllm_open_evals.py" in part for part in c)]
+    assert eval_cmds, "run_vllm_open_evals.py was not invoked"
+    cmd = eval_cmds[0]
+    for flag, value in (
+        ("--suite", "quick"),
+        ("--limit", "2"),
+        ("--mmlu-pro-limit", "2"),
+        ("--think-end-token", "<|thought|>"),
+    ):
+        assert flag in cmd, flag
+        assert cmd[cmd.index(flag) + 1] == value
+    for flag in ("--split-chat-0shot", "--sanity-gate", "--resume"):
+        assert flag in cmd, flag
+    export_cmds = [c for c in commands if any("export_model_index.py" in part for part in c)]
+    assert export_cmds, "export_model_index.py was not invoked"
+
+    # ---- Case B: full eval suite with the naive arm for the Qwen3.6 release ----
+    commands.clear()
+    foundry.main(
+        [
+            "--model-id",
+            "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+            "--model-dir",
+            str(ckpt_dir),
+            "--output-dir",
+            str(tmp_path / "out_qwen"),
+            "--materialized-dir",
+            str(tmp_path / "mat_qwen"),
+            "--run-open-evals",
+            "--eval-suite",
+            "full",
+            "--mmlu-pro-limit",
+            "72",
+        ]
+    )
+    eval_cmds = [c for c in commands if any("run_vllm_open_evals.py" in part for part in c)]
+    assert eval_cmds, "run_vllm_open_evals.py was not invoked"
+    cmd = eval_cmds[-1]
+    for flag, value in (
+        ("--suite", "full"),
+        ("--mmlu-pro-limit", "72"),
+        ("--arms", "base,naive,tenet"),
+        ("--think-end-token", "</think>"),
+        ("--naive-model", "huihui-ai/Huihui-Qwen3.6-35B-A3B-abliterated"),
+    ):
+        assert flag in cmd, flag
+        assert cmd[cmd.index(flag) + 1] == value
+
+    # ---- Case C: --cleanup-cache safety gates ----
+    # Refuses when the upload result does not confirm upload.
+    result = foundry._cleanup_local_cache(ckpt_dir, upload_result={})
+    assert result["cleaned_up"] is False
+    assert "upload" in result["reason"]
+    assert ckpt_dir.exists()
+
+    # Refuses when the Nebius s3-sync-up step fails.
+    def _failing_s3_run(cmd, **kwargs):
+        if any("nebius_ctl.sh" in str(part) for part in cmd):
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
+        return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", _failing_s3_run)
+    result = foundry._cleanup_local_cache(ckpt_dir, upload_result={"uploaded": True})
+    assert result["cleaned_up"] is False
+    assert result["reason"] == "s3-sync-up failed"
+    assert ckpt_dir.exists()
+
+    # Refuses paths outside /mnt/nvme and HF_HOME. Restore a succeeding
+    # subprocess first: the path guard runs after the s3-sync-up step, so a
+    # failing s3 sync would mask the refusal reason.
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr=""),
+    )
+    outside = tmp_path / "outside_ckpt"
+    outside.mkdir()
+    result = foundry._cleanup_local_cache(outside, upload_result={"uploaded": True})
+    assert result["cleaned_up"] is False
+    assert "refusing" in result["reason"]
+    assert outside.exists()
+
+    # Deletes cleanly when upload + s3-sync-up succeed under HF_HOME.
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr=""),
+    )
+    result = foundry._cleanup_local_cache(ckpt_dir, upload_result={"uploaded": True})
+    assert result["cleaned_up"] is True
+    assert not ckpt_dir.exists()
