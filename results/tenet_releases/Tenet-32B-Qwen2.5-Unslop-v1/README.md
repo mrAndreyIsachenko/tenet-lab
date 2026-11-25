@@ -17,7 +17,6 @@ tags:
 - tool-use
 - coding
 - safetensors
-- gguf
 - conversational
 ---
 
