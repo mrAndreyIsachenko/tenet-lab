@@ -857,7 +857,7 @@ def _deltas(tenet: dict[str, Any], reference: dict[str, Any]) -> dict[str, float
     }
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="3-way OpenEvals runner (vLLM / OpenAI-compatible)."
     )
@@ -927,7 +927,7 @@ def main() -> int:
     parser.add_argument(
         "--dry-run", action="store_true", help="Print commands and exit without running"
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.backend == "hf":
         parser.error("--backend hf is not supported here; use run_external_benchmark_3way.py")
@@ -1048,11 +1048,12 @@ def main() -> int:
         print(f"ERROR: arms failed: {', '.join(failed)}", flush=True)
         return 1
 
-    if set(arms) != set(ARMS):
-        missing = [arm for arm in ARMS if arm not in arms]
+    required_report_arms = set(selected_arms) | {"base", "tenet"}
+    if not required_report_arms.issubset(arms):
+        missing = [arm for arm in sorted(required_report_arms) if arm not in arms]
         print(
             f"Partial run: completed arms {sorted(arms)}; missing {missing}; "
-            "skipping 3-way report (per-arm summaries saved).",
+            "skipping report (per-arm summaries saved).",
             flush=True,
         )
         return 0
@@ -1081,7 +1082,7 @@ def main() -> int:
         "external_benchmarks": arms["tenet"],
         "deltas": _deltas(arms["tenet"], arms["base"]),
         "deltas_vs_base": _deltas(arms["tenet"], arms["base"]),
-        "deltas_vs_naive": _deltas(arms["tenet"], arms["naive"]),
+        "deltas_vs_naive": _deltas(arms["tenet"], arms["naive"]) if "naive" in arms else {},
     }
     payload["markdown_report"] = format_three_way_markdown_table(payload)
 

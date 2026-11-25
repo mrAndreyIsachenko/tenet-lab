@@ -1050,3 +1050,41 @@ class TestSanitizeCliMain:
         assert cli_api.create_commit_calls == []
         assert "experimental_ablation" in out
         assert "Tenet-14B-Qwen3-Unslop-v2-i1-cka-q4_k_m.gguf" in out
+
+
+class TestMainTwoWayReport:
+    def test_base_tenet_arms_write_report_with_empty_naive_deltas(
+        self, vllm_runner, tmp_path, monkeypatch
+    ):
+        release_id = "release-2way"
+        raw_root = tmp_path / "results" / "external_evals" / release_id / "raw"
+        for arm in ("base", "tenet"):
+            summary = raw_root / arm / "arm_summary.json"
+            summary.parent.mkdir(parents=True, exist_ok=True)
+            summary.write_text(
+                json.dumps({"arm": arm, "status": "ok", "scores": {"ifeval": 0.5}}),
+                encoding="utf-8",
+            )
+        monkeypatch.setattr(vllm_runner, "REPO_ROOT", tmp_path)
+
+        exit_code = vllm_runner.main(
+            [
+                "--release-id",
+                release_id,
+                "--base-model",
+                "org/base",
+                "--naive-model",
+                "org/naive",
+                "--tenet-repo",
+                "org/tenet",
+                "--arms",
+                "base,tenet",
+            ]
+        )
+
+        assert exit_code == 0
+        canonical = tmp_path / "results" / "external_evals" / f"{release_id}.json"
+        payload = json.loads(canonical.read_text(encoding="utf-8"))
+        assert set(payload["arms"]) == {"base", "tenet"}
+        assert payload["deltas_vs_naive"] == {}
+        assert payload["deltas_vs_base"] == payload["deltas"]
