@@ -1,6 +1,6 @@
 ---
 license: apache-2.0
-base_model: google/gemma-4-26b-a4b-it
+base_model: google/gemma-4-26B-A4B-it
 pipeline_tag: text-generation
 library_name: transformers
 tags:
@@ -25,7 +25,7 @@ tags:
 
 ## Model overview
 
-**Tenet-26B-A4B-Gemma4-Unslop-v2** is a Tenet fine-tune of [`google/gemma-4-26b-a4b-it`](https://huggingface.co/google/gemma-4-26b-a4b-it),
+**Tenet-26B-A4B-Gemma4-Unslop-v2** is a Tenet fine-tune of [`google/gemma-4-26B-A4B-it`](https://huggingface.co/google/gemma-4-26B-A4B-it),
 surgical de-refusal and de-slop work by the **Lancet** engine, finalized
 with gated unslop GRPO and exported as a provider-ready FP8 (E4M3)
 checkpoint. No custom code, no `trust_remote_code`, no `auto_map`:
@@ -270,7 +270,7 @@ ships:
 Deterministic reconstruction:
 
 1. Start from the untouched upstream base checkpoint
-   [`google/gemma-4-26b-a4b-it`](https://huggingface.co/google/gemma-4-26b-a4b-it).
+   [`google/gemma-4-26B-A4B-it`](https://huggingface.co/google/gemma-4-26B-A4B-it).
 2. Apply the bi-projected norm-preserving subspace surgery using the
    `layer_<idx>` basis rows from `lancet_basis.safetensors` for each
    layer listed in `selected_layers`, restoring the residual norm

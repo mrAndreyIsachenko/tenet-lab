@@ -282,7 +282,7 @@ def test_summarize_h100_v3_suite_mock(tmp_path: Path) -> None:
         {
             "release_id": "Tenet-26B-Gemma4-MoE-Unslop-v3",
             "target": "moe",
-            "model_id": "google/gemma-4-26b-a4b-it",
+            "model_id": "google/gemma-4-26B-A4B-it",
             "status": "ok",
             "quant_snap": True,
             "beta": 1.0,
@@ -357,7 +357,7 @@ def test_run_h100_v3_suite_shell_syntax_and_dry_run() -> None:
         " --output-dir results --run-id h18_nvfp4_quant_snap",
         "sml run --config experiments/h19_loop_unrolled_lancet.yaml"
         " --output-dir results --run-id h19_loop_unrolled_lancet --quant-snap",
-        "run_tenet_v3_pilot.py --target moe --model-id google/gemma-4-26b-a4b-it",
+        "run_tenet_v3_pilot.py --target moe --model-id google/gemma-4-26B-A4B-it",
         "run_tenet_v3_pilot.py --target dense"
         " --model-id mistralai/Mistral-Small-3.1-24B-Instruct-2503",
         "summarize_h100_v3_suite.py --results-dir results",

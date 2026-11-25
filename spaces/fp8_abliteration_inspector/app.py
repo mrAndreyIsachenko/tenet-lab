@@ -1057,7 +1057,7 @@ TENET_PROFILES: dict[str, dict[str, Any]] = {
     },
     "26b-gemma4-v2": {
         "id": "Tenet-26B-A4B-Gemma4-Unslop-v2",
-        "base": "google/gemma-4-26b-a4b-it",
+        "base": "google/gemma-4-26B-A4B-it",
         "hw": "NVIDIA B300 275GB (H20 Router-Frozen MoE + H18 Quant-Snap)",
         "num_layers": 30,
         "selected_layers": [15, 16, 17, 18, 19, 20, 21, 22],

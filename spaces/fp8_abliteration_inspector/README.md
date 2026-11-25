@@ -41,7 +41,7 @@ Interactive Hugging Face Space & CLI toolkit by [**Tenet Lab (Small Model Lab)**
    - `Tenet-8B-Qwen3-Unslop-v2` (`Qwen/Qwen3-8B`)
    - `Tenet-14B-Qwen3-Unslop-v2` (`Qwen/Qwen3-14B`)
    - `Tenet-24B-Mistral3.1-Unslop-v2` (`mistralai/Mistral-Small-3.1-24B-Instruct-2503`)
-   - `Tenet-26B-A4B-Gemma4-Unslop-v2` (`google/gemma-4-26b-a4b-it`)
+   - `Tenet-26B-A4B-Gemma4-Unslop-v2` (`google/gemma-4-26B-A4B-it`)
    - `Tenet-32B-Qwen3-Unslop-v2` (`Qwen/Qwen3-32B`)
 3. **Zero-Upload Browser & Hub Inspector:** Inspect any Hugging Face repository ID (`org/model`) via live Hub API or drop local `config.json`, `tokenizer_config.json`, `provider_readiness.json`, `lancet_recipe.json`, and `.safetensors` files directly in your browser (7/7 provider readiness gates + `Row Crest-Factor < 25.0` audit).
 4. **CKA-Guided & Lancet-Safe Quantization Generator:** Generate `llama-quantize --tensor-type` flags (protecting high-SCR surgical layers in `Q8_0`/`Q6_K`), `vllm serve --quantization fp8`, and `mlx_lm` commands.
