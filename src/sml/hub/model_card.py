@@ -71,6 +71,28 @@ _TAGS = (
     "conversational",
 )
 
+DEFAULT_HF_NAMESPACE = "mr-andrey-isachenko"
+
+GGUF_LADDER_QUANTS: tuple[str, ...] = ("IQ4_XS", "Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0")
+
+# Official Tenet v2 GGUF companion repositories keyed by the parent (FP8)
+# Tenet model id.
+TENET_V2_GGUF_REPOS: dict[str, str] = {
+    "Tenet-26B-A4B-Gemma4-Unslop-v2": "Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF",
+    "Tenet-24B-Mistral3.1-Unslop-v2": "Tenet-Mistral-Small-3.1-24B-Abliterated-Unslop-v2-GGUF",
+    "Tenet-4B-Qwen3-Unslop-v2": "Tenet-Qwen3-4B-Abliterated-Unslop-v2-GGUF",
+    "Tenet-8B-Qwen3-Unslop-v2": "Tenet-Qwen3-8B-Abliterated-Unslop-v2-GGUF",
+    "Tenet-14B-Qwen3-Unslop-v2": "Tenet-Qwen3-14B-Abliterated-Unslop-v2-GGUF",
+    "Tenet-32B-Qwen3-Unslop-v2": "Tenet-Qwen3-32B-Abliterated-Unslop-v2-GGUF",
+}
+
+# v2 models that ship no bundled GGUF in the parent repo (the weights live
+# in the dedicated ``-GGUF`` companion repositories above).
+_NO_BUNDLED_GGUF_MODELS: tuple[str, ...] = (
+    "Tenet-26B-A4B-Gemma4-Unslop-v2",
+    "Tenet-24B-Mistral3.1-Unslop-v2",
+)
+
 
 def generate_tenet_model_card(
     model_id: str,
@@ -79,6 +101,8 @@ def generate_tenet_model_card(
     *,
     recipe_metadata: dict[str, Any] | None = None,
     include_pareto_asset: bool = False,
+    has_bundled_gguf: bool | None = None,
+    hf_namespace: str = DEFAULT_HF_NAMESPACE,
 ) -> str:
     """Render a Hugging Face model card for a Tenet checkpoint.
 
@@ -104,6 +128,11 @@ def generate_tenet_model_card(
     """
     _validate_model_id(model_id)
 
+    resolved_bundled_gguf = (
+        (model_id not in _NO_BUNDLED_GGUF_MODELS) if has_bundled_gguf is None else has_bundled_gguf
+    )
+    tag_list = [tag for tag in _TAGS if tag != "gguf" or resolved_bundled_gguf]
+
     benchmarks_block = (
         _detailed_benchmark_tables(metrics)
         if _use_detailed_benchmark_tables(metrics)
@@ -117,9 +146,10 @@ def generate_tenet_model_card(
     pareto_asset = _pareto_asset_section(metrics, include_pareto_asset)
     side_by_side = _side_by_side_section()
     quickstart = _quickstart_section(model_id)
-    community_gguf = _community_gguf_section(model_id)
+    community_gguf = _community_gguf_section(model_id, hf_namespace)
+    gguf_callout = _gguf_callout_section(model_id, hf_namespace)
 
-    tags = "\n".join(f"- {tag}" for tag in _TAGS)
+    tags = "\n".join(f"- {tag}" for tag in tag_list)
     recipe_details = _recipe_reconstruction_details(recipe_metadata)
     model_index_block = render_model_index_yaml(model_id, metrics)
     model_index_frontmatter = f"{model_index_block}\n" if model_index_block else ""
@@ -149,7 +179,7 @@ Source code and technical report:
 | Model family:
 [Tenet v1 Collection (`mr-andrey-isachenko`)](https://huggingface.co/mr-andrey-isachenko).
 
-## Lancet surgery engine
+{gguf_callout}## Lancet surgery engine
 
 Lancet is not naive abliteration. It performs **bi-projected
 norm-preserving subspace surgery**: the refusal direction is identified
@@ -571,8 +601,73 @@ Nebius benchmark passport pipeline.
 """
 
 
-def _community_gguf_section(model_id: str) -> str:
+def _gguf_callout_section(model_id: str, hf_namespace: str) -> str:
+    """Render the official GGUF companion-repo callout (v2 models only)."""
+    gguf_repo = TENET_V2_GGUF_REPOS.get(model_id)
+    if gguf_repo is None:
+        return ""
+    gguf_repo_id = f"{hf_namespace}/{gguf_repo}"
+    gguf_url = _hf_url(gguf_repo_id)
+    return f"""> **Official GGUF quants available:** this model's llama.cpp /
+> Ollama / LM Studio weights live in the companion repository
+> [{gguf_repo}]({gguf_url}) — full quant ladder
+> ({", ".join(GGUF_LADDER_QUANTS)}) including the CKA-protected surgical
+> subspace recipe.
+
+```bash
+ollama run hf.co/{gguf_repo_id}:Q4_K_M
+```
+
+```bash
+llama-cli -hf {gguf_repo_id}:Q4_K_M -ngl 99 -c 16384 -cnv
+```
+
+LM Studio: search for **{gguf_repo}** and pick the quantization that fits
+your VRAM budget.
+
+"""
+
+
+def _community_gguf_section(model_id: str, hf_namespace: str = DEFAULT_HF_NAMESPACE) -> str:
     """Render the community GGUF / local inference section."""
+    gguf_repo = TENET_V2_GGUF_REPOS.get(model_id)
+    if gguf_repo is not None:
+        gguf_repo_id = f"{hf_namespace}/{gguf_repo}"
+        gguf_url = _hf_url(gguf_repo_id)
+        ladder_rows = "\n".join(
+            f"| `{gguf_repo.replace('-GGUF', '')}-{quant}.gguf` | **{quant}** |"
+            for quant in GGUF_LADDER_QUANTS
+        )
+        return f"""## Official GGUF / Local Inference (llama.cpp, Ollama, LM Studio)
+
+Official quantizations are published in the dedicated companion repository
+**[{gguf_repo}]({gguf_url})** (`{gguf_repo_id}`), covering the full quant
+ladder while keeping the CKA-protected surgical subspace intact:
+
+| File | Quant |
+| --- | --- |
+{ladder_rows}
+
+### llama.cpp
+
+```bash
+llama-cli -hf {gguf_repo_id}:Q4_K_M -ngl 99 -c 16384 -cnv
+```
+
+### Ollama
+
+```bash
+ollama run hf.co/{gguf_repo_id}:Q4_K_M
+```
+
+### LM Studio
+
+Search **{gguf_repo}** in LM Studio (or open
+[{gguf_url}]({gguf_url})) and pick the quantization that fits your VRAM
+budget — **Q4_K_M** for laptops, **Q6_K** / **Q8_0** for quality-first
+setups.
+
+"""
     if model_id in _MRADERMACHER_GGUF_MODELS:
         imatrix_url = f"https://huggingface.co/mradermacher/{model_id}-i1-GGUF"
         static_url = f"https://huggingface.co/mradermacher/{model_id}-GGUF"
@@ -905,11 +1000,31 @@ def _numeric_metric_value(value: Any) -> float | None:
         return None
 
 
+def _clean_hub_model_id(
+    model_id: str, *, hf_namespace: str = DEFAULT_HF_NAMESPACE
+) -> tuple[str, str]:
+    """Strip local filesystem / namespace prefixes from ``model_id``.
+
+    Returns ``(clean_id, repo_ref)``: ``clean_id`` is the bare Tenet name
+    (e.g. ``Tenet-24B-Mistral3.1-Unslop-v2``) and ``repo_ref`` is the
+    ``<namespace>/<clean_id>`` hub reference, using the model's own
+    namespace when one was supplied and ``hf_namespace`` otherwise.
+    """
+    raw = model_id.rstrip("/\\").replace("\\", "/")
+    if raw.startswith("/") or "/workspace/" in raw or raw.count("/") > 1:
+        raw = raw.split("/")[-1]
+    if "/" in raw:
+        namespace, clean_id = raw.split("/", 1)
+        return clean_id, f"{namespace}/{clean_id}"
+    return raw, f"{hf_namespace}/{raw}"
+
+
 def build_model_index(
     model_id: str,
     metrics: dict[str, Any],
     *,
     source_url: str | None = None,
+    hf_namespace: str = DEFAULT_HF_NAMESPACE,
 ) -> list[dict[str, Any]]:
     """Build a native HF ``model-index`` structure from OpenEvals metrics.
 
@@ -917,6 +1032,15 @@ def build_model_index(
     multiple metrics for the same dataset are grouped into a single
     ``results`` entry. Returns an empty list when nothing is available.
     """
+    clean_id, repo_ref = _clean_hub_model_id(model_id, hf_namespace=hf_namespace)
+    if (
+        isinstance(source_url, str)
+        and source_url.startswith("https://")
+        and "/workspace/" not in source_url
+    ):
+        resolved_source_url = source_url
+    else:
+        resolved_source_url = _hf_url(repo_ref)
     values = _open_eval_values(metrics)
     results: list[dict[str, Any]] = []
     by_dataset: dict[tuple[str, str], dict[str, Any]] = {}
@@ -934,7 +1058,7 @@ def build_model_index(
                 "metrics": [],
                 "source": {
                     "name": _OPEN_EVALS_SOURCE_NAME,
-                    "url": source_url or _hf_url(model_id),
+                    "url": resolved_source_url,
                 },
             }
             by_dataset[(ds_type, ds_name)] = entry
@@ -942,7 +1066,7 @@ def build_model_index(
         entry["metrics"].append({"name": metric_name, "type": key, "value": round(number, 6)})
     if not results:
         return []
-    return [{"name": model_id, "results": results}]
+    return [{"name": clean_id, "results": results}]
 
 
 def render_model_index_yaml(
@@ -1219,3 +1343,186 @@ llama-cli -m ./__MODEL_ID__-CKA-Quant-Q4_K_M.gguf -ngl 99 -n 256 \\
 def _hf_url(repo_id: str) -> str:
     """Return the Hugging Face hub URL for ``repo_id``."""
     return f"https://huggingface.co/{repo_id}"
+
+
+def generate_tenet_gguf_model_card(
+    parent_model_id: str,
+    base_model: str,
+    *,
+    gguf_repo_name: str | None = None,
+    hf_namespace: str = DEFAULT_HF_NAMESPACE,
+    quant_files: dict[str, dict[str, Any]] | None = None,
+    cka_recipe: dict[str, Any] | None = None,
+    metrics: dict[str, Any] | None = None,
+    is_moe: bool | None = None,
+) -> str:
+    """Render an SEO model card for an official Tenet ``-GGUF`` companion repo."""
+    _validate_model_id(parent_model_id)
+
+    resolved_repo = gguf_repo_name or TENET_V2_GGUF_REPOS.get(parent_model_id)
+    if not resolved_repo:
+        raise ValueError(
+            f"gguf_repo_name not supplied and no official GGUF repo is registered "
+            f"for '{parent_model_id}'"
+        )
+
+    parsed = parse_tenet_model_name(parent_model_id)
+    moe_flag = bool(parsed["is_moe"]) if is_moe is None else bool(is_moe)
+    metrics = metrics if isinstance(metrics, dict) else {}
+
+    parent_repo = f"{hf_namespace}/{parent_model_id}"
+    gguf_repo_id = f"{hf_namespace}/{resolved_repo}"
+    file_stem = resolved_repo[:-5] if resolved_repo.endswith("-GGUF") else resolved_repo
+
+    quant_files = quant_files if isinstance(quant_files, dict) else {}
+    ladder_lines: list[str] = []
+    for quant in GGUF_LADDER_QUANTS:
+        info = quant_files.get(quant) if isinstance(quant_files.get(quant), dict) else {}
+        size = info.get("size")
+        bpw = info.get("bpw")
+        if size is not None and bpw is not None:
+            description = f"{size} · {bpw} bpw"
+        elif size is not None:
+            description = str(size)
+        else:
+            description = {
+                "IQ4_XS": "smallest, laptop VRAM friendly",
+                "Q4_K_M": "recommended size/quality balance",
+                "Q5_K_M": "higher fidelity, still compact",
+                "Q6_K": "near-BF16 fidelity",
+                "Q8_0": "near-lossless",
+            }[quant]
+        ladder_lines.append(f"| `{file_stem}-{quant}.gguf` | {quant} | {description} |")
+    ladder_table = "\n".join(ladder_lines)
+
+    selected_layers = cka_recipe.get("selected_layers") if isinstance(cka_recipe, dict) else None
+    q8_0_layers = cka_recipe.get("q8_0_layers") if isinstance(cka_recipe, dict) else None
+    q6_k_layers = cka_recipe.get("q6_k_layers") if isinstance(cka_recipe, dict) else None
+    avg_bpw = cka_recipe.get("estimated_avg_bpw") if isinstance(cka_recipe, dict) else None
+
+    def _render_layer_list(value: Any) -> str:
+        if isinstance(value, (list, tuple)) and value:
+            return ", ".join(str(int(layer)) for layer in value)
+        return "see `cka_quant_recipe.json` in this repository"
+
+    cka_lines = [
+        f"- **Selected surgical layers** (`selected_layers`): "
+        f"{_render_layer_list(selected_layers)}",
+        f"- **Protected `Q8_0` layers** (`q8_0_layers`): {_render_layer_list(q8_0_layers)}",
+        f"- **`Q6_K` layers** (`q6_k_layers`): {_render_layer_list(q6_k_layers)}",
+        f"- **Estimated average bitrate** (`estimated_avg_bpw`): "
+        f"{avg_bpw if avg_bpw is not None else 'see `cka_quant_recipe.json`'}",
+    ]
+    if moe_flag:
+        cka_lines.append(
+            "- **MoE router freeze:** the routed-expert routing tensors "
+            "(`ffn_gate_inp`) and `shared_expert` weights are always kept at "
+            "BF16 / Q8_0 so the gate logits stay bit-identical to the surgery "
+            "output — a uniform `llama-quantize` pass silently degrades them."
+        )
+
+    cka_block = "\n".join(cka_lines)
+
+    eval_values = _open_eval_values(metrics) if metrics else {}
+    eval_rows: list[str] = []
+    if eval_values:
+        eval_labels = {
+            "ifeval_strict": "IFEval (strict)",
+            "ifeval_inst_strict": "IFEval (instruction strict)",
+            "math_500": "MATH-500",
+            "gsm8k_cot_strict": "GSM8K (strict)",
+            "gpqa_diamond": "GPQA Diamond",
+            "mmlu_pro": "MMLU-Pro",
+            "bfcl_tool_acc": "BFCL tool accuracy",
+            "humaneval_pass1": "HumanEval pass@1",
+        }
+        for key, label in eval_labels.items():
+            value = _numeric_metric_value(eval_values.get(key))
+            if value is not None:
+                eval_rows.append(f"| {label} | {_format_value(value)} |")
+    open_evals_section = ""
+    if eval_rows:
+        rows = "\n".join(eval_rows)
+        open_evals_section = f"""
+## OpenEvals summary
+
+Scores measured on the parent FP8 checkpoint (`{parent_repo}`); the CKA-quant
+ladder below retains these within measurement noise:
+
+| Benchmark | Score |
+| --- | --- |
+{rows}
+
+"""
+
+    moe_tag = "\n- moe" if moe_flag else ""
+    tags = f"""- gguf
+- llama.cpp
+- ollama
+- lmstudio
+- jan
+- abliterated
+- uncensored
+- unslop
+- tenet
+- lancet
+- cka-gguf
+- conversational
+- coding
+- agentic
+- tool-use{moe_tag}"""
+
+    return f"""---
+license: apache-2.0
+base_model: {parent_repo}
+base_model_relation: quantized
+pipeline_tag: text-generation
+library_name: gguf
+quantized_by: {hf_namespace}
+tags:
+{tags}
+---
+
+# {resolved_repo}
+
+Official llama.cpp GGUF quantizations of
+**[{parent_model_id}]({_hf_url(parent_repo)})** — the Tenet
+*Lancet*-engine surgical de-refusal / de-slop fine-tune of
+[`{base_model}`]({_hf_url(base_model)}), quantized with the
+**CKA-protected** mixed-precision recipe instead of a uniform
+`llama-quantize` pass.
+
+{open_evals_section}## Quickstart
+
+```bash
+ollama run hf.co/{gguf_repo_id}:Q4_K_M
+```
+
+```bash
+llama-cli -hf {gguf_repo_id}:Q4_K_M -ngl 99 -c 16384 -cnv
+```
+
+LM Studio: search for **{resolved_repo}** and pick the quantization that
+fits your VRAM budget.
+
+## Quant ladder
+
+| File | Quant | Notes |
+| --- | --- | --- |
+{ladder_table}
+
+## CKA-Protected Surgical Subspace & MoE Router Freeze (`H14` + `H18` + `H20`)
+
+These quantizations are **not** uniform `llama-quantize` mirrors of the
+parent checkpoint. The CKA-guided mixed-precision recipe
+(`cka_quant_recipe.json` in this repository) keeps the layers whose
+activations carry the surgical subspace — and, for MoE checkpoints, the
+router and shared experts — at high bitrate, so refusal and slop behaviour
+never re-leaks under 4-6 bit quantization:
+
+{cka_block}
+
+Compared to a uniform quantization of the same average size, this keeps the
+surgery's suppression intact while still hitting the laptop-friendly
+bitrates listed above.
+"""

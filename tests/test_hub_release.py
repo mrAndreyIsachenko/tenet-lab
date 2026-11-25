@@ -3,14 +3,34 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
 import torch
 from safetensors.torch import save_file
 
-from sml.hub.model_card import generate_tenet_model_card
-from sml.hub.validator import STANDARD_ARCHITECTURES, verify_provider_readiness
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.hub.build_gguf_ladder import (  # noqa: E402
+    build_tensor_type_args,
+    resolve_gguf_repo_spec,
+)
+
+from sml.hub.model_card import (  # noqa: E402
+    GGUF_LADDER_QUANTS,
+    TENET_V2_GGUF_REPOS,
+    build_model_index,
+    generate_tenet_gguf_model_card,
+    generate_tenet_model_card,
+)
+from sml.hub.validator import (  # noqa: E402
+    STANDARD_ARCHITECTURES,
+    verify_gguf_repo_metadata,
+    verify_provider_readiness,
+)
 
 CHAT_TEMPLATE = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
 
@@ -320,3 +340,140 @@ def test_load_stage_metrics_prioritizes_llm_over_nano(tmp_path: Path) -> None:
     assert loaded["backend"] == "llm"
     assert loaded["max_row_crest_factor"] == pytest.approx(17.2706)
     assert source is not None and "h11_qwen3b_mps" in source
+
+
+# ---------------------------------------------------------------------------
+# GGUF companion repo: cards, validator, model-index, ladder tensor-type args
+# ---------------------------------------------------------------------------
+
+_GGUF_QUANT_FILES: dict[str, dict[str, str]] = {
+    quant: {"size": "15 GB", "bpw": "4.5"} for quant in GGUF_LADDER_QUANTS
+}
+_CKA_RECIPE: dict[str, list[int]] = {
+    "selected_layers": [7, 15, 23],
+    "q8_0_layers": [0, 7, 15],
+    "q6_k_layers": [3, 21],
+    "estimated_avg_bpw": 5.1,
+}
+_GGUF_EXISTING_FILES = [
+    f"Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-{q}.gguf" for q in GGUF_LADDER_QUANTS
+] + ["cka_quant_recipe.json", "Modelfile"]
+
+
+def test_generate_tenet_gguf_model_card_and_validator() -> None:
+    # MoE companion card (Gemma4 26B A4B).
+    moe_card = generate_tenet_gguf_model_card(
+        "Tenet-26B-A4B-Gemma4-Unslop-v2",
+        "google/gemma-4-26B-A4B-it",
+        quant_files=_GGUF_QUANT_FILES,
+        cka_recipe=dict(_CKA_RECIPE),
+    )
+    moe_report = verify_gguf_repo_metadata(
+        moe_card,
+        expected_parent_repo="mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2",
+        existing_files=_GGUF_EXISTING_FILES,
+    )
+    assert moe_report["ready"], moe_report["errors"]
+    fm = moe_report["frontmatter"]
+    assert fm["library_name"] == "gguf"
+    assert fm["pipeline_tag"] == "text-generation"
+    assert fm["base_model_relation"] == "quantized"
+    assert (
+        "ollama run hf.co/mr-andrey-isachenko/"
+        "Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF:Q4_K_M" in moe_card
+    )
+    assert (
+        "llama-cli -hf mr-andrey-isachenko/"
+        "Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF:Q4_K_M" in moe_card
+    )
+    assert "ffn_gate_inp" in moe_card
+
+    # Dense companion card (Mistral 24B).
+    dense_card = generate_tenet_gguf_model_card(
+        "Tenet-24B-Mistral3.1-Unslop-v2",
+        "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        quant_files=_GGUF_QUANT_FILES,
+        cka_recipe=dict(_CKA_RECIPE),
+    )
+    dense_report = verify_gguf_repo_metadata(
+        dense_card,
+        expected_parent_repo="mr-andrey-isachenko/Tenet-24B-Mistral3.1-Unslop-v2",
+        existing_files=_GGUF_EXISTING_FILES,
+    )
+    assert dense_report["ready"], dense_report["errors"]
+    assert dense_report["frontmatter"]["library_name"] == "gguf"
+
+
+def test_parent_card_gguf_tag_and_callout() -> None:
+    gguf_repo = TENET_V2_GGUF_REPOS["Tenet-26B-A4B-Gemma4-Unslop-v2"]
+    assert gguf_repo == "Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF"
+
+    for model_id, base_model in (
+        (
+            "Tenet-26B-A4B-Gemma4-Unslop-v2",
+            "google/gemma-4-26B-A4B-it",
+        ),
+        (
+            "Tenet-24B-Mistral3.1-Unslop-v2",
+            "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        ),
+    ):
+        card = generate_tenet_model_card(model_id, base_model, {})
+        frontmatter = _frontmatter(card)
+        tags = [
+            line.removeprefix("- ").strip()
+            for line in frontmatter.splitlines()
+            if line.startswith("- ")
+        ]
+        assert "gguf" not in tags, model_id
+        assert TENET_V2_GGUF_REPOS[model_id] in card, model_id
+
+    # v1 models keep the legacy inline ``gguf`` tag.
+    card_v1 = generate_tenet_model_card(
+        "Tenet-8B-Llama3.1-Unslop-v1", "meta-llama/Llama-3.1-8B-Instruct", {}
+    )
+    tags_v1 = _frontmatter(card_v1)
+    assert "- gguf" in tags_v1
+
+
+def test_build_model_index_strips_workspace_prefix() -> None:
+    entries = build_model_index(
+        "/workspace/tenet_materialized/Tenet-24B-Mistral3.1-Unslop-v2",
+        {"ifeval_strict": 0.757856},
+    )
+    assert entries and entries[0]["name"] == "Tenet-24B-Mistral3.1-Unslop-v2"
+    result = entries[0]["results"][0]
+    assert result["source"]["url"] == (
+        "https://huggingface.co/mr-andrey-isachenko/Tenet-24B-Mistral3.1-Unslop-v2"
+    )
+    assert result["metrics"][0]["value"] == pytest.approx(0.757856)
+
+
+def test_build_tensor_type_args_respects_quant_rank_and_moe() -> None:
+    spec = resolve_gguf_repo_spec("Tenet-26B-A4B-Gemma4-Unslop-v2")
+    assert spec["is_moe"] is True
+    assert spec["file_stem"] == "Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2"
+
+    recipe = {
+        "selected_layers": [0, 1, 2, 3],
+        "q8_0_layers": [0, 1, 2],
+        "q6_k_layers": [3],
+    }
+
+    # Q4_K_M run applies both strictly-higher-rank protections.
+    q4_args = build_tensor_type_args(recipe, "Q4_K_M")
+    assert any("=Q8_0" in arg for arg in q4_args)
+    assert any("=Q6_K" in arg for arg in q4_args)
+
+    # Q6_K run applies only Q8_0 rules (never downgrades Q6_K).
+    q6_args = build_tensor_type_args(recipe, "Q6_K")
+    assert any("=Q8_0" in arg for arg in q6_args)
+    assert not any("=Q6_K" in arg for arg in q6_args)
+
+    # Dense Q8_0 run: no surgical downgrade above rank 5 in this recipe.
+    dense_q8_args = build_tensor_type_args(recipe, "Q8_0")
+    assert dense_q8_args == []
+
+    # MoE runs always freeze the router gate at F16.
+    moe_q4_args = build_tensor_type_args(recipe, "Q4_K_M", is_moe=True)
+    assert any("ffn_gate_inp" in arg and arg.endswith("=F16") for arg in moe_q4_args)

@@ -17,8 +17,40 @@ tags:
 - tool-use
 - coding
 - safetensors
-- gguf
 - conversational
+model-index:
+- name: Tenet-26B-A4B-Gemma4-Unslop-v2
+  results:
+  - task:
+      type: text-generation
+    dataset:
+      name: IFEval
+      type: google/IFEval
+    metrics:
+    - name: Prompt-level Strict Accuracy
+      type: ifeval_strict
+      value: 0.863216
+    - name: Instruction-level Strict Accuracy
+      type: ifeval_inst_strict
+      value: 0.904077
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2
+  - task:
+      type: text-generation
+    dataset:
+      name: MATH-500
+      type: HuggingFaceH4/MATH-500
+    metrics:
+    - name: Accuracy
+      type: math_500
+      value: 0.75
+    - name: Accuracy
+      type: hendrycks_math500
+      value: 0.75
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2
 ---
 
 # Tenet-26B-A4B-Gemma4-Unslop-v2
@@ -36,6 +68,23 @@ Source code and technical report:
 [FP8 & Abliteration Inspector Space](https://huggingface.co/spaces/mr-andrey-isachenko/fp8-abliteration-inspector)
 | Model family:
 [Tenet v1 Collection (`mr-andrey-isachenko`)](https://huggingface.co/mr-andrey-isachenko).
+
+> **Official GGUF quants available:** this model's llama.cpp /
+> Ollama / LM Studio weights live in the companion repository
+> [Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF](https://huggingface.co/mr-andrey-isachenko/Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF) — full quant ladder
+> (IQ4_XS, Q4_K_M, Q5_K_M, Q6_K, Q8_0) including the CKA-protected surgical
+> subspace recipe.
+
+```bash
+ollama run hf.co/mr-andrey-isachenko/Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF:Q4_K_M
+```
+
+```bash
+llama-cli -hf mr-andrey-isachenko/Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF:Q4_K_M -ngl 99 -c 16384 -cnv
+```
+
+LM Studio: search for **Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF** and pick the quantization that fits
+your VRAM budget.
 
 ## Lancet surgery engine
 
@@ -66,55 +115,68 @@ explicitly out of scope and unsupported by this release.
 
 ## Benchmarks
 
-Benchmarks are reported for the BF16 surgery output, the shipped FP8
-(E4M3) export, and a naive-abliteration baseline of the same base model.
+Numbers come from the release pipeline's `final_metrics.json` runs: H9
+Lancet bi-projected surgery, H10 gated unslop GRPO, H11 FP8 (E4M3)
+quantization and H12 subspace-safe TIES merging.
 
 ### H9 - refusal & slop retention
 
 Lower is better: residual refusal-direction alignment and slop density
-after surgery.
+after bi-projected surgery.
 
-| Variant | H9 |
-| --- | --- |
-| BF16 | n/a |
-| FP8 (E4M3) | n/a |
-| Naive Abliteration | n/a |
+| Metric | Value | Direction |
+| --- | --- | --- |
+| Lancet KL Collateral | n/a | Lower |
+| Naive KL Collateral | n/a | Lower |
+| KL Reduction Ratio | n/a | Higher |
+| Target Suppression Ratio | n/a | Higher |
 
 ### H10 - downstream capability retention
 
-Higher is better: held-out reasoning, coding and instruction-following
-accuracy relative to the untouched base model.
+Higher is better: the gated GRPO pass reinforces held-out reasoning,
+coding and instruction-following instead of trading them away for
+de-sloping; the slop & refusal audit itself is lower-is-better.
 
-| Variant | H10 |
-| --- | --- |
-| BF16 | n/a |
-| FP8 (E4M3) | n/a |
-| Naive Abliteration | n/a |
+| Metric | Value | Direction |
+| --- | --- | --- |
+| Gated GRPO IFEval Score | n/a | Higher |
+| Gated vs Naive/Additive Gain | n/a | Higher |
+| Slop & Refusal Rate | n/a | Lower |
+| Post-Merge Suppression Retention | n/a | Higher |
 
 ### H11 - FP8 quantization robustness
 
-Higher is better: task accuracy of each variant after FP8 (E4M3)
-quantization, measuring how cleanly the surgery survives deployment
-precision.
+Higher retention and KL reduction are better; subspace re-leakage is
+lower-is-better and shows how cleanly the surgery survives FP8
+(E4M3) deployment precision.
 
-| Variant | H11 |
-| --- | --- |
-| BF16 | n/a |
-| FP8 (E4M3) | n/a |
-| Naive Abliteration | n/a |
+| Metric | Value | Direction |
+| --- | --- | --- |
+| FP8 Retention Ratio | 0.97 | Higher |
+| FP8 KL Reduction vs Naive | n/a | Higher |
+| FP8 Subspace Re-Leakage Lancet | 0.03 | Lower |
+| FP8 Subspace Re-Leakage Naive | n/a | Lower |
 
-Max row crest-factor: n/a
+Max row crest-factor: 3.35
 
 ## Why Tenet instead of Naive Abliteration?
 
 | Metric | Base | Naive Abliteration | Tenet (BF16) | Tenet (FP8 E4M3) |
 | --- | --- | --- | --- | --- |
-| KL Collateral Drift | — | — | — | — |
+| KL Collateral Drift | — | — | — | 0.03 |
 | Refusal Suppression | — | — | — | — |
 | Tool/SQL Anchor Orthogonality | — | — | — | — |
-| LoRA Re-Leakage | — | — | — | — |
-| FP8 Subspace Re-Leakage | — | — | — | — |
-| Max Row Crest-Factor (< 25.0) | — | — | — | — |
+| LoRA Re-Leakage | — | — | — | 0.03 |
+| FP8 Subspace Re-Leakage | — | — | — | 0.03 |
+| Max Row Crest-Factor (< 25.0) | — | — | 3.35 | 3.35 |
+
+## External Benchmarks
+
+| Benchmark | Score |
+| --- | --- |
+| IFEval (strict) | 0.86 |
+| IFEval (inst strict) | 0.90 |
+| MATH-500 | 0.75 |
 
 ## Side-by-Side: Naive Abliteration vs Tenet (Engineering & SQL Tool-Call)
 
@@ -173,22 +235,38 @@ llama-cli -m ./Tenet-26B-A4B-Gemma4-Unslop-v2-CKA-Quant-Q4_K_M.gguf -ngl 99 -n 2
     -p "Return a DuckDB SQL tool call for failed logins by source IP."
 ```
 
-## Community GGUF / Local Inference (llama.cpp, Ollama, LM Studio)
+## Official GGUF / Local Inference (llama.cpp, Ollama, LM Studio)
 
-Community `mradermacher/Tenet-26B-A4B-Gemma4-Unslop-v2-i1-GGUF` / `mradermacher/Tenet-26B-A4B-Gemma4-Unslop-v2-GGUF`
-builds are upcoming and tracked. Until they land, quantize locally with the
-CKA-guided recipe shipped in this bundle -
-[`quantize_cka_gguf.sh`](https://github.com/mrAndreyIsachenko/tenet-lab) +
-`cka_quant_recipe.json` - which emits llama.cpp GGUFs in the same
-**i1-Q4_K_M** / **i1-Q6_K** spirit while keeping high-CKA boundary layers
-on `Q8_0`:
+Official quantizations are published in the dedicated companion repository
+**[Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF](https://huggingface.co/mr-andrey-isachenko/Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF)** (`mr-andrey-isachenko/Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF`), covering the full quant
+ladder while keeping the CKA-protected surgical subspace intact:
+
+| File | Quant |
+| --- | --- |
+| `Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-IQ4_XS.gguf` | **IQ4_XS** |
+| `Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-Q4_K_M.gguf` | **Q4_K_M** |
+| `Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-Q5_K_M.gguf` | **Q5_K_M** |
+| `Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-Q6_K.gguf` | **Q6_K** |
+| `Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-Q8_0.gguf` | **Q8_0** |
+
+### llama.cpp
 
 ```bash
-bash ./quantize_cka_gguf.sh   # reads cka_quant_recipe.json
+llama-cli -hf mr-andrey-isachenko/Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF:Q4_K_M -ngl 99 -c 16384 -cnv
 ```
 
-The recipe keeps the FP8 surgery output stable under 4-6 bit llama.cpp
-quantization without re-leaking refusal or slop behaviour.
+### Ollama
+
+```bash
+ollama run hf.co/mr-andrey-isachenko/Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF:Q4_K_M
+```
+
+### LM Studio
+
+Search **Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF** in LM Studio (or open
+[https://huggingface.co/mr-andrey-isachenko/Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF](https://huggingface.co/mr-andrey-isachenko/Tenet-gemma-4-26B-A4B-it-Abliterated-Unslop-v2-GGUF)) and pick the quantization that fits your VRAM
+budget — **Q4_K_M** for laptops, **Q6_K** / **Q8_0** for quality-first
+setups.
 
 ## Deployment & inference
 
@@ -279,3 +357,4 @@ Deterministic reconstruction:
    match the published recipe, making the reconstruction
    deterministic relative to the released BF16 surgery output.
 
+- Steered layers (`selected_layers`): 15, 16, 17, 18, 19, 20, 21, 22
