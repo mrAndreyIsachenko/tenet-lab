@@ -2,7 +2,7 @@
 """H20 pilot driver: Tenet v3 + H18 Quant-Snap on non-Qwen/Meta models.
 
 Targets:
-  --target moe   -> google/gemma-4-26b-a4b-it        (Tenet-26B-Gemma4-MoE-Unslop-v3)
+  --target moe   -> google/gemma-4-26B-A4B-it        (Tenet-26B-Gemma4-MoE-Unslop-v3)
   --target dense -> mistralai/Mistral-Small-3.1-24B-Instruct-2503
                     (Tenet-24B-Mistral-Small-3.1-Unslop-v3)
 
@@ -35,7 +35,7 @@ RECIPE_FILENAME = "cka_quant_recipe.json"
 
 TARGETS = {
     "moe": {
-        "model_id": "google/gemma-4-26b-a4b-it",
+        "model_id": "google/gemma-4-26B-A4B-it",
         "release_id": "Tenet-26B-Gemma4-MoE-Unslop-v3",
     },
     "dense": {

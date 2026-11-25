@@ -3,7 +3,7 @@
 ## Repository
 
 - **HF repo id:** `mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2`
-- **Base model:** `google/gemma-4-26b-a4b-it`
+- **Base model:** `google/gemma-4-26B-A4B-it`
 - **Target providers:** Featherless, Chutes, Novita, DeepInfra
 
 ## vLLM launch command

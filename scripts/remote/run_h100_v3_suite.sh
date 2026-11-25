@@ -35,7 +35,7 @@ UPLOAD_TO_HF="${UPLOAD_TO_HF:-0}"
 NAIVE_4B_MODEL="${NAIVE_4B_MODEL:-huihui-ai/Qwen3-4B-abliterated}"
 NAIVE_8B_MODEL="${NAIVE_8B_MODEL:-huihui-ai/Qwen3-8B-abliterated}"
 NAIVE_32B_MODEL="${NAIVE_32B_MODEL:-huihui-ai/Qwen3-32B-abliterated}"
-TENET_V3_MOE_MODEL="${TENET_V3_MOE_MODEL:-google/gemma-4-26b-a4b-it}"
+TENET_V3_MOE_MODEL="${TENET_V3_MOE_MODEL:-google/gemma-4-26B-A4B-it}"
 TENET_V3_MOE_RELEASE="${TENET_V3_MOE_RELEASE:-Tenet-26B-A4B-Gemma4-Unslop-v2}"
 TENET_V3_DENSE_MODEL="${TENET_V3_DENSE_MODEL:-mistralai/Mistral-Small-3.1-24B-Instruct-2503}"
 TENET_V3_DENSE_RELEASE="${TENET_V3_DENSE_RELEASE:-Tenet-24B-Mistral3.1-Unslop-v2}"
@@ -98,7 +98,7 @@ Environment knobs (defaults):
   NAIVE_4B_MODEL          huihui-ai/Qwen3-4B-abliterated
   NAIVE_8B_MODEL          huihui-ai/Qwen3-8B-abliterated
   NAIVE_32B_MODEL         huihui-ai/Qwen3-32B-abliterated
-  TENET_V3_MOE_MODEL      google/gemma-4-26b-a4b-it
+  TENET_V3_MOE_MODEL      google/gemma-4-26B-A4B-it
   TENET_V3_MOE_RELEASE    Tenet-26B-A4B-Gemma4-Unslop-v2
   TENET_V3_DENSE_MODEL    mistralai/Mistral-Small-3.1-24B-Instruct-2503
   TENET_V3_DENSE_RELEASE  Tenet-24B-Mistral3.1-Unslop-v2
