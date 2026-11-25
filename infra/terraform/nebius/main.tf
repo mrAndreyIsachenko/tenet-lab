@@ -10,11 +10,12 @@ locals {
     }
   }
 
-  selected_gpu = local.gpu_presets[var.gpu_preset]
-  ssh_pub_key  = trimspace(file(pathexpand(var.ssh_public_key_path)))
-  repo_root    = abspath("${path.module}/../../..")
-  public_ip    = split("/", nebius_vpc_v1_allocation.public_ip.status.details.allocated_cidr)[0]
-  ssh_host     = "${var.ssh_user}@${local.public_ip}"
+  selected_gpu    = local.gpu_presets[var.gpu_preset]
+  scratch_size_gb = max(93, floor(var.nvme_scratch_size_gb / 93) * 93)
+  ssh_pub_key     = trimspace(file(pathexpand(var.ssh_public_key_path)))
+  repo_root       = abspath("${path.module}/../../..")
+  public_ip       = split("/", nebius_vpc_v1_allocation.public_ip.status.details.allocated_cidr)[0]
+  ssh_host        = "${var.ssh_user}@${local.public_ip}"
   mlflow_uri = coalesce(
     try(nebius_msp_mlflow_v1alpha1_cluster.mlflow.status.tracking_endpoints.public, null),
     try(nebius_msp_mlflow_v1alpha1_cluster.mlflow.status.tracking_endpoint, null),
@@ -46,10 +47,24 @@ resource "nebius_vpc_v1_allocation" "public_ip" {
   }
 }
 
+data "nebius_iam_v2_project" "current" {
+  id = var.parent_id
+}
+
+data "nebius_iam_v1_group" "editors" {
+  parent_id = data.nebius_iam_v2_project.current.parent_id
+  name      = "editors"
+}
+
 resource "nebius_iam_v1_service_account" "tenet" {
   parent_id   = var.parent_id
   name        = "tenet-v3-sa"
   description = "Service account for Tenet v3 GPU VM, Object Storage, and Managed MLflow"
+}
+
+resource "nebius_iam_v1_group_membership" "tenet_editors" {
+  parent_id = data.nebius_iam_v1_group.editors.id
+  member_id = nebius_iam_v1_service_account.tenet.id
 }
 
 resource "nebius_storage_v1_bucket" "artifacts" {
@@ -72,6 +87,8 @@ resource "nebius_msp_mlflow_v1alpha1_cluster" "mlflow" {
     version        = "1"
     admin_password = var.mlflow_admin_password
   }
+
+  depends_on = [nebius_iam_v1_group_membership.tenet_editors]
 }
 
 resource "nebius_compute_v1_disk" "boot" {
@@ -89,7 +106,7 @@ resource "nebius_compute_v1_disk" "nvme_scratch" {
   parent_id      = var.parent_id
   name           = "tenet-v3-nvme-scratch"
   type           = "NETWORK_SSD_NON_REPLICATED"
-  size_gibibytes = var.nvme_scratch_size_gb
+  size_gibibytes = local.scratch_size_gb
 }
 
 resource "nebius_compute_v1_instance" "gpu" {
