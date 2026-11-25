@@ -207,11 +207,27 @@ def prepare_checkpoint_for_gguf(src_dir: Path, dst_dir: Path) -> Path:
     )
     has_quant_config = "quantization_config" in config
     has_fp8_shard = any(_shard_is_fp8(shard) for shard in shards)
+    # Mistral checkpoints ship both `tekken.json` and a HuggingFace
+    # `tokenizer.json`; llama.cpp must pick the tekken vocab
+    # (`_set_vocab_mistral()`), so the conflicting tokenizer.json is excluded.
+    has_tekken_conflict = (src_dir / "tekken.json").is_file() and (
+        src_dir / "tokenizer.json"
+    ).is_file()
     if not has_quant_config and not has_fp8_shard:
-        return src_dir
+        if not has_tekken_conflict:
+            return src_dir
+        shutil.rmtree(dst_dir, ignore_errors=True)
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        for path in sorted(src_dir.iterdir()):
+            if path.name == "tokenizer.json":
+                continue
+            (dst_dir / path.name).symlink_to(path.resolve())
+        return dst_dir
 
     dst_dir.mkdir(parents=True, exist_ok=True)
     skip_names = {"model.safetensors.index.json"}
+    if has_tekken_conflict:
+        skip_names.add("tokenizer.json")
     for path in sorted(src_dir.iterdir()):
         if path.is_dir() or path.suffix == ".safetensors" or path.name in skip_names:
             continue
@@ -441,20 +457,26 @@ def _convert_to_base_gguf(
     ckpt_dir: Path, base_gguf: Path, llama_cpp_dir: Path, outtype: str
 ) -> Path:
     converter = llama_cpp_dir / "convert_hf_to_gguf.py"
+    # Convert into a temp file so an interrupted run never leaves a truncated
+    # base GGUF that a later invocation would treat as reusable.
+    tmp_gguf = base_gguf.with_suffix(".tmp.gguf")
+    tmp_gguf.unlink(missing_ok=True)
     for resolved_outtype in (outtype, "f16"):
         cmd = [
             sys.executable,
             str(converter),
             str(ckpt_dir),
             "--outfile",
-            str(base_gguf),
+            str(tmp_gguf),
             "--outtype",
             resolved_outtype,
         ]
         print(f"[convert] {' '.join(cmd)}")
         result = subprocess.run(cmd, check=False)
         if result.returncode == 0:
+            tmp_gguf.replace(base_gguf)
             return base_gguf
+        tmp_gguf.unlink(missing_ok=True)
         print(f"[convert] --outtype {resolved_outtype} failed; trying fallback")
     raise RuntimeError(f"convert_hf_to_gguf.py failed for {ckpt_dir}")
 
@@ -472,13 +494,19 @@ def _process_model(spec: dict[str, Any], args: argparse.Namespace, token: str | 
     if base_gguf.is_file():
         print(f"[reuse] {base_gguf}")
     else:
-        print(f"[download] {spec['parent_repo_id']} -> {raw_dir}")
-        snapshot_download(
-            repo_id=spec["parent_repo_id"],
-            local_dir=str(raw_dir),
-            token=token,
-            ignore_patterns=["*.gguf"],
-        )
+        if (raw_dir / "config.json").is_file() and any(
+            p.name != "lancet_basis.safetensors" and p.suffix == ".safetensors"
+            for p in raw_dir.glob("*.safetensors")
+        ):
+            print(f"[reuse-snapshot] {raw_dir}")
+        else:
+            print(f"[download] {spec['parent_repo_id']} -> {raw_dir}")
+            snapshot_download(
+                repo_id=spec["parent_repo_id"],
+                local_dir=str(raw_dir),
+                token=token,
+                ignore_patterns=["*.gguf"],
+            )
         ckpt = prepare_checkpoint_for_gguf(raw_dir, ckpt_dir)
         _convert_to_base_gguf(ckpt, base_gguf, Path(args.llama_cpp_dir), args.outtype)
 
