@@ -28,8 +28,8 @@ variable "boot_disk_size_gb" {
 
 variable "nvme_scratch_size_gb" {
   type        = number
-  default     = 1024
-  description = "NVMe scratch disk size in GiB for /mnt/nvme."
+  default     = 1023
+  description = "NVMe scratch disk size in GiB for /mnt/nvme (multiple of 93 GiB for non-replicated SSD)."
 }
 
 variable "s3_bucket_name" {
@@ -58,7 +58,7 @@ variable "instance_stopped" {
 
 variable "boot_image_family" {
   type        = string
-  default     = "ubuntu24.04-cuda12"
+  default     = "ubuntu24.04-cuda13.0"
   description = "Nebius compute image family for the GPU VM."
 }
 
