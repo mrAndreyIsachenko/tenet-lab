@@ -15,7 +15,11 @@ Implements two H22 capabilities on top of the Tri-Anchor Lancet MoE surgery
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import shutil
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -37,6 +41,24 @@ _DRAFTER_TOKENS = ("dspark", "dfly2", "drafter", "mtp_heads", "eh_proj")
 _LOOP_CONTROLLER_TOKENS = ("loop_controller", "loop_gate", "tick_embed")
 
 _LAYER_INDEX_RE = re.compile(r"(?:^|\.)layers\.(\d+)\.(?:$|\.)")
+
+
+def is_drafter_weight_key(name: str) -> bool:
+    """Return ``True`` when ``name`` is a 2-D-eligible drafter / MTP weight.
+
+    A key counts as a drafter weight when it ends with ``.weight``, is not a
+    router weight, and at least one dotted name segment either contains one of
+    the drafter tokens (``dspark``, ``dfly2``, ``drafter``, ``mtp_heads``,
+    ``eh_proj``) or equals ``mtp`` / starts with ``mtp_``.
+    """
+    if not name.endswith(".weight") or is_router_weight_key(name):
+        return False
+    for segment in name.lower().split("."):
+        if any(token in segment for token in _DRAFTER_TOKENS):
+            return True
+        if segment == "mtp" or segment.startswith("mtp_"):
+            return True
+    return False
 
 
 def _resolve_dirs(
@@ -204,15 +226,10 @@ def synchronize_speculative_drafter_surgery(
     except ImportError:
         drafter_backbone_kl_divergence = None  # type: ignore[assignment]
 
-    def _is_drafter_param(name: str) -> bool:
-        return any(
-            token in segment for segment in name.lower().split(".") for token in _DRAFTER_TOKENS
-        ) and name.endswith(".weight")
-
     drafter_params = [
         (name, param)
         for name, param in model.named_parameters()
-        if _is_drafter_param(name) and param.ndim == 2
+        if is_drafter_weight_key(name) and param.ndim == 2
     ]
 
     kl_before = 0.0
@@ -285,7 +302,125 @@ def synchronize_speculative_drafter_surgery(
     }
 
 
+def synchronize_speculative_drafter_streaming(
+    checkpoint_dir: str | Path,
+    layer_bases: dict[int, list[torch.Tensor] | torch.Tensor] | list[torch.Tensor] | torch.Tensor,
+    *,
+    output_dir: str | Path | None = None,
+    scale: float = 0.35,
+    min_kl_reduction_pct: float = 35.0,
+) -> dict[str, Any]:
+    """Streaming (shard-by-shard) speculative-drafter synchronization.
+
+    Applies the same bi-projection as :func:`synchronize_speculative_drafter_surgery`
+    without materializing the full model: each ``.safetensors`` shard is
+    inspected zero-copy via :func:`safetensors.safe_open`, and only shards
+    carrying drafter weights are loaded, edited and re-saved atomically.
+    """
+    from safetensors import safe_open
+    from safetensors.torch import load_file, save_file
+
+    src_dir = Path(checkpoint_dir)
+    dst_dir = Path(output_dir) if output_dir is not None else src_dir
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    same_dir = src_dir.resolve() == dst_dir.resolve()
+
+    index_path = src_dir / "model.safetensors.index.json"
+    if index_path.is_file():
+        with index_path.open("r", encoding="utf-8") as fh:
+            weight_map = json.load(fh).get("weight_map", {})
+        shard_names: list[str] = list(dict.fromkeys(weight_map.values()))
+    else:
+        shard_names = sorted(
+            p.name for p in src_dir.glob("*.safetensors") if p.name != "lancet_basis.safetensors"
+        )
+
+    edited = 0
+    shards_touched = 0
+    router_weight_drift = 0.0
+    residual_energy_before: list[float] = []
+    residual_energy_after: list[float] = []
+
+    for shard_name in shard_names:
+        src_shard = src_dir / shard_name
+        if not src_shard.is_file():
+            continue
+        with safe_open(str(src_shard), framework="pt", device="cpu") as handle:
+            shard_keys = list(handle.keys())
+        drafter_keys = [k for k in shard_keys if is_drafter_weight_key(k)]
+        if not drafter_keys:
+            if not same_dir:
+                shutil.copy2(src_shard, dst_dir / shard_name)
+            continue
+        shards_touched += 1
+        shard_tensors = load_file(str(src_shard))
+        router_snapshot = {
+            k: tensor.clone() for k, tensor in shard_tensors.items() if is_router_weight_key(k)
+        }
+        for key in drafter_keys:
+            tensor = shard_tensors[key]
+            if tensor.ndim != 2:
+                continue
+            match = _LAYER_INDEX_RE.search(key)
+            layer_idx = int(match.group(1)) if match else None
+            dirs = _resolve_dirs(layer_bases, layer_idx)
+            if not dirs:
+                continue
+            u = torch.stack([d.reshape(-1).to(dtype=torch.float32) for d in dirs], dim=0)
+            if tensor.shape[0] != u.shape[1]:
+                continue
+            flat = tensor.reshape(tensor.shape[0], -1).to(dtype=torch.float32)
+            coeff = u @ flat
+            denom = float((flat * flat).sum()) + 1e-12
+            residual_energy_before.append(float((coeff * coeff).sum()) / denom)
+            shard_tensors[key] = project_out_subspace_norm_preserving(
+                tensor, dirs, scale=scale, preserve_row_norm=True
+            )
+            flat_after = (
+                shard_tensors[key].reshape(shard_tensors[key].shape[0], -1).to(dtype=torch.float32)
+            )
+            coeff_after = u @ flat_after
+            denom_after = float((flat_after * flat_after).sum()) + 1e-12
+            residual_energy_after.append(float((coeff_after * coeff_after).sum()) / denom_after)
+            edited += 1
+        for name, snapshot in router_snapshot.items():
+            current = shard_tensors.get(name, snapshot)
+            router_weight_drift = max(router_weight_drift, float((current - snapshot).abs().max()))
+        tmp_path = dst_dir / (shard_name + ".tmp")
+        save_file(shard_tensors, str(tmp_path))
+        os.replace(tmp_path, dst_dir / shard_name)
+
+    if edited == 0:
+        return {
+            "mode": "streaming",
+            "edited_drafter_params": 0,
+            "shards_touched": 0,
+            "router_weight_drift": 0.0,
+            "kl_before": 0.0,
+            "kl_after": 0.0,
+            "kl_reduction_pct": 0.0,
+            "passed_kl_gate": False,
+        }
+
+    kl_before = float(sum(residual_energy_before) / len(residual_energy_before))
+    kl_after = float(sum(residual_energy_after) / len(residual_energy_after))
+    kl_reduction_pct = (kl_before - kl_after) / max(kl_before, 1e-12) * 100.0
+
+    return {
+        "mode": "streaming",
+        "edited_drafter_params": edited,
+        "shards_touched": shards_touched,
+        "router_weight_drift": float(router_weight_drift),
+        "kl_before": kl_before,
+        "kl_after": kl_after,
+        "kl_reduction_pct": kl_reduction_pct,
+        "passed_kl_gate": bool(kl_reduction_pct >= min_kl_reduction_pct),
+    }
+
+
 __all__ = [
     "apply_looped_moe_lancet_surgery",
+    "is_drafter_weight_key",
     "synchronize_speculative_drafter_surgery",
+    "synchronize_speculative_drafter_streaming",
 ]
