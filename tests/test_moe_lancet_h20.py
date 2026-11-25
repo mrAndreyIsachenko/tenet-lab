@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import math
+import stat
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -776,6 +777,42 @@ def test_verify_moe_router_freeze_detects_drift() -> None:
     edited_o = {key: tensor.clone() for key, tensor in baseline.items()}
     edited_o["model.layers.0.self_attn.o_proj.weight"] = torch.randn(D_MODEL, D_MODEL)
     assert verify_moe_router_freeze(baseline, edited_o)["router_freeze_ok"] is True
+
+
+def test_copy_aux_files_overwrites_read_only_destinations(tmp_path: Path) -> None:
+    from sml.surgery.subspace import _copy_aux_files
+
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+
+    index = src / "model.safetensors.index.json"
+    index.write_text("{}", encoding="utf-8")
+    aux = src / "config.json"
+    aux.write_text("{}", encoding="utf-8")
+    shard = src / "model.safetensors"
+    shard.write_bytes(b"x")
+
+    # Pre-existing read-only 0o444 destinations (as in HF cache blobs).
+    dst_index = dst / "model.safetensors.index.json"
+    dst_index.write_text("old", encoding="utf-8")
+    dst_index.chmod(0o444)
+    dst_aux = dst / "config.json"
+    dst_aux.write_text("old", encoding="utf-8")
+    dst_aux.chmod(0o444)
+
+    _copy_aux_files(src, dst, copy_index=True)
+
+    assert dst_index.read_text(encoding="utf-8") == "{}"
+    assert dst_aux.read_text(encoding="utf-8") == "{}"
+    assert not (dst / "model.safetensors").exists()
+    assert stat.S_IMODE(dst_index.stat().st_mode) == 0o644
+    assert stat.S_IMODE(dst_aux.stat().st_mode) == 0o644
+
+    # copy_index=False leaves the index untouched.
+    _copy_aux_files(src, dst, copy_index=False)
+    assert dst_index.read_text(encoding="utf-8") == "{}"
 
 
 # ---------------------------------------------------------------------------

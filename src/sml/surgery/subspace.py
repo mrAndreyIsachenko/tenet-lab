@@ -6,6 +6,7 @@ import copy
 import gc
 import json
 import math
+import os
 import re
 import shutil
 import tracemalloc
@@ -1728,6 +1729,32 @@ def _resolve_safetensors_shards(checkpoint_dir: Path) -> tuple[list[str], dict[s
     return shard_names, None
 
 
+def _copy_writable_file(src: Path, dst: Path) -> None:
+    """Copy ``src`` to ``dst`` as a writable 0o644 file.
+
+    Read-only 0o444 HF cache blobs must never cause ``PermissionError`` on
+    re-runs, so the destination is unlinked first and forced to 0o644.
+    """
+    dst.unlink(missing_ok=True)
+    shutil.copyfile(src, dst)
+    os.chmod(dst, 0o644)
+
+
+def _copy_aux_files(src_dir: Path, dst_dir: Path, *, copy_index: bool) -> None:
+    """Copy the safetensors index (optionally) and all non-shard files."""
+    if copy_index:
+        index_src = src_dir / "model.safetensors.index.json"
+        if index_src.is_file():
+            _copy_writable_file(index_src, dst_dir / "model.safetensors.index.json")
+    for aux_path in sorted(src_dir.glob("*")):
+        name = aux_path.name
+        if not aux_path.is_file() or name.endswith(".safetensors"):
+            continue
+        if name == "model.safetensors.index.json":
+            continue
+        _copy_writable_file(aux_path, dst_dir / name)
+
+
 def _parse_target_layer_weight_key(key: str) -> tuple[int, str] | None:
     """
     Parse a transformer checkpoint weight key into ``(layer_idx, proj_name)``.
@@ -1889,16 +1916,7 @@ def apply_lancet_recipe_streaming(
         tracemalloc.stop()
 
     if not same_dir:
-        if index_data is not None:
-            index_src = src_dir / "model.safetensors.index.json"
-            shutil.copy2(index_src, dst_dir / "model.safetensors.index.json")
-        for aux_path in sorted(src_dir.glob("*")):
-            name = aux_path.name
-            if not aux_path.is_file() or name.endswith(".safetensors"):
-                continue
-            if name == "model.safetensors.index.json":
-                continue
-            shutil.copy2(aux_path, dst_dir / name)
+        _copy_aux_files(src_dir, dst_dir, copy_index=index_data is not None)
 
     return {
         "shards_processed": len(shards),
@@ -2744,16 +2762,7 @@ def apply_moe_lancet_recipe_streaming(
         tracemalloc.stop()
 
     if not same_dir:
-        if index_data is not None:
-            index_src = src_dir / "model.safetensors.index.json"
-            shutil.copy2(index_src, dst_dir / "model.safetensors.index.json")
-        for aux_path in sorted(src_dir.glob("*")):
-            name = aux_path.name
-            if not aux_path.is_file() or name.endswith(".safetensors"):
-                continue
-            if name == "model.safetensors.index.json":
-                continue
-            shutil.copy2(aux_path, dst_dir / name)
+        _copy_aux_files(src_dir, dst_dir, copy_index=index_data is not None)
 
     return {
         "edited_layers": sorted(set(edited_layers)),
