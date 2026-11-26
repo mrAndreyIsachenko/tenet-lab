@@ -99,6 +99,7 @@ WEIGHT_LAYER_PREFIXES: tuple[str, ...] = (
     "model.language_model.layers.",
     "language_model.model.layers.",
     "language_model.layers.",
+    "model.llm.layers.",
     "model.layers.",
     "layers.",
 )
