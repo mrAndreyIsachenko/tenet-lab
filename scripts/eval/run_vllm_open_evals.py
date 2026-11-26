@@ -37,6 +37,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -585,12 +586,17 @@ def _run_subtask_with_cleanup(
         log_path.parent.mkdir(parents=True, exist_ok=True)
         proc = None
         try:
+            env = {
+                **os.environ,
+                "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}",
+            }
             with log_path.open("w", encoding="utf-8") as log_f:
                 proc = subprocess.Popen(
                     cmd,
                     stdout=log_f,
                     stderr=subprocess.STDOUT,
                     text=True,
+                    env=env,
                     start_new_session=True,
                 )
                 returncode = proc.wait()
