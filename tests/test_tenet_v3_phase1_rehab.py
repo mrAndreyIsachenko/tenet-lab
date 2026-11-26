@@ -244,3 +244,209 @@ def test_no_synthetic_fight_card_gate_and_auto_tp(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1,2,3")
     assert foundry._detect_tensor_parallel_size() == 4
+
+
+class _FakeOut:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class _FakeCompletion:
+    def __init__(self, text: str) -> None:
+        self.outputs = [_FakeOut(text)]
+
+
+class _FakeSamplingParams:
+    def __init__(self, **kwargs: object) -> None:
+        self.kwargs = kwargs
+
+
+def _load_foundry() -> types.ModuleType:
+    import importlib.util
+
+    foundry_path = Path(__file__).resolve().parents[1] / "scripts" / "run_tenet_v3_foundry.py"
+    spec = importlib.util.spec_from_file_location("run_tenet_v3_foundry", foundry_path)
+    assert spec is not None and spec.loader is not None
+    foundry = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(foundry)
+    return foundry
+
+
+def test_fight_card_gate_vllm_batching_and_dynamic_require_think(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """max_model_len=16384, house max_tokens=8192, enable_thinking=False for direct."""
+    import sml.evals.peer_eval as peer_eval_mod
+
+    foundry = _load_foundry()
+
+    class _FakeTok:
+        chat_template = "x"
+
+        def apply_chat_template(self, messages: list[dict[str, str]], **kwargs: object) -> str:
+            thinking = bool(kwargs["enable_thinking"]) if "enable_thinking" in kwargs else True
+            fmt = f"<user>{messages[0]['content']}<end>\n"
+            return fmt + ("<think>" if thinking else "")
+
+    class _FakeLLM:
+        instances: list[_FakeLLM] = []
+
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+            self.calls: list[tuple[list[str], _FakeSamplingParams]] = []
+            _FakeLLM.instances.append(self)
+
+        def get_tokenizer(self) -> _FakeTok:
+            return _FakeTok()
+
+        def generate(
+            self, prompts: list[str], sampling: _FakeSamplingParams
+        ) -> list[_FakeCompletion]:
+            self.calls.append((list(prompts), sampling))
+            return [_FakeCompletion("reasoned answer</think>\n\nDone.") for _ in prompts]
+
+    fake_vllm = types.SimpleNamespace(LLM=_FakeLLM, SamplingParams=_FakeSamplingParams)
+    monkeypatch.setitem(__import__("sys").modules, "vllm", fake_vllm)
+
+    captured: dict[str, object] = {}
+
+    def _fake_gate(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "ok", "gate_passed": True}
+
+    monkeypatch.setattr(peer_eval_mod, "run_paired_behavioral_gate", _fake_gate)
+
+    spec_cfg = {"base_model": "fake/base", "think_end_token": "</think>"}
+    report = foundry._run_fight_card_gate(
+        "fake/tenet", spec_cfg, Path("/tmp/fc_g"), materialized_dir=Path("/tmp/fc_g/mat")
+    )
+    assert report["status"] == "ok"
+
+    llm = _FakeLLM.instances[-1]
+    assert llm.kwargs["max_model_len"] == 16384
+    assert len(llm.calls) == 2
+    (house_prompts, house_sp), (direct_prompts, direct_sp) = llm.calls
+    assert len(house_prompts) == 24
+    assert len(direct_prompts) == 32 + len(ANTI_SLOP_PROMPTS)
+    assert house_sp.kwargs["max_tokens"] == 8192
+    assert direct_sp.kwargs["max_tokens"] == 1536  # thinking disabled branch
+    assert all(p.endswith("<think>") for p in direct_prompts) is False
+    # enable_thinking=False was honored: direct prompts carry no template think tag.
+    assert all(not p.endswith("<think>") for p in direct_prompts)
+    # House template opens <think>; generation did not start with it -> prepended.
+    assert all(p.endswith("<think>") for p in house_prompts)
+    assert captured["require_think"] is True
+    assert all(r.startswith("<think>") for r in captured["base_house_responses"])  # type: ignore[union-attr]
+
+
+def test_fight_card_gate_dynamic_require_think_direct_base(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A base model whose template answers directly does not force require_think."""
+    import sml.evals.peer_eval as peer_eval_mod
+
+    foundry = _load_foundry()
+
+    class _FakeTok:
+        chat_template = "x"
+
+        def apply_chat_template(self, messages: list[dict[str, str]], **kwargs: object) -> str:
+            if "enable_thinking" in kwargs:
+                return f"<user>{messages[0]['content']}<end>\n"
+            raise TypeError("enable_thinking not supported")
+
+    class _FakeLLM:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        def get_tokenizer(self) -> _FakeTok:
+            return _FakeTok()
+
+        def generate(self, prompts: list[str], sampling: object) -> list[_FakeCompletion]:
+            # Fallback path: template without think opening -> direct answers.
+            return [_FakeCompletion("Plain answer without deliberation.") for _ in prompts]
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "vllm",
+        types.SimpleNamespace(LLM=_FakeLLM, SamplingParams=_FakeSamplingParams),
+    )
+
+    captured: dict[str, object] = {}
+
+    def _fake_gate(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "ok", "gate_passed": True}
+
+    monkeypatch.setattr(peer_eval_mod, "run_paired_behavioral_gate", _fake_gate)
+
+    spec_cfg = {"base_model": "fake/base", "think_end_token": "</think>"}
+    report = foundry._run_fight_card_gate(
+        "fake/tenet", spec_cfg, Path("/tmp/fc_d"), materialized_dir=Path("/tmp/fc_d/mat")
+    )
+    assert report["status"] == "ok"
+    assert captured["require_think"] is False
+
+
+def test_compact_artifacts_not_length_collapse(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Compact valid json_config / sql_readonly answers are not length collapses."""
+    from sml.evals.artifact_verifier import TENET_ARENA_HOUSE_SERIES
+    from sml.evals.peer_eval import run_peer_eval_gate
+
+    artifact_items = [
+        i for i in TENET_ARENA_HOUSE_SERIES if i.artifact_type in ("json_config", "sql_readonly")
+    ]
+    assert artifact_items, "expected artifact-typed house prompts"
+
+    responses = []
+    prompts = []
+    for item in artifact_items:
+        body = '{"port": 5432}' if item.artifact_type == "json_config" else "SELECT 1"
+        responses.append(f"<think>ok</think>\n{body}")
+        prompts.append(item)
+
+    monkeypatch.setattr(
+        __import__("sml.evals.peer_eval", fromlist=["verify_house_artifact"]),
+        "verify_house_artifact",
+        lambda spec, text: types.SimpleNamespace(artifact_valid=True),
+    )
+    report = run_peer_eval_gate(responses=responses, prompts=prompts, require_think=True)
+    assert report["length_collapse_rate"] == pytest.approx(0.0)
+    assert report["gate_passed"] is True
+
+
+def test_normalize_deliberation_tags() -> None:
+    """Alternative deliberation tag families normalize to <think>/</think>."""
+    from sml.evals.peer_eval import normalize_deliberation_tags
+
+    assert normalize_deliberation_tags("<|thought|>step<channel|>done") == "<think>step</think>done"
+    assert (
+        normalize_deliberation_tags("<reasoning>step</reasoning>done") == "<think>step</think>done"
+    )
+    assert normalize_deliberation_tags("<think>already</think>fine") == "<think>already</think>fine"
+    assert normalize_deliberation_tags("no tags here") == "no tags here"
+
+
+def test_borderline_prompts_are_xstest_style() -> None:
+    """32 XSTest-style prompts with sensitive triggers and no self-hedging."""
+    from sml.evals.peer_eval import ANTI_SLOP_PROMPTS, BORDERLINE_OVER_REFUSAL_PROMPTS
+
+    assert len(BORDERLINE_OVER_REFUSAL_PROMPTS) == 32
+    assert len(ANTI_SLOP_PROMPTS) > 0
+    joined = " ".join(BORDERLINE_OVER_REFUSAL_PROMPTS)
+    assert "in my own web app" not in joined
+    assert "authorized audit" not in joined
+    assert any("zombie processes" in p for p in BORDERLINE_OVER_REFUSAL_PROMPTS)
+    assert any("192.168.1.1" in p for p in BORDERLINE_OVER_REFUSAL_PROMPTS)
+
+
+def test_extended_refusal_and_slop_regex() -> None:
+    """Extended regexes catch hedged refusals and fresh slop phrases."""
+    from sml.evals.peer_eval import _EXTENDED_REFUSAL_RE, _EXTENDED_SLOP_RE
+
+    assert _EXTENDED_REFUSAL_RE.search("I can’t help with that request.")
+    assert _EXTENDED_REFUSAL_RE.search("As an AI, I apologize, but I'm unable to assist.")
+    assert not _EXTENDED_REFUSAL_RE.search("The cannot-step loop in my pseudo-code is fine.")
+    assert _EXTENDED_SLOP_RE.search("It's important to note that this is a testament to craft.")
+    assert _EXTENDED_SLOP_RE.search("Let's dive in and embark on a journey.")
+    assert not _EXTENDED_SLOP_RE.search("Set the timeout to 30 seconds.")

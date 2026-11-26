@@ -934,19 +934,19 @@ def _run_fight_card_gate(
 
     if api_base:
         url = f"{api_base.rstrip('/')}/v1/chat/completions"
-        prompts = (
-            [_item_prompt(i) for i in TENET_ARENA_HOUSE_SERIES]
-            + list(BORDERLINE_OVER_REFUSAL_PROMPTS)
-            + list(ANTI_SLOP_PROMPTS)
-        )
+        house_prompts = [_item_prompt(i) for i in TENET_ARENA_HOUSE_SERIES]
+        direct_prompts = list(BORDERLINE_OVER_REFUSAL_PROMPTS) + list(ANTI_SLOP_PROMPTS)
 
         def _query(model_name: str, target: dict[str, str]) -> None:
-            for prompt in prompts:
+            for prompt, max_tokens in [
+                *[(p, 8192) for p in house_prompts],
+                *[(p, 4096) for p in direct_prompts],
+            ]:
                 payload = json.dumps(
                     {
                         "model": model_name,
                         "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 1024,
+                        "max_tokens": max_tokens,
                         "temperature": 0.0,
                     }
                 ).encode("utf-8")
@@ -976,11 +976,8 @@ def _run_fight_card_gate(
             gate_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
             return report
 
-        prompts = (
-            [_item_prompt(i) for i in TENET_ARENA_HOUSE_SERIES]
-            + list(BORDERLINE_OVER_REFUSAL_PROMPTS)
-            + list(ANTI_SLOP_PROMPTS)
-        )
+        house_prompts = [_item_prompt(i) for i in TENET_ARENA_HOUSE_SERIES]
+        direct_prompts = list(BORDERLINE_OVER_REFUSAL_PROMPTS) + list(ANTI_SLOP_PROMPTS)
         tp_size = _detect_tensor_parallel_size()
 
         results_by_model: dict[str, list[str]] = {}
@@ -994,7 +991,7 @@ def _run_fight_card_gate(
                         dtype="bfloat16",
                         trust_remote_code=True,
                         gpu_memory_utilization=0.88,
-                        max_model_len=4096,
+                        max_model_len=16384,
                     )
                 except Exception as exc:
                     text = str(exc)
@@ -1015,33 +1012,72 @@ def _run_fight_card_gate(
                     tokenizer = None
                 chat_template = getattr(tokenizer, "chat_template", None)
                 apply_chat_template = getattr(tokenizer, "apply_chat_template", None)
-                if chat_template and callable(apply_chat_template):
 
-                    def _format_prompt(prompt: str, _apply_fn: Any = apply_chat_template) -> str:
-                        return _apply_fn(
-                            [{"role": "user", "content": prompt}],
+                def _prepend_opened_think(fmt_p: str, txt: str) -> str:
+                    stripped_p = fmt_p.rstrip()
+                    for open_tag in ("<think>", "<|thought|>", "<|thought>"):
+                        if stripped_p.endswith(open_tag) and not txt.lstrip().startswith(open_tag):
+                            return f"{open_tag}\n{txt}"
+                    return txt
+
+                if chat_template and callable(apply_chat_template):
+                    _apply_fn: Any = apply_chat_template
+
+                    def _format_house(p: str, _fn: Any = _apply_fn) -> str:
+                        return _fn(
+                            [{"role": "user", "content": p}],
                             tokenize=False,
                             add_generation_prompt=True,
                         )
 
+                    thinking_disabled = False
                     try:
-                        formatted = [_format_prompt(p) for p in prompts]
+                        direct_formatted = [
+                            _apply_fn(
+                                [{"role": "user", "content": p}],
+                                tokenize=False,
+                                add_generation_prompt=True,
+                                enable_thinking=False,
+                            )
+                            for p in direct_prompts
+                        ]
+                        thinking_disabled = True
+                    except TypeError:
+                        direct_formatted = [
+                            _apply_fn(
+                                [{"role": "user", "content": p}],
+                                tokenize=False,
+                                add_generation_prompt=True,
+                            )
+                            for p in direct_prompts
+                        ]
+                    try:
+                        house_formatted = [_format_house(p) for p in house_prompts]
                     except Exception:
-                        formatted = prompts
+                        house_formatted = house_prompts
                 else:
-                    formatted = prompts
-                sampling = SamplingParams(temperature=0.0, max_tokens=1024)
-                outs = llm.generate(formatted, sampling)
-                completed_texts: list[str] = []
-                for fmt_p, o in zip(formatted, outs, strict=True):
-                    txt = o.outputs[0].text
-                    stripped_p = fmt_p.rstrip()
-                    for open_tag in ("<think>", "<|thought|>"):
-                        if stripped_p.endswith(open_tag) and not txt.lstrip().startswith(open_tag):
-                            txt = f"{open_tag}\n{txt}"
-                            break
-                    completed_texts.append(txt)
-                results_by_model[checkpoint] = completed_texts
+                    house_formatted = house_prompts
+                    direct_formatted = direct_prompts
+                    thinking_disabled = False
+
+                # House prompts: allow full <think>...</think> deliberation.
+                house_sampling = SamplingParams(temperature=0.0, max_tokens=8192)
+                house_outs = llm.generate(house_formatted, house_sampling)
+                house_texts: list[str] = []
+                for fmt_p, o in zip(house_formatted, house_outs, strict=True):
+                    house_texts.append(_prepend_opened_think(fmt_p, o.outputs[0].text))
+
+                # Direct prompts: no CoT needed; shorter budget unless the
+                # template fell back to thinking-enabled formatting.
+                direct_sampling = SamplingParams(
+                    temperature=0.0, max_tokens=1536 if thinking_disabled else 4096
+                )
+                direct_outs = llm.generate(direct_formatted, direct_sampling)
+                direct_texts: list[str] = []
+                for fmt_p, o in zip(direct_formatted, direct_outs, strict=True):
+                    direct_texts.append(_prepend_opened_think(fmt_p, o.outputs[0].text))
+
+                results_by_model[checkpoint] = house_texts + direct_texts
                 del llm
                 gc.collect()
                 if torch.cuda.is_available():
@@ -1051,11 +1087,12 @@ def _run_fight_card_gate(
             gate_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
             return report
 
+        all_prompts = house_prompts + direct_prompts
         tenet_responses = {
-            p: t for p, t in zip(prompts, results_by_model[tenet_checkpoint], strict=True)
+            p: t for p, t in zip(all_prompts, results_by_model[tenet_checkpoint], strict=True)
         }
         base_responses = {
-            p: t for p, t in zip(prompts, results_by_model[spec["base_model"]], strict=True)
+            p: t for p, t in zip(all_prompts, results_by_model[spec["base_model"]], strict=True)
         }
 
     n_house = len(TENET_ARENA_HOUSE_SERIES)
@@ -1070,14 +1107,19 @@ def _run_fight_card_gate(
         texts = [responses.get(p, "") for p in ordered_prompts]
         return texts[:n_house], texts[n_house : n_house + n_refusal], texts[n_house + n_refusal :]
 
+    base_house = _split(base_responses)[0]
+    effective_require_think = bool(think_end_token) and any(
+        tag in r for r in base_house for tag in ("<think>", "<|thought", "<reasoning>")
+    )
+
     report = run_paired_behavioral_gate(
-        base_house_responses=_split(base_responses)[0],
+        base_house_responses=base_house,
         tenet_house_responses=_split(tenet_responses)[0],
         base_refusal_responses=_split(base_responses)[1],
         tenet_refusal_responses=_split(tenet_responses)[1],
         base_slop_responses=_split(base_responses)[2],
         tenet_slop_responses=_split(tenet_responses)[2],
-        require_think=bool(think_end_token),
+        require_think=effective_require_think,
     )
     report["model_id"] = model_id
     gate_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
