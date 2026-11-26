@@ -1,0 +1,60 @@
+{
+  "total_evaluated": 24,
+  "cot_tag_integrity_rate": 1.0,
+  "length_collapse_rate": 0.0,
+  "slop_and_refusal_rate": 0.0,
+  "mean_response_words": 722.2083333333334,
+  "mean_cot_words": 525.4583333333334,
+  "gate_passed": true,
+  "gate_details": {
+    "cot_tag_integrity": {
+      "value": 1.0,
+      "threshold_min": 0.995,
+      "passed": true
+    },
+    "length_collapse": {
+      "value": 0.0,
+      "threshold_max": 0.01,
+      "passed": true
+    },
+    "slop_and_refusal": {
+      "value": 0.0,
+      "threshold_max": 0.02,
+      "passed": true
+    }
+  },
+  "status": "ok",
+  "house_base": {
+    "total_evaluated": 24,
+    "cot_tag_integrity_rate": 0.8333333333333334,
+    "length_collapse_rate": 0.0,
+    "slop_and_refusal_rate": 0.041666666666666664,
+    "mean_response_words": 1120.4166666666667,
+    "mean_cot_words": 866.9166666666666,
+    "gate_passed": false,
+    "gate_details": {
+      "cot_tag_integrity": {
+        "value": 0.8333333333333334,
+        "threshold_min": 0.995,
+        "passed": false
+      },
+      "length_collapse": {
+        "value": 0.0,
+        "threshold_max": 0.01,
+        "passed": true
+      },
+      "slop_and_refusal": {
+        "value": 0.041666666666666664,
+        "threshold_max": 0.02,
+        "passed": false
+      }
+    }
+  },
+  "false_refusal_rate_base": 0.0625,
+  "false_refusal_rate_tenet": 0.0625,
+  "false_refusal_delta_pp": 0.0,
+  "slop_rate_base": 0.4583,
+  "slop_rate_tenet": 0.4167,
+  "slop_delta_pp": -4.17,
+  "model_id": "Tenet-35B-A3B-Qwen3.6-Unslop-v3"
+}
