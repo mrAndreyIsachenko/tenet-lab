@@ -246,6 +246,20 @@ def test_no_synthetic_fight_card_gate_and_auto_tp(monkeypatch: pytest.MonkeyPatc
     assert foundry._detect_tensor_parallel_size() == 4
 
 
+def test_peer_eval_quoted_think_inside_closed_envelope() -> None:
+    """Quoted <think> mentions inside a closed <think>...</think> envelope still pass."""
+    from sml.evals.peer_eval import run_peer_eval_gate
+
+    quoted = (
+        "<think>\nThe user prompt mentions <think> tags, so I should verify carefully.\n"
+        "</think>\n\nThe verified result is 4,326 units across all three days."
+    )
+    rep = run_peer_eval_gate(responses=[quoted] * 24, require_think=True)
+    assert rep["cot_tag_integrity_rate"] == 1.0
+    assert rep["length_collapse_rate"] == 0.0
+    assert rep["gate_passed"] is True
+
+
 class _FakeOut:
     def __init__(self, text: str) -> None:
         self.text = text
