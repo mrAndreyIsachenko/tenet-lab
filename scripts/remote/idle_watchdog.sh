@@ -19,6 +19,15 @@ while true; do
         echo "[sml-watchdog] GPU utilization ${UTIL}% < ${UTIL_THRESHOLD_PCT}% (${IDLE_COUNT}/${MAX_IDLE_MINUTES})"
         if [ "${IDLE_COUNT}" -ge "${MAX_IDLE_MINUTES}" ]; then
             echo "[sml-watchdog] Idle limit reached. Shutting down instance to prevent wasted GPU billing."
+            if [[ -n "${NEBIUS_INSTANCE_ID:-}" ]] && command -v nebius >/dev/null 2>&1; then
+                if [[ -f "/home/ubuntu/.nebius/tenet-sa-credentials.json" ]] || nebius profile list 2>/dev/null | grep -q "tenet-sa"; then
+                    if nebius --profile tenet-sa compute instance stop --id "${NEBIUS_INSTANCE_ID}"; then
+                        echo "[sml-watchdog] Instance ${NEBIUS_INSTANCE_ID} stopped via Nebius API (tenet-sa profile)."
+                        exit 0
+                    fi
+                    echo "[sml-watchdog] Nebius API stop failed; falling back to local shutdown."
+                fi
+            fi
             if command -v runpodctl >/dev/null 2>&1 && [ -n "${RUNPOD_POD_ID:-}" ]; then
                 runpodctl stop pod "${RUNPOD_POD_ID}"
             elif command -v nebius >/dev/null 2>&1 && [ -n "${NEBIUS_INSTANCE_ID:-}" ]; then

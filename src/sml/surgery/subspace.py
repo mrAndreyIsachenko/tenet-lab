@@ -1749,6 +1749,10 @@ def _copy_aux_files(src_dir: Path, dst_dir: Path, *, copy_index: bool) -> None:
     for aux_path in sorted(src_dir.glob("*")):
         name = aux_path.name
         if not aux_path.is_file() or name.endswith(".safetensors"):
+            # Embedded drafter/MTP weights must survive the streaming copy so
+            # the H22 drafter sync can find them in the materialized output.
+            if name == "mtp.safetensors" and aux_path.is_file():
+                _copy_writable_file(aux_path, dst_dir / name)
             continue
         if name == "model.safetensors.index.json":
             continue
@@ -2485,13 +2489,15 @@ def apply_moe_lancet_surgery(
 # ---------------------------------------------------------------------------
 
 _MOE_WEIGHT_PREFIX_RE = re.compile(
-    r"^(?:model\.|language_model\.model\.|language_model\.|model\.language_model\.)?"
+    r"^(?:model\.|language_model\.model\.|language_model\.|model\.language_model\.|model\.llm\.)?"
     r"layers\.(\d+)\."
 )
 _MOE_ROUTED_EXPERT_KEY_RE = re.compile(
     r"(?:mlp\.experts|experts|block_sparse_moe\.experts)\.(\d+)\.(?:down_proj|w2)\.weight"
 )
-_MOE_ROUTED_EXPERT_PACKED_KEY_RE = re.compile(r"(?:mlp\.experts|experts)\.down_proj(?:\.weight)?")
+_MOE_ROUTED_EXPERT_PACKED_KEY_RE = re.compile(
+    r"(?:mlp\.experts|experts)\.(?:down_proj(?:\.weight)?|w2_weight)"
+)
 _MOE_SHARED_DOWN_PROJ_SUFFIXES = frozenset(
     {
         "mlp.shared_expert.down_proj.weight",
@@ -2509,13 +2515,14 @@ def _parse_moe_weight_key(key: str, tensor_ndim: int = 2) -> tuple[str, int, int
     Returns ``(kind, layer_idx, expert_idx)`` where ``kind`` is one of:
 
     - ``"router"``: the layer's router/gate weight (``expert_idx`` None).
-    - ``"o_proj"``: ``self_attn.o_proj.weight``.
+    - ``"o_proj"``: ``self_attn.o_proj.weight`` (or ``attn.wo_ud.weight``).
     - ``"shared_down_proj"``: the shared expert's ``down_proj.weight``, or a
       dense layer's ``mlp.down_proj.weight``.
     - ``"routed_expert_unpacked"``: ``experts.<e>.down_proj.weight`` /
       ``experts.<e>.w2.weight`` with ``expert_idx`` set.
     - ``"routed_expert_packed"``: a 3D ``experts.down_proj.weight`` stacking
-      all experts (matched only when ``tensor_ndim == 3``).
+      all experts, or a 3D ``mlp.experts.w2_weight`` (matched only when
+      ``tensor_ndim == 3``).
 
     Any other key returns ``None``. Recognized prefixes: ``model.``,
     ``language_model.model.``, ``language_model.``, ``model.language_model.``
@@ -2528,7 +2535,7 @@ def _parse_moe_weight_key(key: str, tensor_ndim: int = 2) -> tuple[str, int, int
     if is_router_weight_key(key):
         return ("router", layer_idx, None)
     suffix = key[match.end() :]
-    if suffix == "self_attn.o_proj.weight":
+    if suffix in ("self_attn.o_proj.weight", "attn.wo_ud.weight"):
         return ("o_proj", layer_idx, None)
     if suffix in _MOE_SHARED_DOWN_PROJ_SUFFIXES:
         return ("shared_down_proj", layer_idx, None)
@@ -2538,6 +2545,98 @@ def _parse_moe_weight_key(key: str, tensor_ndim: int = 2) -> tuple[str, int, int
     if tensor_ndim == 3 and _MOE_ROUTED_EXPERT_PACKED_KEY_RE.fullmatch(suffix) is not None:
         return ("routed_expert_packed", layer_idx, None)
     return None
+
+
+# NVFP4 (E2M1) nibble value lookup: sign(1) | exp(2) | mant(1).
+_E2M1_DEQUANT_LUT = torch.tensor(
+    [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0]
+)
+
+
+def _edit_quantized_routed_expert_packed(
+    key: str,
+    tensor: torch.Tensor,
+    shard_tensors: dict[str, torch.Tensor],
+    edit_expert_fn: Any,
+) -> torch.Tensor | None:
+    """
+    Best-effort dequant -> per-expert Lancet edit -> requant for a quantized
+    packed ``mlp.experts.w2_weight`` tensor.
+
+    Supported layouts:
+
+    - NVFP4: uint8 packed E2M1 nibbles with companion ``w2_weight_scale``
+      (``w2_weight_amax`` / ``w2_weight_outer_scale_denominator`` are optional).
+    - MXFP8: ``torch.float8_e4m3fn`` with a ``[32, 32]`` block
+      ``w2_weight_scale`` (ue8m0).
+
+    Returns the edited tensor, or ``None`` when the companion scale tensors are
+    missing, the layout is unrecognized, or anything goes wrong mid-way — the
+    caller then leaves the quantized ``w2_weight`` untouched (safe skip).
+    """
+    base = key[: -len("w2_weight")] if key.endswith("w2_weight") else None
+    if base is None:
+        return None
+    scale = shard_tensors.get(base + "w2_weight_scale")
+    if scale is None:
+        return None
+    try:
+        if tensor.dtype == torch.uint8:
+            if not hasattr(torch, "float8_e4m3fn"):
+                return None
+            # NVFP4: low nibble then high nibble per byte, per-group scale
+            # broadcast along the last (input) dimension in groups of 32.
+            low = (tensor & 0x0F).to(torch.int64)
+            high = ((tensor >> 4) & 0x0F).to(torch.int64)
+            nibbles = torch.stack((low, high), dim=-1).reshape(*tensor.shape[:-1], -1)
+            dequant = _E2M1_DEQUANT_LUT.to(tensor.device)[nibbles].to(torch.float32)
+            group = 32
+            if dequant.shape[-1] % group != 0 or scale.shape != (
+                *tensor.shape[:-1],
+                tensor.shape[-1] * 2 // group,
+            ):
+                return None
+            scale_f = scale.to(torch.float32).repeat_interleave(group, dim=-1)
+            dequant = dequant * scale_f
+        elif tensor.dtype == getattr(torch, "float8_e4m3fn", None):
+            # MXFP8: [32, 32] block scale (ue8m0) broadcast over the weight.
+            dequant = tensor.to(torch.float32)
+            if scale.shape != dequant.shape:
+                return None
+            dequant = dequant * scale.to(torch.float32)
+        else:
+            return None
+
+        edited = torch.empty_like(dequant)
+        any_edited = False
+        for e_idx in range(dequant.shape[0]):
+            result = edit_expert_fn(dequant[e_idx], e_idx)
+            if result is None:
+                edited[e_idx] = dequant[e_idx]
+            else:
+                edited[e_idx] = result.to(torch.float32)
+                any_edited = True
+        if not any_edited:
+            return None
+
+        # Requantize back into the original packed layout.
+        if tensor.dtype == torch.uint8:
+            quantized = dequant / scale_f
+            quantized = quantized.clamp(-6.0, 6.0)
+            codes = (
+                torch.where(
+                    quantized >= 0,
+                    torch.round(torch.log2(quantized.clamp_min(0.5) * 2)) + 1,
+                    torch.round(torch.log2((-quantized).clamp_min(0.5) * 2)) + 9,
+                )
+                .clamp(0, 15)
+                .to(torch.uint8)
+            )
+            out = (codes[..., 0::2] & 0x0F) | (codes[..., 1::2] << 4)
+            return out.contiguous()
+        return (edited / scale.to(torch.float32)).to(tensor.dtype)
+    except Exception:
+        return None
 
 
 def apply_moe_lancet_recipe_streaming(
@@ -2707,6 +2806,45 @@ def apply_moe_lancet_recipe_streaming(
                     continue
 
                 # kind == "routed_expert_packed": 3D (E, out, in) stacked experts.
+                if tensor.dtype not in (
+                    torch.float16,
+                    torch.bfloat16,
+                    torch.float32,
+                    torch.float64,
+                ):
+                    # Quantized packed experts (NVFP4 uint8 nibbles / MXFP8
+                    # float8_e4m3fn): attempt safe dequant -> edit -> requant
+                    # and skip untouched when the layout is unsupported, so the
+                    # pass never crashes and pure bfloat16 tensors are still
+                    # edited.
+                    def _edit_packed_expert(
+                        expert_tensor: torch.Tensor,
+                        e_idx: int,
+                        _selective: Any = selective,
+                        _dirs: Any = dirs,
+                    ) -> torch.Tensor | None:
+                        s_e = 1.0 if _selective is None else float(_selective[e_idx])
+                        if s_e < max(min_selective_weight, min_selectivity_threshold):
+                            return None
+                        return _apply_tiered_lancet_to_weight(
+                            expert_tensor,
+                            _dirs,
+                            scale=scale * s_e,
+                            quant_snap=use_quant_snap,
+                            quant_snap_iters=quant_snap_iters,
+                            quant_snap_eta=quant_snap_eta,
+                            max_block16_crest_factor=max_block16_crest_factor,
+                            hot=e_idx in hot_expert_ids,
+                        )
+
+                    replacement = _edit_quantized_routed_expert_packed(
+                        key, tensor, shard_tensors, _edit_packed_expert
+                    )
+                    if replacement is not None:
+                        shard_tensors[key] = replacement
+                        edited_layers.append(layer_idx)
+                    continue
+
                 any_expert_edited = False
                 orig_expert_device = tensor.device
                 work_tensor = (
@@ -2750,7 +2888,12 @@ def apply_moe_lancet_recipe_streaming(
                     router_weight_drift = float("inf")
 
             for shard_tensor in shard_tensors.values():
-                if shard_tensor.ndim == 2:
+                if shard_tensor.ndim == 2 and shard_tensor.dtype in (
+                    torch.float16,
+                    torch.bfloat16,
+                    torch.float32,
+                    torch.float64,
+                ):
                     crest = _compute_row_crest_factor(shard_tensor)
                     max_row_crest_factor = max(max_row_crest_factor, crest)
 

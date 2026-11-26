@@ -62,6 +62,10 @@ ARMS = ("base", "naive", "tenet")
 # disabled (run separately under ``chat_0shot/`` when ``--split-chat-0shot``).
 ZERO_SHOT_CHAT_TASKS: tuple[str, ...] = ("ifeval", "hendrycks_math500")
 DEFAULT_CHAT_0SHOT_MAX_GEN_TOKS = 1280
+DEFAULT_CHAT_0SHOT_MATH_MAX_GEN_TOKS = 2048
+DEFAULT_MATH_500_SYSTEM_INSTRUCTION = (
+    "Please reason step by step, and put your final answer within \\boxed{}."
+)
 
 # Reference to the pristine subprocess.run so tests that monkeypatch
 # ``subprocess.run`` can be detected (they get the simple code path).
@@ -208,6 +212,7 @@ def build_lm_eval_command(
     api_base: str | None = None,
     apply_chat_template: bool = False,
     enable_thinking: bool | None = None,
+    system_instruction: str | None = None,
 ) -> list[str]:
     """Build the ``lm_eval`` argv for one arm.
 
@@ -223,6 +228,8 @@ def build_lm_eval_command(
     cmd += ["--batch_size", str(batch_size)]
     cmd += ["--output_path", str(output_path)]
     cmd += ["--log_samples", "--gen_kwargs", f"max_gen_toks={int(max_gen_toks)}"]
+    if system_instruction:
+        cmd += ["--system_instruction", system_instruction]
 
     if backend == "vllm":
         dtype = "bfloat16" if precision == "bf16" else precision
@@ -433,7 +440,9 @@ def _load_lm_eval_payload(raw_dir: Path) -> dict[str, Any] | None:
         (
             p
             for p in raw_dir.rglob("*.json")
-            if not ({"mmlu_pro", "chat_0shot"} & set(p.relative_to(raw_dir).parts))
+            if not (
+                {"mmlu_pro", "chat_0shot", "chat_0shot_math"} & set(p.relative_to(raw_dir).parts)
+            )
         ),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
@@ -456,7 +465,7 @@ def _load_sample_dicts(raw_dir: Path, results: dict[str, Any] | None) -> list[di
     sample_files = sorted(
         p
         for p in raw_dir.rglob("samples_*.jsonl")
-        if not ({"mmlu_pro", "chat_0shot"} & set(p.relative_to(raw_dir).parts))
+        if not ({"mmlu_pro", "chat_0shot", "chat_0shot_math"} & set(p.relative_to(raw_dir).parts))
     )
     for path in sample_files:
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -480,7 +489,7 @@ def _find_valid_subtask_payload(sub_dir: Path) -> dict[str, Any] | None:
     own subtask directories, so they are excluded by name here.
     """
     for path in sorted(sub_dir.rglob("*results*.json")):
-        if {"mmlu_pro", "chat_0shot"} & set(path.relative_to(sub_dir).parts):
+        if {"mmlu_pro", "chat_0shot", "chat_0shot_math"} & set(path.relative_to(sub_dir).parts):
             continue
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -710,18 +719,38 @@ def _eval_arm(
     elif non_chat_tasks:
         runs.append((non_chat_tasks, raw_dir, limit, {}))
     if chat_tasks:
-        runs.append(
-            (
-                chat_tasks,
-                raw_dir / "chat_0shot",
-                limit,
-                {
-                    "apply_chat_template": True,
-                    "enable_thinking": False,
-                    "max_gen_toks": min(max_gen_toks, DEFAULT_CHAT_0SHOT_MAX_GEN_TOKS),
-                },
+        # ifeval keeps the short generation cap and NO system instruction so
+        # strict instruction-following constraints are unaffected.
+        ifeval_tasks = tuple(t for t in chat_tasks if t != "hendrycks_math500")
+        if ifeval_tasks:
+            runs.append(
+                (
+                    ifeval_tasks,
+                    raw_dir / "chat_0shot",
+                    limit,
+                    {
+                        "apply_chat_template": True,
+                        "enable_thinking": False,
+                        "max_gen_toks": min(max_gen_toks, DEFAULT_CHAT_0SHOT_MAX_GEN_TOKS),
+                    },
+                )
             )
-        )
+        # hendrycks_math500 gets a CoT system instruction and a larger
+        # generation budget so step-by-step reasoning fits.
+        if "hendrycks_math500" in chat_tasks:
+            runs.append(
+                (
+                    ("hendrycks_math500",),
+                    raw_dir / "chat_0shot_math",
+                    limit,
+                    {
+                        "apply_chat_template": True,
+                        "enable_thinking": False,
+                        "max_gen_toks": DEFAULT_CHAT_0SHOT_MATH_MAX_GEN_TOKS,
+                        "system_instruction": DEFAULT_MATH_500_SYSTEM_INSTRUCTION,
+                    },
+                )
+            )
     cmds = [
         _build_cmd(run_tasks, out_dir, run_limit, **overrides)
         for run_tasks, out_dir, run_limit, overrides in runs

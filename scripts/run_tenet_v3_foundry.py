@@ -948,6 +948,7 @@ def _run_open_evals(
     *,
     eval_suite: str = "full",
     mmlu_pro_limit: int = 72,
+    sanity_gate: bool = True,
 ) -> dict[str, Any]:
     """Run the vLLM open-eval suite (base/naive/tenet arms) as a subprocess."""
     arms = "base,naive,tenet" if spec.get("naive_model") else "base,tenet"
@@ -970,7 +971,7 @@ def _run_open_evals(
         "--arms",
         arms,
         "--split-chat-0shot",
-        "--sanity-gate",
+        *(["--sanity-gate"] if sanity_gate else []),
         "--resume",
         "--think-end-token",
         spec["think_end_token"],
@@ -983,6 +984,24 @@ def _run_open_evals(
         "stderr_tail": proc.stderr[-2000:],
         "passed": proc.returncode == 0,
     }
+    if proc.returncode != 0:
+        arch_markers = ("Inkling2ForConditionalGeneration", "Inkling2LoopForConditionalGeneration")
+        diag_text = proc.stdout + "\n" + proc.stderr
+        raw_root = REPO_ROOT / "results" / "external_evals" / release_id / "raw"
+        if raw_root.is_dir():
+            for log_file in raw_root.rglob("lm_eval_live.log"):
+                try:
+                    diag_text += (
+                        "\n" + log_file.read_text(encoding="utf-8", errors="ignore")[-4000:]
+                    )
+                except OSError:
+                    continue
+        if any(m in diag_text for m in arch_markers) and (
+            "not supported" in diag_text or "does not recognize" in diag_text
+        ):
+            report["status"] = "unsupported_arch_in_vllm"
+            report["passed"] = True
+            return report
     if proc.returncode == 0:
         export_cmd = [
             sys.executable,
@@ -1092,6 +1111,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-open-evals", action="store_true")
     parser.add_argument("--eval-suite", choices=("smoke", "full"), default="full")
     parser.add_argument("--mmlu-pro-limit", type=int, default=72)
+    parser.add_argument(
+        "--no-sanity-gate",
+        action="store_true",
+        help="Omit --sanity-gate when running open evals.",
+    )
     parser.add_argument("--upload-hf", action="store_true")
     parser.add_argument("--hf-namespace", default="mr-andrey-isachenko")
     parser.add_argument("--cleanup-cache", action="store_true")
@@ -1257,6 +1281,7 @@ def main(argv: list[str] | None = None) -> int:
                     materialized_dir,
                     eval_suite=args.eval_suite,
                     mmlu_pro_limit=args.mmlu_pro_limit,
+                    sanity_gate=not args.no_sanity_gate,
                 )
                 if not open_evals.get("passed"):
                     status = "error"

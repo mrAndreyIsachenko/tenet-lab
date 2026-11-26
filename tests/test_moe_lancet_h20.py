@@ -842,3 +842,42 @@ def test_cli_verify_h20_end_to_end(tmp_path: Path, capsys, monkeypatch) -> None:
     printed = json.loads(capsys.readouterr().out)
     assert printed["experiment_id"] == summary["experiment_id"]
     assert printed["router_weight_drift"] == 0.0
+
+
+def test_inkling2_moe_key_parsing_and_streaming_with_mtp(tmp_path: Path) -> None:
+    from safetensors.torch import save_file
+
+    from sml.surgery.cka import is_router_weight_key
+    from sml.surgery.subspace import _parse_moe_weight_key, apply_moe_lancet_recipe_streaming
+
+    assert _parse_moe_weight_key("model.llm.layers.10.attn.wo_ud.weight", 2) == ("o_proj", 10, None)
+    assert _parse_moe_weight_key("model.llm.layers.10.mlp.experts.w2_weight", 3) == (
+        "routed_expert_packed",
+        10,
+        None,
+    )
+    assert is_router_weight_key("model.llm.layers.10.mlp.gate.weight") is True
+    assert is_router_weight_key("model.llm.layers.10.attn.q_l2_clip.scale") is True
+    assert is_router_weight_key("model.llm.attn_res.attn_queries.0") is True
+
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    save_file(
+        {
+            "model.llm.layers.0.attn.wo_ud.weight": torch.randn(8, 8, dtype=torch.bfloat16),
+            "model.llm.layers.0.mlp.gate.weight": torch.randn(4, 8, dtype=torch.bfloat16),
+            "model.llm.layers.0.attn.q_l2_clip.scale": torch.ones(8, dtype=torch.float32),
+        },
+        str(src / "model.safetensors"),
+    )
+    save_file(
+        {"mtp.head.weight": torch.ones(4, 4, dtype=torch.bfloat16)}, str(src / "mtp.safetensors")
+    )
+    (src / "config.json").write_text("{}", encoding="utf-8")
+
+    basis = torch.eye(2, 8)
+    report = apply_moe_lancet_recipe_streaming(src, dst, {0: basis}, scale=0.35)
+    assert report["edited_o_proj"] == 1
+    assert report["router_weight_drift"] == 0.0
+    assert (dst / "mtp.safetensors").is_file()
