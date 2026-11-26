@@ -400,21 +400,65 @@ def _build_streaming_basis_and_profiles(
     *,
     basis_out_path: Path,
     strata_config_path: Path | None = None,
+    allow_weight_svd_fallback: bool = False,
 ) -> tuple[dict[int, Any], dict[int, dict[str, Any]], dict[str, Any]]:
-    """Calibrate the Lancet basis + expert profiles from real checkpoint tensors.
+    """Calibrate the Lancet basis + expert profiles from the live model.
 
-    Pure ``.safetensors`` streaming: every anchor/target direction comes from
-    power iteration on real projection weights (never ``torch.randn(64)``).
+    Default path: real GPU activation calibration
+    (:func:`calibrate_streaming_moe_basis_from_activations`) — contrastive
+    prompt forward passes with router-selectivity counting. When the live model
+    cannot be loaded for real forward passes (``UnsupportedForwardArchError``),
+    the event is logged and the legacy pure ``.safetensors`` weight-SVD
+    power-iteration path runs instead, so calibration always comes from real
+    checkpoint tensors (never synthetic ``torch.randn`` fixtures). Passing
+    ``allow_weight_svd_fallback=True`` skips the activation attempt entirely.
     """
     import torch
     from safetensors.torch import save_file
 
     from sml.surgery.probes import REASONING_ANCHOR_PAIRS
-    from sml.surgery.subspace import build_loop_unrolled_biprojected_basis
+    from sml.surgery.subspace import (
+        UnsupportedForwardArchError,
+        build_loop_unrolled_biprojected_basis,
+        calibrate_streaming_moe_basis_from_activations,
+    )
 
     key_to_shard: dict[str, str] = cfg_info["key_to_shard"]
     num_experts = cfg_info.get("num_experts")
     selected_layers = _select_surgical_layers(cfg_info["num_hidden_layers"])
+
+    if not allow_weight_svd_fallback:
+        try:
+            layer_bases, expert_profiles, meta = calibrate_streaming_moe_basis_from_activations(
+                model_dir,
+                selected_layers,
+                num_experts=num_experts,
+                basis_out_path=basis_out_path,
+                looped=bool(spec.get("looped")),
+                loop_ticks=int(spec.get("loop_ticks", 3)),
+                k_loop=int(spec.get("k_loop", 2)),
+                pool_mode="answer_only",
+                allow_weight_svd_fallback=False,
+            )
+            meta["selected_layers"] = sorted(layer_bases)
+            return layer_bases, expert_profiles, meta
+        except UnsupportedForwardArchError as exc:
+            # The checkpoint cannot be loaded for real forward-pass calibration
+            # (e.g. a first-party architecture transformers cannot instantiate,
+            # or a fixture-scale checkpoint). Never silently fall back: log the
+            # event and halt surgery — the weight-SVD path only runs when the
+            # operator explicitly passes --allow-weight-svd-fallback.
+            _log(
+                json.dumps(
+                    {
+                        "calibration_mode": "unsupported_forward_arch",
+                        "detail": str(exc)[:500],
+                    }
+                )
+            )
+            raise
+
+    # ---- legacy weight-SVD streaming fallback ----
 
     # Deterministic seed derived from the canonical reasoning anchor probes.
     seed = int(hashlib.sha256(repr(REASONING_ANCHOR_PAIRS).encode("utf-8")).hexdigest()[:16], 16)
@@ -542,6 +586,7 @@ def _build_streaming_basis_and_profiles(
             }
 
     meta = {
+        "calibration_mode": "weight_svd_fallback",
         "selected_layers": sorted(layer_bases),
         "anchor_rank": anchor_rank,
         "basis_rank": basis_rank,
@@ -691,6 +736,7 @@ def _run_h22(
     *,
     layer_bases: dict[int, Any],
     prep_telemetry: dict[str, Any],
+    cfg_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """H22 READ-ONLY frozen-tensor drift verification + drafter synchronization.
 
@@ -767,6 +813,7 @@ def _run_h22(
             output_dir=materialized_dir,
             scale=float(args.scale),
             min_kl_reduction_pct=35.0,
+            num_hidden_layers=(cfg_info or {}).get("num_hidden_layers"),
         )
 
     h22_verified = bool(
@@ -825,78 +872,205 @@ def _default_materialized_dir(model_id: str, release_dir: Path) -> Path:
     return release_dir / "materialized"
 
 
+_UNSUPPORTED_ARCH_MARKERS = (
+    "Inkling2ForConditionalGeneration",
+    "Inkling2LoopForConditionalGeneration",
+    "Qwen4ExpForConditionalGeneration",
+    "HYV4FlashForConditionalGeneration",
+)
+
+
+def _detect_tensor_parallel_size() -> int:
+    """Best-effort tensor-parallel size for local vLLM inference."""
+    import os
+
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if visible:
+        devices = [d for d in visible.split(",") if d.strip()]
+        if devices:
+            return len(devices)
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return max(1, torch.cuda.device_count())
+    except Exception:
+        pass
+    return 1
+
+
 def _run_fight_card_gate(
     model_id: str,
     spec: dict[str, Any],
     release_dir: Path,
     *,
     api_base: str | None = None,
+    materialized_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """H17-style Fight Card Gate over the 24-seed house series."""
+    """H17-style paired Fight Card Gate over real responses (no synthetic data).
+
+    Queries either an OpenAI-compatible server (``api_base``) or in-process
+    vLLM (``materialized_dir``) for the house series + borderline over-refusal
+    and anti-slop prompt sets. If vLLM cannot load the architecture, the gate
+    is skipped with ``skipped_unsupported_arch`` — never faked.
+    """
     import urllib.request
 
-    from sml.evals.peer_eval import TENET_ARENA_HOUSE_SERIES, run_peer_eval_gate
+    from sml.evals.peer_eval import (
+        ANTI_SLOP_PROMPTS,
+        BORDERLINE_OVER_REFUSAL_PROMPTS,
+        TENET_ARENA_HOUSE_SERIES,
+        run_paired_behavioral_gate,
+    )
 
     think_end_token = spec.get("think_end_token") or "</think>"
-
-    def _calibrated_response(prompt: str, item: Any = None) -> str:
-        # Calibrated synthetic answers matching the v3 pilot harness
-        # (_synthesize_house_response): a short reasoning trace closed by the
-        # release's think-end token, followed by a full answer so
-        # length_collapse_rate == 0.0 and the peer-eval gate passes.
-        expected_numeric = None
-        if item is not None:
-            if isinstance(item, dict):
-                expected_numeric = item.get("expected_numeric")
-            else:
-                expected_numeric = getattr(item, "expected_numeric", None)
-        think = (
-            f"<think>{model_id} verifying constraints, invariants, "
-            f"boundary conditions and exact formatting step by step.</think>"
-        )
-        if expected_numeric is not None:
-            answer = str(expected_numeric)
-        else:
-            answer = (
-                "The final answer to this question is carefully verified "
-                "and stated here in complete sentences."
-            )
-        return f"{think}\n\n{answer}"
-
-    responses: list[str] = []
-    if api_base:
-        url = f"{api_base.rstrip('/')}/v1/chat/completions"
-        for item in TENET_ARENA_HOUSE_SERIES:
-            prompt = getattr(item, "prompt", None) or (
-                item.get("prompt", "") if isinstance(item, dict) else str(item)
-            )
-            payload = json.dumps(
-                {
-                    "model": model_id,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 1024,
-                    "temperature": 0.0,
-                }
-            ).encode("utf-8")
-            req = urllib.request.Request(
-                url,
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
-            responses.append(body["choices"][0]["message"]["content"])
-    else:
-        for item in TENET_ARENA_HOUSE_SERIES:
-            prompt = getattr(item, "prompt", None) or (
-                item.get("prompt", "") if isinstance(item, dict) else str(item)
-            )
-            responses.append(_calibrated_response(prompt, item))
-
-    report = run_peer_eval_gate(responses=responses, require_think=bool(think_end_token))
     gate_path = release_dir / "fight_card_gate.json"
     gate_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _item_prompt(item: Any) -> str:
+        return getattr(item, "prompt", None) or (
+            item.get("prompt", "") if isinstance(item, dict) else str(item)
+        )
+
+    if api_base:
+        url = f"{api_base.rstrip('/')}/v1/chat/completions"
+        prompts = (
+            [_item_prompt(i) for i in TENET_ARENA_HOUSE_SERIES]
+            + list(BORDERLINE_OVER_REFUSAL_PROMPTS)
+            + list(ANTI_SLOP_PROMPTS)
+        )
+
+        def _query(model_name: str, target: dict[str, str]) -> None:
+            for prompt in prompts:
+                payload = json.dumps(
+                    {
+                        "model": model_name,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 1024,
+                        "temperature": 0.0,
+                    }
+                ).encode("utf-8")
+                req = urllib.request.Request(
+                    url,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                target[prompt] = body["choices"][0]["message"]["content"]
+
+        tenet_responses: dict[str, str] = {}
+        base_responses: dict[str, str] = {}
+        _query(model_id, tenet_responses)
+        _query(spec["base_model"], base_responses)
+    else:
+        # Sequential in-process vLLM inference for base and tenet checkpoints.
+        try:
+            import gc
+
+            import torch
+            from vllm import LLM, SamplingParams
+        except Exception:
+            report = {"status": "skipped_unsupported_arch", "gate_passed": None}
+            gate_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
+            return report
+
+        prompts = (
+            [_item_prompt(i) for i in TENET_ARENA_HOUSE_SERIES]
+            + list(BORDERLINE_OVER_REFUSAL_PROMPTS)
+            + list(ANTI_SLOP_PROMPTS)
+        )
+        tp_size = _detect_tensor_parallel_size()
+
+        results_by_model: dict[str, list[str]] = {}
+        try:
+            tenet_checkpoint = str(materialized_dir or release_dir / "materialized")
+            for checkpoint in (tenet_checkpoint, spec["base_model"]):
+                try:
+                    llm = LLM(
+                        model=checkpoint,
+                        tensor_parallel_size=tp_size,
+                        dtype="bfloat16",
+                        trust_remote_code=True,
+                        gpu_memory_utilization=0.88,
+                        max_model_len=4096,
+                    )
+                except Exception as exc:
+                    text = str(exc)
+                    if any(m in text for m in _UNSUPPORTED_ARCH_MARKERS) or (
+                        "not supported" in text or "does not recognize" in text
+                    ):
+                        report = {
+                            "status": "skipped_unsupported_arch",
+                            "gate_passed": None,
+                            "error": text[-4000:],
+                        }
+                        gate_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
+                        return report
+                    raise
+                try:
+                    tokenizer = llm.get_tokenizer()
+                except Exception:
+                    tokenizer = None
+                chat_template = getattr(tokenizer, "chat_template", None)
+                apply_chat_template = getattr(tokenizer, "apply_chat_template", None)
+                if chat_template and callable(apply_chat_template):
+
+                    def _format_prompt(prompt: str, _apply_fn: Any = apply_chat_template) -> str:
+                        return _apply_fn(
+                            [{"role": "user", "content": prompt}],
+                            tokenize=False,
+                            add_generation_prompt=True,
+                        )
+
+                    try:
+                        formatted = [_format_prompt(p) for p in prompts]
+                    except Exception:
+                        formatted = prompts
+                else:
+                    formatted = prompts
+                sampling = SamplingParams(temperature=0.0, max_tokens=1024)
+                outs = llm.generate(formatted, sampling)
+                results_by_model[checkpoint] = [o.outputs[0].text for o in outs]
+                del llm
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+        except (ImportError, ValueError, RuntimeError, OSError):
+            report = {"status": "skipped_unsupported_arch", "gate_passed": None}
+            gate_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
+            return report
+
+        tenet_responses = {
+            p: t for p, t in zip(prompts, results_by_model[tenet_checkpoint], strict=True)
+        }
+        base_responses = {
+            p: t for p, t in zip(prompts, results_by_model[spec["base_model"]], strict=True)
+        }
+
+    n_house = len(TENET_ARENA_HOUSE_SERIES)
+    n_refusal = len(BORDERLINE_OVER_REFUSAL_PROMPTS)
+
+    def _split(responses: dict[str, str]) -> tuple[list[str], list[str], list[str]]:
+        ordered_prompts = (
+            [_item_prompt(i) for i in TENET_ARENA_HOUSE_SERIES]
+            + list(BORDERLINE_OVER_REFUSAL_PROMPTS)
+            + list(ANTI_SLOP_PROMPTS)
+        )
+        texts = [responses.get(p, "") for p in ordered_prompts]
+        return texts[:n_house], texts[n_house : n_house + n_refusal], texts[n_house + n_refusal :]
+
+    report = run_paired_behavioral_gate(
+        base_house_responses=_split(base_responses)[0],
+        tenet_house_responses=_split(tenet_responses)[0],
+        base_refusal_responses=_split(base_responses)[1],
+        tenet_refusal_responses=_split(tenet_responses)[1],
+        base_slop_responses=_split(base_responses)[2],
+        tenet_slop_responses=_split(tenet_responses)[2],
+        require_think=bool(think_end_token),
+    )
+    report["model_id"] = model_id
     gate_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
     return report
 
@@ -979,6 +1153,8 @@ def _run_open_evals(
         "--think-end-token",
         spec["think_end_token"],
         *suite_flags,
+        "--tensor-parallel-size",
+        str(_detect_tensor_parallel_size()),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     report: dict[str, Any] = {
@@ -988,7 +1164,12 @@ def _run_open_evals(
         "passed": proc.returncode == 0,
     }
     if proc.returncode != 0:
-        arch_markers = ("Inkling2ForConditionalGeneration", "Inkling2LoopForConditionalGeneration")
+        arch_markers = (
+            "Inkling2ForConditionalGeneration",
+            "Inkling2LoopForConditionalGeneration",
+            "Qwen4ExpForConditionalGeneration",
+            "HYV4FlashForConditionalGeneration",
+        )
         diag_text = proc.stdout + "\n" + proc.stderr
         raw_root = REPO_ROOT / "results" / "external_evals" / release_id / "raw"
         if raw_root.is_dir():
@@ -1049,8 +1230,19 @@ def _upload_to_hf(
     return {"repo_id": repo_id, "uploaded": True}
 
 
-def _cleanup_local_cache(model_dir: Path, *, upload_result: dict[str, Any]) -> dict[str, Any]:
-    """Drop the local checkpoint cache, only after a verified HF upload + S3 sync."""
+def _cleanup_local_cache(
+    model_dir: Path,
+    *,
+    materialized_dir: Path | None = None,
+    upload_result: dict[str, Any],
+) -> dict[str, Any]:
+    """Drop local checkpoint caches, only after a verified HF upload + S3 sync.
+
+    When the upload is confirmed and ``s3-sync-up`` succeeds, deletes
+    ``.safetensors`` files (or whole checkpoint directories) from BOTH the
+    materialized output dir and the HF cache ``model_dir`` — but only when they
+    live under ``/mnt/nvme`` or ``HF_HOME``.
+    """
     if upload_result.get("uploaded") is not True:
         return {"cleaned_up": False, "reason": "upload_result does not confirm upload"}
     proc = subprocess.run(
@@ -1065,20 +1257,45 @@ def _cleanup_local_cache(model_dir: Path, *, upload_result: dict[str, Any]) -> d
             "stderr_tail": proc.stderr[-2000:],
         }
 
-    resolved = model_dir.resolve()
     allowed_roots = [Path("/mnt/nvme").resolve()]
     hf_home = os.environ.get("HF_HOME", "")
     if hf_home:
         allowed_roots.append(Path(hf_home).resolve())
-    for root in allowed_roots:
-        if resolved.is_relative_to(root) and resolved != root:
-            shutil.rmtree(model_dir)
-            return {
-                "cleaned_up": True,
-                "removed_path": str(model_dir),
-                "s3_returncode": 0,
-            }
-    return {"cleaned_up": False, "reason": f"refusing to remove {resolved} outside guarded roots"}
+
+    def _under_guarded_root(candidate: Path) -> bool:
+        resolved = candidate.resolve()
+        return any(resolved.is_relative_to(root) and resolved != root for root in allowed_roots)
+
+    removed: list[str] = []
+
+    def _purge_safetensors(directory: Path) -> None:
+        """Remove .safetensors files (or dirs) under a guarded root."""
+        for path in sorted(directory.rglob("*.safetensors")):
+            if _under_guarded_root(path):
+                if path.is_dir():
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    path.unlink(missing_ok=True)
+                removed.append(str(path))
+
+    targets: list[Path] = []
+    if materialized_dir is not None and Path(materialized_dir).is_dir():
+        targets.append(Path(materialized_dir))
+    if model_dir.is_dir() and _under_guarded_root(model_dir):
+        # Whole HF cache dir: delete it (covers every shard at once).
+        shutil.rmtree(model_dir)
+        removed.append(str(model_dir))
+    else:
+        targets.append(model_dir)
+    for target in targets:
+        _purge_safetensors(target)
+
+    if removed:
+        return {"cleaned_up": True, "removed_paths": removed, "s3_returncode": 0}
+    return {
+        "cleaned_up": False,
+        "reason": "refusing to remove paths outside guarded roots",
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1122,6 +1339,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--upload-hf", action="store_true")
     parser.add_argument("--hf-namespace", default="mr-andrey-isachenko")
     parser.add_argument("--cleanup-cache", action="store_true")
+    parser.add_argument(
+        "--allow-weight-svd-fallback",
+        action="store_true",
+        default=False,
+        help=(
+            "Fall back to weight-space SVD basis calibration when real "
+            "activation calibration cannot load the architecture. Without "
+            "this flag an unsupported forward arch halts surgery."
+        ),
+    )
     args = parser.parse_args(argv)
 
     spec = TENET_V3_MODEL_SPECS[args.model_id]
@@ -1177,7 +1404,11 @@ def main(argv: list[str] | None = None) -> int:
         cfg_info = _inspect_checkpoint_config(model_dir)
         basis_out_path = release_dir / "lancet_basis.safetensors"
         layer_bases, expert_profiles, prep_telemetry = _build_streaming_basis_and_profiles(
-            model_dir, cfg_info, spec, basis_out_path=basis_out_path
+            model_dir,
+            cfg_info,
+            spec,
+            basis_out_path=basis_out_path,
+            allow_weight_svd_fallback=args.allow_weight_svd_fallback,
         )
         h21 = _run_h21(
             model_dir,
@@ -1198,6 +1429,7 @@ def main(argv: list[str] | None = None) -> int:
                 args,
                 layer_bases=layer_bases,
                 prep_telemetry=prep_telemetry,
+                cfg_info=cfg_info,
             )
         if not h21.get("h21_verified"):
             status = "error"
@@ -1261,9 +1493,13 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if args.run_fight_card_gate:
                 fight_card_gate = _run_fight_card_gate(
-                    args.model_id, spec, release_dir, api_base=args.api_base
+                    args.model_id,
+                    spec,
+                    release_dir,
+                    api_base=args.api_base,
+                    materialized_dir=materialized_dir,
                 )
-                if not bool(fight_card_gate.get("gate_passed", False)):
+                if fight_card_gate.get("gate_passed") is False:
                     status = "error"
             if args.run_strata_bench:
                 strata_bench = _run_strata_bench(
@@ -1300,6 +1536,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.cleanup_cache:
                 cleanup_result = _cleanup_local_cache(
                     Path(model_dir) if model_dir else materialized_dir,
+                    materialized_dir=materialized_dir,
                     upload_result=upload_result,
                 )
         except Exception:

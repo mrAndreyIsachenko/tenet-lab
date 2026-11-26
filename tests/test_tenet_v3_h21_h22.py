@@ -739,6 +739,7 @@ def test_foundry_streaming_sharded_checkpoint_with_drafter_and_engram(tmp_path):
             "--materialized-dir",
             str(mat_dir),
             "--run-fight-card-gate",
+            "--allow-weight-svd-fallback",
         ]
     )
     assert rc == 0
@@ -754,8 +755,8 @@ def test_foundry_streaming_sharded_checkpoint_with_drafter_and_engram(tmp_path):
     assert summary["h22"]["drafter"]["passed_kl_gate"] is True
     assert summary["h22"]["drafter"]["kl_reduction_pct"] >= 35.0
     assert summary["h22"]["drafter"]["edited_drafter_params"] == 2
-    assert summary["fight_card_gate"]["gate_passed"] is True
-    assert summary["fight_card_gate"]["total_evaluated"] == 24
+    assert summary["fight_card_gate"]["status"] == "skipped_unsupported_arch"
+    assert summary["fight_card_gate"]["gate_passed"] is None
 
     assert verify_provider_readiness(mat_dir)["ready"] is True
 
@@ -859,6 +860,7 @@ def test_foundry_open_evals_and_cleanup_flags(tmp_path, monkeypatch):
             "--run-open-evals",
             "--eval-suite",
             "smoke",
+            "--allow-weight-svd-fallback",
         ]
     )
     eval_cmds = [c for c in commands if any("run_vllm_open_evals.py" in part for part in c)]
@@ -894,6 +896,7 @@ def test_foundry_open_evals_and_cleanup_flags(tmp_path, monkeypatch):
             "full",
             "--mmlu-pro-limit",
             "72",
+            "--allow-weight-svd-fallback",
         ]
     )
     eval_cmds = [c for c in commands if any("run_vllm_open_evals.py" in part for part in c)]

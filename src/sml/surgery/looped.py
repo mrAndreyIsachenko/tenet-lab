@@ -35,25 +35,50 @@ from sml.surgery.subspace import (
 )
 
 # Name segments identifying embedded speculative drafter / MTP heads.
-_DRAFTER_TOKENS = ("dspark", "dfly2", "drafter", "mtp_heads", "eh_proj")
+_DRAFTER_TOKENS = ("dspark", "dfly2", "dfly_layers", "drafter", "mtp_heads", "eh_proj")
 
 # Frozen loop-controller name segments (hard 0.0 drift requirement).
 _LOOP_CONTROLLER_TOKENS = ("loop_controller", "loop_gate", "tick_embed")
 
-_LAYER_INDEX_RE = re.compile(r"(?:^|\.)layers\.(\d+)\.(?:$|\.)")
+_LAYER_INDEX_RE = re.compile(r"(?:^|\.)layers\.(\d+)\.")
 
 
-def is_drafter_weight_key(name: str) -> bool:
+def is_drafter_weight_key(name: str, *, num_hidden_layers: int | None = None) -> bool:
     """Return ``True`` when ``name`` is a 2-D-eligible drafter / MTP weight.
 
     A key counts as a drafter weight when it ends with ``.weight``, is not a
     router weight, and at least one dotted name segment either contains one of
-    the drafter tokens (``dspark``, ``dfly2``, ``drafter``, ``mtp_heads``,
-    ``eh_proj``) or equals ``mtp`` / starts with ``mtp_``.
+    the drafter tokens (``dspark``, ``dfly2``, ``dfly_layers``, ``drafter``,
+    ``mtp_heads``, ``eh_proj``) or equals ``mtp`` / starts with ``mtp_``.
+
+    ``dfly_layers`` segments only match the layer's ``self_attn.o_proj.weight``
+    and ``mlp.down_proj.weight`` projections. When ``num_hidden_layers`` is
+    given, the final layer's ``o_proj`` / ``down_proj`` /
+    ``shared_expert(s).down_proj`` / ``eh_proj`` weights are also treated as
+    drafter weights (the embedded drafter reuses the backbone's last layer).
     """
     if not name.endswith(".weight") or is_router_weight_key(name):
         return False
-    for segment in name.lower().split("."):
+    segments = name.lower().split(".")
+    if "dfly_layers" in segments:
+        return name.endswith(("self_attn.o_proj.weight", "mlp.down_proj.weight"))
+    if num_hidden_layers is not None:
+        match = _LAYER_INDEX_RE.search(name)
+        if (
+            match is not None
+            and int(match.group(1)) == num_hidden_layers
+            and name.endswith(
+                (
+                    "self_attn.o_proj.weight",
+                    "mlp.down_proj.weight",
+                    "shared_expert.down_proj.weight",
+                    "shared_experts.down_proj.weight",
+                    "eh_proj.weight",
+                )
+            )
+        ):
+            return True
+    for segment in segments:
         if any(token in segment for token in _DRAFTER_TOKENS):
             return True
         if segment == "mtp" or segment.startswith("mtp_"):
@@ -309,6 +334,7 @@ def synchronize_speculative_drafter_streaming(
     output_dir: str | Path | None = None,
     scale: float = 0.35,
     min_kl_reduction_pct: float = 35.0,
+    num_hidden_layers: int | None = None,
 ) -> dict[str, Any]:
     """Streaming (shard-by-shard) speculative-drafter synchronization.
 
@@ -353,11 +379,15 @@ def synchronize_speculative_drafter_streaming(
             drafter_keys = [
                 k
                 for k in shard_keys
-                if is_drafter_weight_key(k)
+                if is_drafter_weight_key(k, num_hidden_layers=num_hidden_layers)
                 or k.endswith(("self_attn.o_proj.weight", "mlp.down_proj.weight"))
             ]
         else:
-            drafter_keys = [k for k in shard_keys if is_drafter_weight_key(k)]
+            drafter_keys = [
+                k
+                for k in shard_keys
+                if is_drafter_weight_key(k, num_hidden_layers=num_hidden_layers)
+            ]
         if not drafter_keys:
             if not same_dir:
                 shutil.copy2(src_shard, dst_dir / shard_name)
