@@ -18,39 +18,6 @@ tags:
 - coding
 - safetensors
 - conversational
-model-index:
-- name: Tenet-26B-A4B-Gemma4-Unslop-v2
-  results:
-  - task:
-      type: text-generation
-    dataset:
-      name: IFEval
-      type: google/IFEval
-    metrics:
-    - name: Prompt-level Strict Accuracy
-      type: ifeval_strict
-      value: 0.863216
-    - name: Instruction-level Strict Accuracy
-      type: ifeval_inst_strict
-      value: 0.904077
-    source:
-      name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co/mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2
-  - task:
-      type: text-generation
-    dataset:
-      name: MATH-500
-      type: HuggingFaceH4/MATH-500
-    metrics:
-    - name: Accuracy
-      type: math_500
-      value: 0.75
-    - name: Accuracy
-      type: hendrycks_math500
-      value: 0.75
-    source:
-      name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co/mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2
 ---
 
 # Tenet-26B-A4B-Gemma4-Unslop-v2
@@ -115,68 +82,77 @@ explicitly out of scope and unsupported by this release.
 
 ## Benchmarks
 
-Numbers come from the release pipeline's `final_metrics.json` runs: H9
-Lancet bi-projected surgery, H10 gated unslop GRPO, H11 FP8 (E4M3)
-quantization and H12 subspace-safe TIES merging.
+Benchmarks are reported for the BF16 surgery output, the shipped FP8
+(E4M3) export, and a naive-abliteration baseline of the same base model.
 
 ### H9 - refusal & slop retention
 
 Lower is better: residual refusal-direction alignment and slop density
-after bi-projected surgery.
+after surgery.
 
-| Metric | Value | Direction |
-| --- | --- | --- |
-| Lancet KL Collateral | n/a | Lower |
-| Naive KL Collateral | n/a | Lower |
-| KL Reduction Ratio | n/a | Higher |
-| Target Suppression Ratio | n/a | Higher |
+| Variant | H9 |
+| --- | --- |
+| BF16 | n/a |
+| FP8 (E4M3) | n/a |
+| Naive Abliteration | n/a |
 
 ### H10 - downstream capability retention
 
-Higher is better: the gated GRPO pass reinforces held-out reasoning,
-coding and instruction-following instead of trading them away for
-de-sloping; the slop & refusal audit itself is lower-is-better.
+Higher is better: held-out reasoning, coding and instruction-following
+accuracy relative to the untouched base model.
 
-| Metric | Value | Direction |
-| --- | --- | --- |
-| Gated GRPO IFEval Score | n/a | Higher |
-| Gated vs Naive/Additive Gain | n/a | Higher |
-| Slop & Refusal Rate | n/a | Lower |
-| Post-Merge Suppression Retention | n/a | Higher |
+| Variant | H10 |
+| --- | --- |
+| BF16 | n/a |
+| FP8 (E4M3) | n/a |
+| Naive Abliteration | n/a |
 
 ### H11 - FP8 quantization robustness
 
-Higher retention and KL reduction are better; subspace re-leakage is
-lower-is-better and shows how cleanly the surgery survives FP8
-(E4M3) deployment precision.
+Higher is better: task accuracy of each variant after FP8 (E4M3)
+quantization, measuring how cleanly the surgery survives deployment
+precision.
 
-| Metric | Value | Direction |
-| --- | --- | --- |
-| FP8 Retention Ratio | 0.97 | Higher |
-| FP8 KL Reduction vs Naive | n/a | Higher |
-| FP8 Subspace Re-Leakage Lancet | 0.03 | Lower |
-| FP8 Subspace Re-Leakage Naive | n/a | Lower |
+| Variant | H11 |
+| --- | --- |
+| BF16 | n/a |
+| FP8 (E4M3) | n/a |
+| Naive Abliteration | n/a |
 
-Max row crest-factor: 3.35
+Max row crest-factor: 5.87
 
 ## Why Tenet instead of Naive Abliteration?
 
 | Metric | Base | Naive Abliteration | Tenet (BF16) | Tenet (FP8 E4M3) |
 | --- | --- | --- | --- | --- |
-| KL Collateral Drift | — | — | — | 0.03 |
+| KL Collateral Drift | — | — | — | — |
 | Refusal Suppression | — | — | — | — |
 | Tool/SQL Anchor Orthogonality | — | — | — | — |
-| LoRA Re-Leakage | — | — | — | 0.03 |
-| FP8 Subspace Re-Leakage | — | — | — | 0.03 |
-| Max Row Crest-Factor (< 25.0) | — | — | 3.35 | 3.35 |
+| LoRA Re-Leakage | — | — | — | — |
+| FP8 Subspace Re-Leakage | — | — | — | — |
+| Max Row Crest-Factor (< 25.0) | — | — | 5.87 | 5.87 |
 
 ## External Benchmarks
 
 | Benchmark | Score |
 | --- | --- |
-| IFEval (strict) | 0.86 |
-| IFEval (inst strict) | 0.90 |
-| MATH-500 | 0.75 |
+| Unclosed <think> Rate | 0.00 |
+
+## Strata Engine, Speculative Decoding & Nebius Benchmark Passport
+
+Tenet-26B-A4B-Gemma4-Unslop-v2 ships with **Strata** telemetry (H21 expert-cache / coactivation
+graph and H22 speculative decoding passes). The full telemetry bundle is
+published alongside the checkpoint as
+[`strata.toml`](strata.toml) - versioned, checksummed and consumed by the
+Nebius benchmark passport pipeline.
+
+| Telemetry | Value |
+| --- | --- |
+| `expert_cache_hit_rate` (H21) | n/a |
+| `coactivation_graph_drift` (H21) | n/a |
+| `speculative_acceptance_rate` (H22) | n/a |
+| `untouched_expert_ratio` | 18.8% |
+| `peak_host_ram_mb` | n/a |
 
 ## Side-by-Side: Naive Abliteration vs Tenet (Engineering & SQL Tool-Call)
 
@@ -357,4 +333,3 @@ Deterministic reconstruction:
    match the published recipe, making the reconstruction
    deterministic relative to the released BF16 surgery output.
 
-- Steered layers (`selected_layers`): 15, 16, 17, 18, 19, 20, 21, 22

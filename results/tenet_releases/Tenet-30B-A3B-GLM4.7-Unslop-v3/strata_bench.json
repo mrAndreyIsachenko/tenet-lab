@@ -1,0 +1,15 @@
+{
+  "backend": "sim",
+  "base_model": "zai-org/GLM-4.7-Flash",
+  "dry_run": false,
+  "metrics": {
+    "coactivation_graph_drift": 0.0,
+    "decode_tok_per_s": 74.5,
+    "expert_cache_hit_rate": 0.94,
+    "speculative_acceptance_rate": 0.71,
+    "ttft_ms": 128.0
+  },
+  "model_name": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+  "release_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+  "strata_toml": "/mnt/nvme/tenet-lab/results/tenet_releases/Tenet-30B-A3B-GLM4.7-Unslop-v3/strata.toml"
+}

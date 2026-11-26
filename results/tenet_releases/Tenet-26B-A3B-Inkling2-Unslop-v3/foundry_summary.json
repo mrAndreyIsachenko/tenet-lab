@@ -1,0 +1,156 @@
+{
+  "mode": "run",
+  "status": "error",
+  "release_id": "Tenet-26B-A3B-Inkling2-Unslop-v3",
+  "model_id": "Tenet-26B-A3B-Inkling2-Unslop-v3",
+  "tier": "workhorse",
+  "elapsed_seconds": 258.15,
+  "plan": {
+    "release_id": "Tenet-26B-A3B-Inkling2-Unslop-v3",
+    "model_id": "Tenet-26B-A3B-Inkling2-Unslop-v3",
+    "model_dir": "/mnt/nvme/tenet-lab/hf_cache/models--thinkingmachines--Inkling-2-Mini/snapshots/c9d028302cd0f035fdf8e7e91f089a4ce94d2195",
+    "materialized_dir": "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-26B-A3B-Inkling2-Unslop-v3",
+    "tier": "workhorse",
+    "base_model": "thinkingmachines/Inkling-2-Mini",
+    "naive_model": null,
+    "think_end_token": "<|thought|>",
+    "hypothesis_stack": [
+      "H21",
+      "H22"
+    ],
+    "looped": true,
+    "has_drafter": true,
+    "hot_vram_expert_ids": [
+      0,
+      1,
+      2
+    ],
+    "min_selectivity_threshold": 0.25,
+    "shared_expert_damping": 0.4,
+    "scale": 0.35,
+    "quant_snap": true,
+    "max_block16_crest_factor": 3.2
+  },
+  "h21": {
+    "edited_layers": [
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18
+    ],
+    "edited_o_proj": 8,
+    "edited_shared_experts": 0,
+    "edited_routed_experts": 0,
+    "skipped_routed_experts": 0,
+    "untouched_expert_ratio": 0.0,
+    "router_weight_drift": 0.0,
+    "max_row_crest_factor": 18.225927352905273,
+    "max_block16_crest_factor": 3.2,
+    "peak_memory_mb": 2.308133125305176,
+    "quant_snap": true,
+    "output_dir": "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-26B-A3B-Inkling2-Unslop-v3",
+    "mode": "streaming",
+    "materialized_dir": "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-26B-A3B-Inkling2-Unslop-v3",
+    "edited_count": 8,
+    "missing_materialized_files": [],
+    "h21_verified": true
+  },
+  "h22": {
+    "mode": "streaming",
+    "looped": {
+      "k_loop": 2,
+      "ticks": 3,
+      "basis_rank": 2,
+      "anchor_rank": 16,
+      "loop_controller_drift": 0.0,
+      "router_weight_drift": 0.0,
+      "frozen_keys_checked": 144,
+      "loop_controller_frozen": true,
+      "router_frozen": true
+    },
+    "drafter": {
+      "mode": "streaming",
+      "edited_drafter_params": 6,
+      "shards_touched": 1,
+      "router_weight_drift": 0.0,
+      "kl_before": 0.0008803481252134339,
+      "kl_after": 0.00037373318262502215,
+      "kl_reduction_pct": 57.547114383368125,
+      "passed_kl_gate": true
+    },
+    "router_weight_drift": 0.0,
+    "loop_controller_drift": 0.0,
+    "frozen_keys_checked": 144,
+    "h22_verified": true
+  },
+  "fight_card_gate": {
+    "total_evaluated": 24,
+    "cot_tag_integrity_rate": 1.0,
+    "length_collapse_rate": 0.0,
+    "slop_and_refusal_rate": 0.0,
+    "mean_response_words": 22.333333333333332,
+    "mean_cot_words": 12.0,
+    "gate_passed": true,
+    "gate_details": {
+      "cot_tag_integrity": {
+        "value": 1.0,
+        "threshold_min": 0.995,
+        "passed": true
+      },
+      "length_collapse": {
+        "value": 0.0,
+        "threshold_max": 0.01,
+        "passed": true
+      },
+      "slop_and_refusal": {
+        "value": 0.0,
+        "threshold_max": 0.02,
+        "passed": true
+      }
+    }
+  },
+  "strata_bench": {
+    "returncode": 0,
+    "stdout_tail": "report written: /mnt/nvme/tenet-lab/results/tenet_releases/Tenet-26B-A3B-Inkling2-Unslop-v3/strata_bench.json\n\ud83c\udfc3 View run strata_bench_Tenet-26B-A3B-Inkling2-Unslop-v3 at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1/runs/809edbe6939d41638b060d2d21f5c84d\n\ud83e\uddea View experiment at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1\nmlflow run: strata_bench_Tenet-26B-A3B-Inkling2-Unslop-v3\n",
+    "stderr_tail": "",
+    "passed": true,
+    "report": {
+      "backend": "sim",
+      "base_model": "thinkingmachines/Inkling-2-Mini",
+      "dry_run": false,
+      "metrics": {
+        "coactivation_graph_drift": 0.0,
+        "decode_tok_per_s": 74.5,
+        "expert_cache_hit_rate": 0.94,
+        "speculative_acceptance_rate": 0.71,
+        "ttft_ms": 128.0
+      },
+      "model_name": "Tenet-26B-A3B-Inkling2-Unslop-v3",
+      "release_id": "Tenet-26B-A3B-Inkling2-Unslop-v3",
+      "strata_toml": "/mnt/nvme/tenet-lab/results/tenet_releases/Tenet-26B-A3B-Inkling2-Unslop-v3/strata.toml"
+    }
+  },
+  "open_evals": {
+    "returncode": 1,
+    "stdout_tail": "[base] Running: lm_eval --tasks gsm8k_cot,gpqa_diamond_zeroshot --batch_size auto --output_path /mnt/nvme/tenet-lab/results/external_evals/Tenet-26B-A3B-Inkling2-Unslop-v3/raw/base --log_samples --gen_kwargs max_gen_toks=8192 --model vllm --model_args pretrained=thinkingmachines/Inkling-2-Mini,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,think_end_token=<|thought|>\n[base] attempt 1/3 failed (rc=1); retrying in 15.0s\n[base] attempt 2/3 failed (rc=1); retrying in 15.0s\n[base] lm-eval FAILED in 93.5s\n[tenet] Running: lm_eval --tasks gsm8k_cot,gpqa_diamond_zeroshot --batch_size auto --output_path /mnt/nvme/tenet-lab/results/external_evals/Tenet-26B-A3B-Inkling2-Unslop-v3/raw/tenet --log_samples --gen_kwargs max_gen_toks=8192 --model vllm --model_args pretrained=/mnt/nvme/tenet-lab/tenet_materialized/Tenet-26B-A3B-Inkling2-Unslop-v3,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,think_end_token=<|thought|>\n[tenet] attempt 1/3 failed (rc=1); retrying in 15.0s\n[tenet] attempt 2/3 failed (rc=1); retrying in 15.0s\n[tenet] lm-eval FAILED in 85.0s\nERROR: arms failed: base, tenet\n",
+    "stderr_tail": "",
+    "passed": false
+  },
+  "hf_upload": {
+    "repo_id": "mr-andrey-isachenko/Tenet-26B-A3B-Inkling2-Unslop-v3",
+    "uploaded": true
+  },
+  "cache_cleanup": {
+    "cleaned_up": false,
+    "reason": "s3-sync-up failed",
+    "stderr_tail": "ERROR \"/mnt/nvme/tenet-lab/results\": command not found\n"
+  },
+  "strata_toml": "/mnt/nvme/tenet-lab/results/tenet_releases/Tenet-26B-A3B-Inkling2-Unslop-v3/strata.toml",
+  "model_card": "/mnt/nvme/tenet-lab/results/tenet_releases/Tenet-26B-A3B-Inkling2-Unslop-v3/Tenet-26B-A3B-Inkling2-Unslop-v3.md",
+  "mlflow_mirror": "results/mlflow_mirror/foundry_surgery_Tenet-26B-A3B-Inkling2-Unslop-v3_Tenet-26B-A3B-Inkling2-Unslop-v3_20261126T105200_756935.json",
+  "remote_mlflow_logged": true
+}

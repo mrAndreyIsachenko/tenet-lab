@@ -12,8 +12,10 @@ _Generated from `results/` — missing sources are skipped._
 | Tenet-14B-Qwen3-Unslop-v2.json | base |
 | Tenet-24B-Mistral3.1-Unslop-v2.json | base |
 | Tenet-26B-A4B-Gemma4-Unslop-v2.json | base |
+| Tenet-30B-A3B-GLM4.7-Unslop-v3.json | base |
 | Tenet-32B-Qwen2.5-Unslop-v1.json | base |
 | Tenet-32B-Qwen3-Unslop-v2.json | base |
+| Tenet-35B-A3B-Qwen3.6-Unslop-v3.json | base |
 | Tenet-3B-Qwen2.5-Unslop-v1.json | base |
 | Tenet-4B-Qwen3-Unslop-v2.json | base |
 | Tenet-8B-Llama3.1-Unslop-v1.json | base |
@@ -45,23 +47,23 @@ _Generated from `results/` — missing sources are skipped._
 # Three-way external eval: Tenet-26B-A4B-Gemma4-Unslop-v2
 
 - Suite: `full` | Backend: `vllm` | Precision: `bf16` | Limit: `None`
-- Base: `google/gemma-4-26b-a4b-it`
-- Naive Abliteration: `google/gemma-4-26b-a4b-it`
-- Tenet: `/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2`
-- Think-end token: `</think>` | Max gen toks: `8192`
+- Base: `google/gemma-4-26B-A4B-it`
+- Naive Abliteration: `google/gemma-4-26B-A4B-it`
+- Tenet: `mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2`
+- Think-end token: `<|thought|>` | Max gen toks: `8192`
 
 | Metric | Base | Naive Abliteration | Tenet | Δ Tenet−Base | Δ Tenet−Naive |
 |---|---|---|---|---|---|
-| unclosed_think_rate | 0.0000 | 0.0000 | 0.0000 | +0.0000 | +0.0000 |
-| arm | base | naive | tenet | - | - |
-| command | ['lm_eval', '--tasks', 'gsm8k_cot,gpqa_diamond_zeroshot', '--batch_size', 'auto', '--output_path', '/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/base', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=google/gemma-4-26b-a4b-it,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.85,max_model_len=16384,think_end_token=</think>'] | ['lm_eval', '--tasks', 'gsm8k_cot,gpqa_diamond_zeroshot', '--batch_size', 'auto', '--output_path', '/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/base', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=google/gemma-4-26b-a4b-it,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.85,max_model_len=16384,think_end_token=</think>'] | ['lm_eval', '--tasks', 'gsm8k_cot,gpqa_diamond_zeroshot', '--batch_size', 'auto', '--output_path', '/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/tenet', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.85,max_model_len=16384,think_end_token=</think>'] | - | - |
-| commands | [['lm_eval', '--tasks', 'gsm8k_cot,gpqa_diamond_zeroshot', '--batch_size', 'auto', '--output_path', '/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/base', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=google/gemma-4-26b-a4b-it,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.85,max_model_len=16384,think_end_token=</think>'], ['lm_eval', '--tasks', 'mmlu_pro', '--limit', '72', '--batch_size', 'auto', '--output_path', '/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/base/mmlu_pro', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=google/gemma-4-26b-a4b-it,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.85,max_model_len=16384,think_end_token=</think>'], ['lm_eval', '--tasks', 'ifeval,hendrycks_math500', '--batch_size', 'auto', '--output_path', '/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/base/chat_0shot', '--log_samples', '--gen_kwargs', 'max_gen_toks=1280', '--model', 'vllm', '--model_args', 'pretrained=google/gemma-4-26b-a4b-it,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.85,max_model_len=16384,enable_thinking=False', '--apply_chat_template']] | [['lm_eval', '--tasks', 'gsm8k_cot,gpqa_diamond_zeroshot', '--batch_size', 'auto', '--output_path', '/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/base', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=google/gemma-4-26b-a4b-it,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.85,max_model_len=16384,think_end_token=</think>'], ['lm_eval', '--tasks', 'mmlu_pro', '--limit', '72', '--batch_size', 'auto', '--output_path', '/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/base/mmlu_pro', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=google/gemma-4-26b-a4b-it,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.85,max_model_len=16384,think_end_token=</think>'], ['lm_eval', '--tasks', 'ifeval,hendrycks_math500', '--batch_size', 'auto', '--output_path', '/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/base/chat_0shot', '--log_samples', '--gen_kwargs', 'max_gen_toks=1280', '--model', 'vllm', '--model_args', 'pretrained=google/gemma-4-26b-a4b-it,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.85,max_model_len=16384,enable_thinking=False', '--apply_chat_template']] | [['lm_eval', '--tasks', 'gsm8k_cot,gpqa_diamond_zeroshot', '--batch_size', 'auto', '--output_path', '/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/tenet', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.85,max_model_len=16384,think_end_token=</think>'], ['lm_eval', '--tasks', 'mmlu_pro', '--limit', '72', '--batch_size', 'auto', '--output_path', '/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/tenet/mmlu_pro', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.85,max_model_len=16384,think_end_token=</think>'], ['lm_eval', '--tasks', 'ifeval,hendrycks_math500', '--batch_size', 'auto', '--output_path', '/workspace/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/tenet/chat_0shot', '--log_samples', '--gen_kwargs', 'max_gen_toks=1280', '--model', 'vllm', '--model_args', 'pretrained=/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.85,max_model_len=16384,enable_thinking=False', '--apply_chat_template']] | - | - |
-| eqbench | {'eqbench_creative_writing': {'command': ['python', 'run_eqbench.py', '--model', 'google/gemma-4-26b-a4b-it', '--components', 'creative_writing', '--url', 'http://localhost:8080'], 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'status': 'error'}, 'slop_score': {'command': ['python', 'run_eqbench.py', '--model', 'google/gemma-4-26b-a4b-it', '--components', 'slop_score', '--url', 'http://localhost:8080'], 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'status': 'error'}} | {'eqbench_creative_writing': {'command': ['python', 'run_eqbench.py', '--model', 'google/gemma-4-26b-a4b-it', '--components', 'creative_writing', '--url', 'http://localhost:8080'], 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'status': 'error'}, 'slop_score': {'command': ['python', 'run_eqbench.py', '--model', 'google/gemma-4-26b-a4b-it', '--components', 'slop_score', '--url', 'http://localhost:8080'], 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'status': 'error'}} | {'eqbench_creative_writing': {'command': ['python', 'run_eqbench.py', '--model', '/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2', '--components', 'creative_writing', '--url', 'http://localhost:8080'], 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'status': 'error'}, 'slop_score': {'command': ['python', 'run_eqbench.py', '--model', '/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2', '--components', 'slop_score', '--url', 'http://localhost:8080'], 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'status': 'error'}} | - | - |
-| evalplus | {'humaneval_plus': {'command': ['evalplus.evaluate', '--model', 'google/gemma-4-26b-a4b-it', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm'], 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'status': 'error'}, 'mbpp_plus': {'command': ['evalplus.evaluate', '--model', 'google/gemma-4-26b-a4b-it', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm'], 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'status': 'error'}} | {'humaneval_plus': {'command': ['evalplus.evaluate', '--model', 'google/gemma-4-26b-a4b-it', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm'], 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'status': 'error'}, 'mbpp_plus': {'command': ['evalplus.evaluate', '--model', 'google/gemma-4-26b-a4b-it', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm'], 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'status': 'error'}} | {'humaneval_plus': {'command': ['evalplus.evaluate', '--model', '/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm'], 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'status': 'error'}, 'mbpp_plus': {'command': ['evalplus.evaluate', '--model', '/workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm'], 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'status': 'error'}} | - | - |
-| lm_eval_version | a03baec | a03baec | a03baec | - | - |
-| model | google/gemma-4-26b-a4b-it | google/gemma-4-26b-a4b-it | /workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2 | - | - |
-| num_sampled_responses | 4884 | 4884 | 4884 | +0.0000 | +0.0000 |
-| scores | {'gpqa_diamond': 0.328283, 'gpqa_diamond_zeroshot': 0.328283, 'gpqa_diamond_zeroshot_acc': 0.328283, 'gpqa_diamond_zeroshot_acc_norm': 0.328283, 'gpqa_diamond_zeroshot_acc_norm_stderr': 0.033457, 'gpqa_diamond_zeroshot_acc_stderr': 0.033457, 'gpqa_diamond_zeroshot_sample_len': 198.0, 'gsm8k_cot_exact_match': 0.663381, 'gsm8k_cot_exact_match_stderr': 0.013016, 'gsm8k_cot_flexible': 0.663381, 'gsm8k_cot_sample_len': 1319.0, 'gsm8k_cot_strict': 0.62699, 'gsm8k_math_acc': 0.663381, 'hendrycks_math500': 0.852, 'hendrycks_math500_exact_match': 0.852, 'hendrycks_math500_exact_match_stderr': 0.015881, 'hendrycks_math500_sample_len': 500.0, 'ifeval_inst_level_loose_acc': 0.93765, 'ifeval_inst_level_strict_acc': 0.925659, 'ifeval_inst_strict': 0.925659, 'ifeval_prompt_level_loose_acc': 0.90573, 'ifeval_prompt_level_loose_acc_stderr': 0.012574, 'ifeval_prompt_level_strict_acc': 0.889094, 'ifeval_prompt_level_strict_acc_stderr': 0.013513, 'ifeval_sample_len': 541.0, 'ifeval_strict': 0.889094, 'math_500': 0.852, 'mmlu_pro': 0.310516, 'mmlu_pro_biology_exact_match': 0.111111, 'mmlu_pro_biology_exact_match_stderr': 0.037297, 'mmlu_pro_biology_sample_len': 72.0, 'mmlu_pro_business_exact_match': 0.416667, 'mmlu_pro_business_exact_match_stderr': 0.058509, 'mmlu_pro_business_sample_len': 72.0, 'mmlu_pro_chemistry_exact_match': 0.180556, 'mmlu_pro_chemistry_exact_match_stderr': 0.045649, 'mmlu_pro_chemistry_sample_len': 72.0, 'mmlu_pro_computer_science_exact_match': 0.416667, 'mmlu_pro_computer_science_exact_match_stderr': 0.058509, 'mmlu_pro_computer_science_sample_len': 72.0, 'mmlu_pro_economics_exact_match': 0.555556, 'mmlu_pro_economics_exact_match_stderr': 0.058972, 'mmlu_pro_economics_sample_len': 72.0, 'mmlu_pro_engineering_exact_match': 0.208333, 'mmlu_pro_engineering_exact_match_stderr': 0.048197, 'mmlu_pro_engineering_sample_len': 72.0, 'mmlu_pro_exact_match': 0.310516, 'mmlu_pro_exact_match_stderr': 0.013996, 'mmlu_pro_health_exact_match': 0.194444, 'mmlu_pro_health_exact_match_stderr': 0.04697, 'mmlu_pro_health_sample_len': 72.0, 'mmlu_pro_history_exact_match': 0.166667, 'mmlu_pro_history_exact_match_stderr': 0.044229, 'mmlu_pro_history_sample_len': 72.0, 'mmlu_pro_law_exact_match': 0.180556, 'mmlu_pro_law_exact_match_stderr': 0.045649, 'mmlu_pro_law_sample_len': 72.0, 'mmlu_pro_math_exact_match': 0.5, 'mmlu_pro_math_exact_match_stderr': 0.059339, 'mmlu_pro_math_sample_len': 72.0, 'mmlu_pro_other_exact_match': 0.263889, 'mmlu_pro_other_exact_match_stderr': 0.052306, 'mmlu_pro_other_sample_len': 72.0, 'mmlu_pro_philosophy_exact_match': 0.388889, 'mmlu_pro_philosophy_exact_match_stderr': 0.057855, 'mmlu_pro_philosophy_sample_len': 72.0, 'mmlu_pro_physics_exact_match': 0.472222, 'mmlu_pro_physics_exact_match_stderr': 0.059247, 'mmlu_pro_physics_sample_len': 72.0, 'mmlu_pro_psychology_exact_match': 0.291667, 'mmlu_pro_psychology_exact_match_stderr': 0.053943, 'mmlu_pro_psychology_sample_len': 72.0, 'mmlu_pro_sample_len': 1008.0} | {'gpqa_diamond': 0.328283, 'gpqa_diamond_zeroshot': 0.328283, 'gpqa_diamond_zeroshot_acc': 0.328283, 'gpqa_diamond_zeroshot_acc_norm': 0.328283, 'gpqa_diamond_zeroshot_acc_norm_stderr': 0.033457, 'gpqa_diamond_zeroshot_acc_stderr': 0.033457, 'gpqa_diamond_zeroshot_sample_len': 198.0, 'gsm8k_cot_exact_match': 0.663381, 'gsm8k_cot_exact_match_stderr': 0.013016, 'gsm8k_cot_flexible': 0.663381, 'gsm8k_cot_sample_len': 1319.0, 'gsm8k_cot_strict': 0.62699, 'gsm8k_math_acc': 0.663381, 'hendrycks_math500': 0.852, 'hendrycks_math500_exact_match': 0.852, 'hendrycks_math500_exact_match_stderr': 0.015881, 'hendrycks_math500_sample_len': 500.0, 'ifeval_inst_level_loose_acc': 0.93765, 'ifeval_inst_level_strict_acc': 0.925659, 'ifeval_inst_strict': 0.925659, 'ifeval_prompt_level_loose_acc': 0.90573, 'ifeval_prompt_level_loose_acc_stderr': 0.012574, 'ifeval_prompt_level_strict_acc': 0.889094, 'ifeval_prompt_level_strict_acc_stderr': 0.013513, 'ifeval_sample_len': 541.0, 'ifeval_strict': 0.889094, 'math_500': 0.852, 'mmlu_pro': 0.310516, 'mmlu_pro_biology_exact_match': 0.111111, 'mmlu_pro_biology_exact_match_stderr': 0.037297, 'mmlu_pro_biology_sample_len': 72.0, 'mmlu_pro_business_exact_match': 0.416667, 'mmlu_pro_business_exact_match_stderr': 0.058509, 'mmlu_pro_business_sample_len': 72.0, 'mmlu_pro_chemistry_exact_match': 0.180556, 'mmlu_pro_chemistry_exact_match_stderr': 0.045649, 'mmlu_pro_chemistry_sample_len': 72.0, 'mmlu_pro_computer_science_exact_match': 0.416667, 'mmlu_pro_computer_science_exact_match_stderr': 0.058509, 'mmlu_pro_computer_science_sample_len': 72.0, 'mmlu_pro_economics_exact_match': 0.555556, 'mmlu_pro_economics_exact_match_stderr': 0.058972, 'mmlu_pro_economics_sample_len': 72.0, 'mmlu_pro_engineering_exact_match': 0.208333, 'mmlu_pro_engineering_exact_match_stderr': 0.048197, 'mmlu_pro_engineering_sample_len': 72.0, 'mmlu_pro_exact_match': 0.310516, 'mmlu_pro_exact_match_stderr': 0.013996, 'mmlu_pro_health_exact_match': 0.194444, 'mmlu_pro_health_exact_match_stderr': 0.04697, 'mmlu_pro_health_sample_len': 72.0, 'mmlu_pro_history_exact_match': 0.166667, 'mmlu_pro_history_exact_match_stderr': 0.044229, 'mmlu_pro_history_sample_len': 72.0, 'mmlu_pro_law_exact_match': 0.180556, 'mmlu_pro_law_exact_match_stderr': 0.045649, 'mmlu_pro_law_sample_len': 72.0, 'mmlu_pro_math_exact_match': 0.5, 'mmlu_pro_math_exact_match_stderr': 0.059339, 'mmlu_pro_math_sample_len': 72.0, 'mmlu_pro_other_exact_match': 0.263889, 'mmlu_pro_other_exact_match_stderr': 0.052306, 'mmlu_pro_other_sample_len': 72.0, 'mmlu_pro_philosophy_exact_match': 0.388889, 'mmlu_pro_philosophy_exact_match_stderr': 0.057855, 'mmlu_pro_philosophy_sample_len': 72.0, 'mmlu_pro_physics_exact_match': 0.472222, 'mmlu_pro_physics_exact_match_stderr': 0.059247, 'mmlu_pro_physics_sample_len': 72.0, 'mmlu_pro_psychology_exact_match': 0.291667, 'mmlu_pro_psychology_exact_match_stderr': 0.053943, 'mmlu_pro_psychology_sample_len': 72.0, 'mmlu_pro_sample_len': 1008.0} | {'gpqa_diamond': 0.287879, 'gpqa_diamond_zeroshot': 0.287879, 'gpqa_diamond_zeroshot_acc': 0.287879, 'gpqa_diamond_zeroshot_acc_norm': 0.287879, 'gpqa_diamond_zeroshot_acc_norm_stderr': 0.032259, 'gpqa_diamond_zeroshot_acc_stderr': 0.032259, 'gpqa_diamond_zeroshot_sample_len': 198.0, 'gsm8k_cot_exact_match': 0.218347, 'gsm8k_cot_exact_match_stderr': 0.011379, 'gsm8k_cot_flexible': 0.218347, 'gsm8k_cot_sample_len': 1319.0, 'gsm8k_cot_strict': 0.21304, 'gsm8k_math_acc': 0.218347, 'hendrycks_math500': 0.75, 'hendrycks_math500_exact_match': 0.75, 'hendrycks_math500_exact_match_stderr': 0.019384, 'hendrycks_math500_sample_len': 500.0, 'ifeval_inst_level_loose_acc': 0.918465, 'ifeval_inst_level_strict_acc': 0.904077, 'ifeval_inst_strict': 0.904077, 'ifeval_prompt_level_loose_acc': 0.878004, 'ifeval_prompt_level_loose_acc_stderr': 0.014084, 'ifeval_prompt_level_strict_acc': 0.863216, 'ifeval_prompt_level_strict_acc_stderr': 0.014787, 'ifeval_sample_len': 541.0, 'ifeval_strict': 0.863216, 'math_500': 0.75, 'mmlu_pro': 0.255952, 'mmlu_pro_biology_exact_match': 0.263889, 'mmlu_pro_biology_exact_match_stderr': 0.052306, 'mmlu_pro_biology_sample_len': 72.0, 'mmlu_pro_business_exact_match': 0.166667, 'mmlu_pro_business_exact_match_stderr': 0.044229, 'mmlu_pro_business_sample_len': 72.0, 'mmlu_pro_chemistry_exact_match': 0.027778, 'mmlu_pro_chemistry_exact_match_stderr': 0.019503, 'mmlu_pro_chemistry_sample_len': 72.0, 'mmlu_pro_computer_science_exact_match': 0.361111, 'mmlu_pro_computer_science_exact_match_stderr': 0.057004, 'mmlu_pro_computer_science_sample_len': 72.0, 'mmlu_pro_economics_exact_match': 0.402778, 'mmlu_pro_economics_exact_match_stderr': 0.058207, 'mmlu_pro_economics_sample_len': 72.0, 'mmlu_pro_engineering_exact_match': 0.333333, 'mmlu_pro_engineering_exact_match_stderr': 0.055945, 'mmlu_pro_engineering_sample_len': 72.0, 'mmlu_pro_exact_match': 0.255952, 'mmlu_pro_exact_match_stderr': 0.013331, 'mmlu_pro_health_exact_match': 0.208333, 'mmlu_pro_health_exact_match_stderr': 0.048197, 'mmlu_pro_health_sample_len': 72.0, 'mmlu_pro_history_exact_match': 0.180556, 'mmlu_pro_history_exact_match_stderr': 0.045649, 'mmlu_pro_history_sample_len': 72.0, 'mmlu_pro_law_exact_match': 0.152778, 'mmlu_pro_law_exact_match_stderr': 0.042697, 'mmlu_pro_law_sample_len': 72.0, 'mmlu_pro_math_exact_match': 0.305556, 'mmlu_pro_math_exact_match_stderr': 0.054668, 'mmlu_pro_math_sample_len': 72.0, 'mmlu_pro_other_exact_match': 0.444444, 'mmlu_pro_other_exact_match_stderr': 0.058972, 'mmlu_pro_other_sample_len': 72.0, 'mmlu_pro_philosophy_exact_match': 0.152778, 'mmlu_pro_philosophy_exact_match_stderr': 0.042697, 'mmlu_pro_philosophy_sample_len': 72.0, 'mmlu_pro_physics_exact_match': 0.180556, 'mmlu_pro_physics_exact_match_stderr': 0.045649, 'mmlu_pro_physics_sample_len': 72.0, 'mmlu_pro_psychology_exact_match': 0.402778, 'mmlu_pro_psychology_exact_match_stderr': 0.058207, 'mmlu_pro_psychology_sample_len': 72.0, 'mmlu_pro_sample_len': 1008.0} | - | - |
+| unclosed_think_rate | 0.0000 | - | 0.0000 | +0.0000 | - |
+| arm | base | - | tenet | - | - |
+| model | google/gemma-4-26B-A4B-it | - | mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2 | - | - |
+| command | ['lm_eval', '--tasks', 'gsm8k_cot,gpqa_diamond_zeroshot', '--batch_size', 'auto', '--output_path', '/mnt/nvme/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/base', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=google/gemma-4-26B-A4B-it,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,think_end_token=<|thought|>'] | - | ['lm_eval', '--tasks', 'gsm8k_cot,gpqa_diamond_zeroshot', '--batch_size', 'auto', '--output_path', '/mnt/nvme/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/tenet', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,think_end_token=<|thought|>'] | - | - |
+| commands | [['lm_eval', '--tasks', 'gsm8k_cot,gpqa_diamond_zeroshot', '--batch_size', 'auto', '--output_path', '/mnt/nvme/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/base', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=google/gemma-4-26B-A4B-it,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,think_end_token=<|thought|>'], ['lm_eval', '--tasks', 'mmlu_pro', '--limit', '72', '--batch_size', 'auto', '--output_path', '/mnt/nvme/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/base/mmlu_pro', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=google/gemma-4-26B-A4B-it,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,think_end_token=<|thought|>'], ['lm_eval', '--tasks', 'ifeval', '--batch_size', 'auto', '--output_path', '/mnt/nvme/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/base/chat_0shot', '--log_samples', '--gen_kwargs', 'max_gen_toks=1280', '--model', 'vllm', '--model_args', 'pretrained=google/gemma-4-26B-A4B-it,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,enable_thinking=False', '--apply_chat_template'], ['lm_eval', '--tasks', 'hendrycks_math500', '--batch_size', 'auto', '--output_path', '/mnt/nvme/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/base/chat_0shot_math', '--log_samples', '--gen_kwargs', 'max_gen_toks=2048', '--system_instruction', 'Please reason step by step, and put your final answer within \\boxed{}.', '--model', 'vllm', '--model_args', 'pretrained=google/gemma-4-26B-A4B-it,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,enable_thinking=False', '--apply_chat_template']] | - | [['lm_eval', '--tasks', 'gsm8k_cot,gpqa_diamond_zeroshot', '--batch_size', 'auto', '--output_path', '/mnt/nvme/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/tenet', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,think_end_token=<|thought|>'], ['lm_eval', '--tasks', 'mmlu_pro', '--limit', '72', '--batch_size', 'auto', '--output_path', '/mnt/nvme/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/tenet/mmlu_pro', '--log_samples', '--gen_kwargs', 'max_gen_toks=8192', '--model', 'vllm', '--model_args', 'pretrained=mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,think_end_token=<|thought|>'], ['lm_eval', '--tasks', 'ifeval', '--batch_size', 'auto', '--output_path', '/mnt/nvme/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/tenet/chat_0shot', '--log_samples', '--gen_kwargs', 'max_gen_toks=1280', '--model', 'vllm', '--model_args', 'pretrained=mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,enable_thinking=False', '--apply_chat_template'], ['lm_eval', '--tasks', 'hendrycks_math500', '--batch_size', 'auto', '--output_path', '/mnt/nvme/tenet-lab/results/external_evals/Tenet-26B-A4B-Gemma4-Unslop-v2/raw/tenet/chat_0shot_math', '--log_samples', '--gen_kwargs', 'max_gen_toks=2048', '--system_instruction', 'Please reason step by step, and put your final answer within \\boxed{}.', '--model', 'vllm', '--model_args', 'pretrained=mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,enable_thinking=False', '--apply_chat_template']] | - | - |
+| scores | {'gsm8k_cot_sample_len': 1319.0, 'gsm8k_cot_exact_match': 0.649735, 'gsm8k_cot_strict': 0.601971, 'gsm8k_cot_exact_match_stderr': 0.01314, 'gsm8k_cot_flexible': 0.649735, 'gsm8k_math_acc': 0.649735, 'gpqa_diamond_zeroshot_sample_len': 198.0, 'gpqa_diamond_zeroshot_acc': 0.373737, 'gpqa_diamond': 0.373737, 'gpqa_diamond_zeroshot': 0.373737, 'gpqa_diamond_zeroshot_acc_stderr': 0.034469, 'gpqa_diamond_zeroshot_acc_norm': 0.373737, 'gpqa_diamond_zeroshot_acc_norm_stderr': 0.034469, 'mmlu_pro_biology_sample_len': 72.0, 'mmlu_pro_biology_exact_match': 0.111111, 'mmlu_pro_biology_exact_match_stderr': 0.037297, 'mmlu_pro_business_sample_len': 72.0, 'mmlu_pro_business_exact_match': 0.430556, 'mmlu_pro_business_exact_match_stderr': 0.058764, 'mmlu_pro_chemistry_sample_len': 72.0, 'mmlu_pro_chemistry_exact_match': 0.166667, 'mmlu_pro_chemistry_exact_match_stderr': 0.044229, 'mmlu_pro_computer_science_sample_len': 72.0, 'mmlu_pro_computer_science_exact_match': 0.513889, 'mmlu_pro_computer_science_exact_match_stderr': 0.059316, 'mmlu_pro_economics_sample_len': 72.0, 'mmlu_pro_economics_exact_match': 0.5, 'mmlu_pro_economics_exact_match_stderr': 0.059339, 'mmlu_pro_engineering_sample_len': 72.0, 'mmlu_pro_engineering_exact_match': 0.263889, 'mmlu_pro_engineering_exact_match_stderr': 0.052306, 'mmlu_pro_health_sample_len': 72.0, 'mmlu_pro_health_exact_match': 0.25, 'mmlu_pro_health_exact_match_stderr': 0.051389, 'mmlu_pro_history_sample_len': 72.0, 'mmlu_pro_history_exact_match': 0.097222, 'mmlu_pro_history_exact_match_stderr': 0.03516, 'mmlu_pro_law_sample_len': 72.0, 'mmlu_pro_law_exact_match': 0.194444, 'mmlu_pro_law_exact_match_stderr': 0.04697, 'mmlu_pro_math_sample_len': 72.0, 'mmlu_pro_math_exact_match': 0.402778, 'mmlu_pro_math_exact_match_stderr': 0.058207, 'mmlu_pro_other_sample_len': 72.0, 'mmlu_pro_other_exact_match': 0.375, 'mmlu_pro_other_exact_match_stderr': 0.057455, 'mmlu_pro_philosophy_sample_len': 72.0, 'mmlu_pro_philosophy_exact_match': 0.361111, 'mmlu_pro_philosophy_exact_match_stderr': 0.057004, 'mmlu_pro_physics_sample_len': 72.0, 'mmlu_pro_physics_exact_match': 0.513889, 'mmlu_pro_physics_exact_match_stderr': 0.059316, 'mmlu_pro_psychology_sample_len': 72.0, 'mmlu_pro_psychology_exact_match': 0.388889, 'mmlu_pro_psychology_exact_match_stderr': 0.057855, 'mmlu_pro_sample_len': 1008.0, 'mmlu_pro_exact_match': 0.326389, 'mmlu_pro': 0.326389, 'mmlu_pro_exact_match_stderr': 0.01419, 'ifeval_sample_len': 541.0, 'ifeval_prompt_level_strict_acc': 0.881701, 'ifeval_strict': 0.881701, 'ifeval_prompt_level_strict_acc_stderr': 0.013898, 'ifeval_inst_level_strict_acc': 0.919664, 'ifeval_inst_strict': 0.919664, 'ifeval_prompt_level_loose_acc': 0.900185, 'ifeval_prompt_level_loose_acc_stderr': 0.012899, 'ifeval_inst_level_loose_acc': 0.932854, 'hendrycks_math500_sample_len': 500.0, 'hendrycks_math500_exact_match': 0.0, 'math_500': 0.0, 'hendrycks_math500': 0.0, 'hendrycks_math500_exact_match_stderr': 0.0} | - | {'gsm8k_cot_sample_len': 1319.0, 'gsm8k_cot_exact_match': 0.463988, 'gsm8k_cot_strict': 0.432904, 'gsm8k_cot_exact_match_stderr': 0.013737, 'gsm8k_cot_flexible': 0.463988, 'gsm8k_math_acc': 0.463988, 'gpqa_diamond_zeroshot_sample_len': 198.0, 'gpqa_diamond_zeroshot_acc': 0.323232, 'gpqa_diamond': 0.323232, 'gpqa_diamond_zeroshot': 0.323232, 'gpqa_diamond_zeroshot_acc_stderr': 0.033323, 'gpqa_diamond_zeroshot_acc_norm': 0.323232, 'gpqa_diamond_zeroshot_acc_norm_stderr': 0.033323, 'mmlu_pro_biology_sample_len': 72.0, 'mmlu_pro_biology_exact_match': 0.25, 'mmlu_pro_biology_exact_match_stderr': 0.051389, 'mmlu_pro_business_sample_len': 72.0, 'mmlu_pro_business_exact_match': 0.388889, 'mmlu_pro_business_exact_match_stderr': 0.057855, 'mmlu_pro_chemistry_sample_len': 72.0, 'mmlu_pro_chemistry_exact_match': 0.083333, 'mmlu_pro_chemistry_exact_match_stderr': 0.032801, 'mmlu_pro_computer_science_sample_len': 72.0, 'mmlu_pro_computer_science_exact_match': 0.305556, 'mmlu_pro_computer_science_exact_match_stderr': 0.054668, 'mmlu_pro_economics_sample_len': 72.0, 'mmlu_pro_economics_exact_match': 0.361111, 'mmlu_pro_economics_exact_match_stderr': 0.057004, 'mmlu_pro_engineering_sample_len': 72.0, 'mmlu_pro_engineering_exact_match': 0.305556, 'mmlu_pro_engineering_exact_match_stderr': 0.054668, 'mmlu_pro_health_sample_len': 72.0, 'mmlu_pro_health_exact_match': 0.138889, 'mmlu_pro_health_exact_match_stderr': 0.041043, 'mmlu_pro_history_sample_len': 72.0, 'mmlu_pro_history_exact_match': 0.055556, 'mmlu_pro_history_exact_match_stderr': 0.027185, 'mmlu_pro_law_sample_len': 72.0, 'mmlu_pro_law_exact_match': 0.138889, 'mmlu_pro_law_exact_match_stderr': 0.041043, 'mmlu_pro_math_sample_len': 72.0, 'mmlu_pro_math_exact_match': 0.347222, 'mmlu_pro_math_exact_match_stderr': 0.056501, 'mmlu_pro_other_sample_len': 72.0, 'mmlu_pro_other_exact_match': 0.430556, 'mmlu_pro_other_exact_match_stderr': 0.058764, 'mmlu_pro_philosophy_sample_len': 72.0, 'mmlu_pro_philosophy_exact_match': 0.152778, 'mmlu_pro_philosophy_exact_match_stderr': 0.042697, 'mmlu_pro_physics_sample_len': 72.0, 'mmlu_pro_physics_exact_match': 0.236111, 'mmlu_pro_physics_exact_match_stderr': 0.050402, 'mmlu_pro_psychology_sample_len': 72.0, 'mmlu_pro_psychology_exact_match': 0.25, 'mmlu_pro_psychology_exact_match_stderr': 0.051389, 'mmlu_pro_sample_len': 1008.0, 'mmlu_pro_exact_match': 0.246032, 'mmlu_pro': 0.246032, 'mmlu_pro_exact_match_stderr': 0.01318, 'ifeval_sample_len': 541.0, 'ifeval_prompt_level_strict_acc': 0.879852, 'ifeval_strict': 0.879852, 'ifeval_prompt_level_strict_acc_stderr': 0.013992, 'ifeval_inst_level_strict_acc': 0.913669, 'ifeval_inst_strict': 0.913669, 'ifeval_prompt_level_loose_acc': 0.89464, 'ifeval_prompt_level_loose_acc_stderr': 0.013212, 'ifeval_inst_level_loose_acc': 0.928058, 'hendrycks_math500_sample_len': 500.0, 'hendrycks_math500_exact_match': 0.0, 'math_500': 0.0, 'hendrycks_math500': 0.0, 'hendrycks_math500_exact_match_stderr': 0.0} | - | - |
+| lm_eval_version | - | - | - | - | - |
+| num_sampled_responses | 5384 | - | 5384 | +0.0000 | - |
+| evalplus | {'humaneval_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'google/gemma-4-26B-A4B-it', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}, 'mbpp_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'google/gemma-4-26B-A4B-it', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}} | - | {'humaneval_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}, 'mbpp_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}} | - | - |
+| eqbench | {'eqbench_creative_writing': {'status': 'error', 'reason': "python: can't open file '/mnt/nvme/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'google/gemma-4-26B-A4B-it', '--components', 'creative_writing', '--url', 'http://localhost:8080']}, 'slop_score': {'status': 'error', 'reason': "python: can't open file '/mnt/nvme/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'google/gemma-4-26B-A4B-it', '--components', 'slop_score', '--url', 'http://localhost:8080']}} | - | {'eqbench_creative_writing': {'status': 'error', 'reason': "python: can't open file '/mnt/nvme/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2', '--components', 'creative_writing', '--url', 'http://localhost:8080']}, 'slop_score': {'status': 'error', 'reason': "python: can't open file '/mnt/nvme/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2', '--components', 'slop_score', '--url', 'http://localhost:8080']}} | - | - |
 
 
 # Three-way external eval: Tenet-32B-Qwen3-Unslop-v2
@@ -128,6 +130,13 @@ _Generated from `results/` — missing sources are skipped._
 | num_sampled_responses | 4884 | 4884 | 4884 | +0.0000 | +0.0000 |
 | evalplus | {'humaneval_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'Qwen/Qwen3-8B', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}, 'mbpp_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'Qwen/Qwen3-8B', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}} | {'humaneval_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'huihui-ai/Qwen3-8B-abliterated', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}, 'mbpp_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'huihui-ai/Qwen3-8B-abliterated', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}} | {'humaneval_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}, 'mbpp_plus': {'status': 'error', 'reason': 'usage: evalplus.evaluate [-h] --dataset {humaneval,mbpp} --samples SAMPLES\n                         [--base-only] [--parallel PARALLEL]\n                         [--i-just-wanna-run] [--test-details]\n                         [--min-time-limit MIN_TIME_LIMIT]\n                         [--gt-time-limit-factor GT_TIME_LIMIT_FACTOR]\n                         [--mini] [--noextreme]\nevalplus.evaluate: error: the following arguments are required: --dataset, --samples\n', 'command': ['evalplus.evaluate', '--model', 'mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2', '--datasets', 'humaneval', 'mbpp', '--greedy', '--backend', 'vllm']}} | - | - |
 | eqbench | {'eqbench_creative_writing': {'status': 'error', 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'Qwen/Qwen3-8B', '--components', 'creative_writing', '--url', 'http://localhost:8080']}, 'slop_score': {'status': 'error', 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'Qwen/Qwen3-8B', '--components', 'slop_score', '--url', 'http://localhost:8080']}} | {'eqbench_creative_writing': {'status': 'error', 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'huihui-ai/Qwen3-8B-abliterated', '--components', 'creative_writing', '--url', 'http://localhost:8080']}, 'slop_score': {'status': 'error', 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'huihui-ai/Qwen3-8B-abliterated', '--components', 'slop_score', '--url', 'http://localhost:8080']}} | {'eqbench_creative_writing': {'status': 'error', 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2', '--components', 'creative_writing', '--url', 'http://localhost:8080']}, 'slop_score': {'status': 'error', 'reason': "python: can't open file '/workspace/tenet-lab/run_eqbench.py': [Errno 2] No such file or directory\n", 'command': ['python', 'run_eqbench.py', '--model', 'mr-andrey-isachenko/Tenet-8B-Qwen3-Unslop-v2', '--components', 'slop_score', '--url', 'http://localhost:8080']}} | - | - |
+
+### v3-era external eval files
+
+| file | file |
+|---|---|
+| Tenet-30B-A3B-GLM4.7-Unslop-v3.json |
+| Tenet-35B-A3B-Qwen3.6-Unslop-v3.json |
 
 ## 2. H18 Quant-Snap Audit on `Qwen/Qwen3-4B` (NVFP4 block-16, INT4 block-32, FP8 per-channel)
 
@@ -1281,4 +1290,407 @@ _Generated from `results/` — missing sources are skipped._
 
 ## 4. Tenet v3 (H20 + H18 Quant-Snap) Non-Qwen/Meta Pilot
 
-_No `results/tenet_releases/*v3*/foundry_summary.json` found — run `scripts/run_tenet_v3_pilot.py` first._
+### Pilot releases
+
+| file | release_id | target | model_id | status | quant_snap | beta | eval_suite |
+|---|---|---|---|---|---|---|---|
+| Tenet-26B-A3B-Inkling2-Unslop-v3 | — | Tenet-26B-A3B-Inkling2-Unslop-v3 | error | — | — | — |
+| Tenet-30B-A3B-GLM4.7-Unslop-v3 | — | Tenet-30B-A3B-GLM4.7-Unslop-v3 | ok | — | — | — |
+| Tenet-35B-A3B-Qwen3.6-Unslop-v3 | — | Tenet-35B-A3B-Qwen3.6-Unslop-v3 | ok | — | — | — |
+
+
+#### `Tenet-26B-A3B-Inkling2-Unslop-v3` (full summary)
+
+| metric | value |
+|---|---|
+| mode | run |
+| status | error |
+| release_id | Tenet-26B-A3B-Inkling2-Unslop-v3 |
+| model_id | Tenet-26B-A3B-Inkling2-Unslop-v3 |
+| tier | workhorse |
+| elapsed_seconds | 258.15 |
+| plan.release_id | Tenet-26B-A3B-Inkling2-Unslop-v3 |
+| plan.model_id | Tenet-26B-A3B-Inkling2-Unslop-v3 |
+| plan.model_dir | /mnt/nvme/tenet-lab/hf_cache/models--thinkingmachines--Inkling-2-Mini/snapshots/c9d028302cd0f035fdf8e7e91f089a4ce94d2195 |
+| plan.materialized_dir | /mnt/nvme/tenet-lab/tenet_materialized/Tenet-26B-A3B-Inkling2-Unslop-v3 |
+| plan.tier | workhorse |
+| plan.base_model | thinkingmachines/Inkling-2-Mini |
+| plan.naive_model | — |
+| plan.think_end_token | <|thought|> |
+| plan.hypothesis_stack[0] | H21 |
+| plan.hypothesis_stack[1] | H22 |
+| plan.looped | True |
+| plan.has_drafter | True |
+| plan.hot_vram_expert_ids[0] | 0 |
+| plan.hot_vram_expert_ids[1] | 1 |
+| plan.hot_vram_expert_ids[2] | 2 |
+| plan.min_selectivity_threshold | 0.25 |
+| plan.shared_expert_damping | 0.4 |
+| plan.scale | 0.35 |
+| plan.quant_snap | True |
+| plan.max_block16_crest_factor | 3.2 |
+| h21.edited_layers[0] | 11 |
+| h21.edited_layers[1] | 12 |
+| h21.edited_layers[2] | 13 |
+| h21.edited_layers[3] | 14 |
+| h21.edited_layers[4] | 15 |
+| h21.edited_layers[5] | 16 |
+| h21.edited_layers[6] | 17 |
+| h21.edited_layers[7] | 18 |
+| h21.edited_o_proj | 8 |
+| h21.edited_shared_experts | 0 |
+| h21.edited_routed_experts | 0 |
+| h21.skipped_routed_experts | 0 |
+| h21.untouched_expert_ratio | 0 |
+| h21.router_weight_drift | 0 |
+| h21.max_row_crest_factor | 18.2259 |
+| h21.max_block16_crest_factor | 3.2 |
+| h21.peak_memory_mb | 2.3081 |
+| h21.quant_snap | True |
+| h21.output_dir | /mnt/nvme/tenet-lab/tenet_materialized/Tenet-26B-A3B-Inkling2-Unslop-v3 |
+| h21.mode | streaming |
+| h21.materialized_dir | /mnt/nvme/tenet-lab/tenet_materialized/Tenet-26B-A3B-Inkling2-Unslop-v3 |
+| h21.edited_count | 8 |
+| h21.h21_verified | True |
+| h22.mode | streaming |
+| h22.looped.k_loop | 2 |
+| h22.looped.ticks | 3 |
+| h22.looped.basis_rank | 2 |
+| h22.looped.anchor_rank | 16 |
+| h22.looped.loop_controller_drift | 0 |
+| h22.looped.router_weight_drift | 0 |
+| h22.looped.frozen_keys_checked | 144 |
+| h22.looped.loop_controller_frozen | True |
+| h22.looped.router_frozen | True |
+| h22.drafter.mode | streaming |
+| h22.drafter.edited_drafter_params | 6 |
+| h22.drafter.shards_touched | 1 |
+| h22.drafter.router_weight_drift | 0 |
+| h22.drafter.kl_before | 0.0009 |
+| h22.drafter.kl_after | 0.0004 |
+| h22.drafter.kl_reduction_pct | 57.5471 |
+| h22.drafter.passed_kl_gate | True |
+| h22.router_weight_drift | 0 |
+| h22.loop_controller_drift | 0 |
+| h22.frozen_keys_checked | 144 |
+| h22.h22_verified | True |
+| fight_card_gate.total_evaluated | 24 |
+| fight_card_gate.cot_tag_integrity_rate | 1 |
+| fight_card_gate.length_collapse_rate | 0 |
+| fight_card_gate.slop_and_refusal_rate | 0 |
+| fight_card_gate.mean_response_words | 22.3333 |
+| fight_card_gate.mean_cot_words | 12 |
+| fight_card_gate.gate_passed | True |
+| fight_card_gate.gate_details.cot_tag_integrity.value | 1 |
+| fight_card_gate.gate_details.cot_tag_integrity.threshold_min | 0.995 |
+| fight_card_gate.gate_details.cot_tag_integrity.passed | True |
+| fight_card_gate.gate_details.length_collapse.value | 0 |
+| fight_card_gate.gate_details.length_collapse.threshold_max | 0.01 |
+| fight_card_gate.gate_details.length_collapse.passed | True |
+| fight_card_gate.gate_details.slop_and_refusal.value | 0 |
+| fight_card_gate.gate_details.slop_and_refusal.threshold_max | 0.02 |
+| fight_card_gate.gate_details.slop_and_refusal.passed | True |
+| strata_bench.returncode | 0 |
+| strata_bench.stdout_tail | report written: /mnt/nvme/tenet-lab/results/tenet_releases/Tenet-26B-A3B-Inkling2-Unslop-v3/strata_bench.json
+🏃 View run strata_bench_Tenet-26B-A3B-Inkling2-Unslop-v3 at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1/runs/809edbe6939d41638b060d2d21f5c84d
+🧪 View experiment at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1
+mlflow run: strata_bench_Tenet-26B-A3B-Inkling2-Unslop-v3
+ |
+| strata_bench.stderr_tail |  |
+| strata_bench.passed | True |
+| strata_bench.report.backend | sim |
+| strata_bench.report.base_model | thinkingmachines/Inkling-2-Mini |
+| strata_bench.report.dry_run | False |
+| strata_bench.report.metrics.coactivation_graph_drift | 0 |
+| strata_bench.report.metrics.decode_tok_per_s | 74.5 |
+| strata_bench.report.metrics.expert_cache_hit_rate | 0.94 |
+| strata_bench.report.metrics.speculative_acceptance_rate | 0.71 |
+| strata_bench.report.metrics.ttft_ms | 128 |
+| strata_bench.report.model_name | Tenet-26B-A3B-Inkling2-Unslop-v3 |
+| strata_bench.report.release_id | Tenet-26B-A3B-Inkling2-Unslop-v3 |
+| strata_bench.report.strata_toml | /mnt/nvme/tenet-lab/results/tenet_releases/Tenet-26B-A3B-Inkling2-Unslop-v3/strata.toml |
+| open_evals.returncode | 1 |
+| open_evals.stdout_tail | [base] Running: lm_eval --tasks gsm8k_cot,gpqa_diamond_zeroshot --batch_size auto --output_path /mnt/nvme/tenet-lab/results/external_evals/Tenet-26B-A3B-Inkling2-Unslop-v3/raw/base --log_samples --gen_kwargs max_gen_toks=8192 --model vllm --model_args pretrained=thinkingmachines/Inkling-2-Mini,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,think_end_token=<|thought|>
+[base] attempt 1/3 failed (rc=1); retrying in 15.0s
+[base] attempt 2/3 failed (rc=1); retrying in 15.0s
+[base] lm-eval FAILED in 93.5s
+[tenet] Running: lm_eval --tasks gsm8k_cot,gpqa_diamond_zeroshot --batch_size auto --output_path /mnt/nvme/tenet-lab/results/external_evals/Tenet-26B-A3B-Inkling2-Unslop-v3/raw/tenet --log_samples --gen_kwargs max_gen_toks=8192 --model vllm --model_args pretrained=/mnt/nvme/tenet-lab/tenet_materialized/Tenet-26B-A3B-Inkling2-Unslop-v3,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,think_end_token=<|thought|>
+[tenet] attempt 1/3 failed (rc=1); retrying in 15.0s
+[tenet] attempt 2/3 failed (rc=1); retrying in 15.0s
+[tenet] lm-eval FAILED in 85.0s
+ERROR: arms failed: base, tenet
+ |
+| open_evals.stderr_tail |  |
+| open_evals.passed | False |
+| hf_upload.repo_id | mr-andrey-isachenko/Tenet-26B-A3B-Inkling2-Unslop-v3 |
+| hf_upload.uploaded | True |
+| cache_cleanup.cleaned_up | False |
+| cache_cleanup.reason | s3-sync-up failed |
+| cache_cleanup.stderr_tail | ERROR "/mnt/nvme/tenet-lab/results": command not found
+ |
+| strata_toml | /mnt/nvme/tenet-lab/results/tenet_releases/Tenet-26B-A3B-Inkling2-Unslop-v3/strata.toml |
+| model_card | /mnt/nvme/tenet-lab/results/tenet_releases/Tenet-26B-A3B-Inkling2-Unslop-v3/Tenet-26B-A3B-Inkling2-Unslop-v3.md |
+| mlflow_mirror | results/mlflow_mirror/foundry_surgery_Tenet-26B-A3B-Inkling2-Unslop-v3_Tenet-26B-A3B-Inkling2-Unslop-v3_20261126T105200_756935.json |
+| remote_mlflow_logged | True |
+
+
+#### `Tenet-30B-A3B-GLM4.7-Unslop-v3` (full summary)
+
+| metric | value |
+|---|---|
+| mode | run |
+| status | ok |
+| release_id | Tenet-30B-A3B-GLM4.7-Unslop-v3 |
+| model_id | Tenet-30B-A3B-GLM4.7-Unslop-v3 |
+| tier | edge |
+| elapsed_seconds | 3489.323 |
+| plan.release_id | Tenet-30B-A3B-GLM4.7-Unslop-v3 |
+| plan.model_id | Tenet-30B-A3B-GLM4.7-Unslop-v3 |
+| plan.model_dir | /mnt/nvme/tenet-lab/hf_cache/models--zai-org--GLM-4.7-Flash/snapshots/7dd20894a642a0aa287e9827cb1a1f7f91386b67 |
+| plan.materialized_dir | /mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3 |
+| plan.tier | edge |
+| plan.base_model | zai-org/GLM-4.7-Flash |
+| plan.naive_model | — |
+| plan.think_end_token | </think> |
+| plan.hypothesis_stack[0] | H21 |
+| plan.hypothesis_stack[1] | H22 |
+| plan.looped | False |
+| plan.has_drafter | True |
+| plan.hot_vram_expert_ids[0] | 0 |
+| plan.hot_vram_expert_ids[1] | 1 |
+| plan.hot_vram_expert_ids[2] | 2 |
+| plan.min_selectivity_threshold | 0.25 |
+| plan.shared_expert_damping | 0.4 |
+| plan.scale | 0.35 |
+| plan.quant_snap | True |
+| plan.max_block16_crest_factor | 3.2 |
+| h21.edited_layers[0] | 26 |
+| h21.edited_layers[1] | 27 |
+| h21.edited_layers[2] | 28 |
+| h21.edited_layers[3] | 29 |
+| h21.edited_layers[4] | 30 |
+| h21.edited_layers[5] | 31 |
+| h21.edited_layers[6] | 32 |
+| h21.edited_layers[7] | 33 |
+| h21.edited_o_proj | 8 |
+| h21.edited_shared_experts | 8 |
+| h21.edited_routed_experts | 453 |
+| h21.skipped_routed_experts | 59 |
+| h21.untouched_expert_ratio | 0.1152 |
+| h21.router_weight_drift | 0 |
+| h21.max_row_crest_factor | 7.0825 |
+| h21.max_block16_crest_factor | 3.2 |
+| h21.peak_memory_mb | 1.0447 |
+| h21.quant_snap | True |
+| h21.output_dir | /mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3 |
+| h21.mode | streaming |
+| h21.materialized_dir | /mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3 |
+| h21.edited_count | 469 |
+| h21.h21_verified | True |
+| h22.mode | streaming |
+| h22.looped.skipped | True |
+| h22.drafter.mode | streaming |
+| h22.drafter.edited_drafter_params | 1 |
+| h22.drafter.shards_touched | 1 |
+| h22.drafter.router_weight_drift | 0 |
+| h22.drafter.kl_before | 0.001 |
+| h22.drafter.kl_after | 0.0004 |
+| h22.drafter.kl_reduction_pct | 57.6505 |
+| h22.drafter.passed_kl_gate | True |
+| h22.router_weight_drift | 0 |
+| h22.loop_controller_drift | 0 |
+| h22.frozen_keys_checked | 94 |
+| h22.h22_verified | True |
+| fight_card_gate.total_evaluated | 24 |
+| fight_card_gate.cot_tag_integrity_rate | 1 |
+| fight_card_gate.length_collapse_rate | 0 |
+| fight_card_gate.slop_and_refusal_rate | 0 |
+| fight_card_gate.mean_response_words | 22.3333 |
+| fight_card_gate.mean_cot_words | 12 |
+| fight_card_gate.gate_passed | True |
+| fight_card_gate.gate_details.cot_tag_integrity.value | 1 |
+| fight_card_gate.gate_details.cot_tag_integrity.threshold_min | 0.995 |
+| fight_card_gate.gate_details.cot_tag_integrity.passed | True |
+| fight_card_gate.gate_details.length_collapse.value | 0 |
+| fight_card_gate.gate_details.length_collapse.threshold_max | 0.01 |
+| fight_card_gate.gate_details.length_collapse.passed | True |
+| fight_card_gate.gate_details.slop_and_refusal.value | 0 |
+| fight_card_gate.gate_details.slop_and_refusal.threshold_max | 0.02 |
+| fight_card_gate.gate_details.slop_and_refusal.passed | True |
+| strata_bench.returncode | 0 |
+| strata_bench.stdout_tail | report written: /mnt/nvme/tenet-lab/results/tenet_releases/Tenet-30B-A3B-GLM4.7-Unslop-v3/strata_bench.json
+🏃 View run strata_bench_Tenet-30B-A3B-GLM4.7-Unslop-v3 at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1/runs/eaf92e2ee1c1435e902c92a3a5a75af5
+🧪 View experiment at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1
+mlflow run: strata_bench_Tenet-30B-A3B-GLM4.7-Unslop-v3
+ |
+| strata_bench.stderr_tail |  |
+| strata_bench.passed | True |
+| strata_bench.report.backend | sim |
+| strata_bench.report.base_model | zai-org/GLM-4.7-Flash |
+| strata_bench.report.dry_run | False |
+| strata_bench.report.metrics.coactivation_graph_drift | 0 |
+| strata_bench.report.metrics.decode_tok_per_s | 74.5 |
+| strata_bench.report.metrics.expert_cache_hit_rate | 0.94 |
+| strata_bench.report.metrics.speculative_acceptance_rate | 0.71 |
+| strata_bench.report.metrics.ttft_ms | 128 |
+| strata_bench.report.model_name | Tenet-30B-A3B-GLM4.7-Unslop-v3 |
+| strata_bench.report.release_id | Tenet-30B-A3B-GLM4.7-Unslop-v3 |
+| strata_bench.report.strata_toml | /mnt/nvme/tenet-lab/results/tenet_releases/Tenet-30B-A3B-GLM4.7-Unslop-v3/strata.toml |
+| open_evals.returncode | 0 |
+| open_evals.stdout_tail | ned=zai-org/GLM-4.7-Flash,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,think_end_token=</think>
+🏃 View run open_evals_Tenet-30B-A3B-GLM4.7-Unslop-v3_base_mmlu_pro at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1/runs/9221b2268dd948be8767d2f2306759ec
+🧪 View experiment at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1
+[base] Running: lm_eval --tasks ifeval,hendrycks_math500 --batch_size auto --output_path /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/raw/base/chat_0shot --log_samples --gen_kwargs max_gen_toks=1280 --model vllm --model_args pretrained=zai-org/GLM-4.7-Flash,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,enable_thinking=False --apply_chat_template
+🏃 View run open_evals_Tenet-30B-A3B-GLM4.7-Unslop-v3_base_chat_0shot at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1/runs/915018ecac31416283055ed2889cf245
+🧪 View experiment at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1
+[base] Done in 3368.1325142383575s: unclosed_think_rate=0.0
+[tenet] Resuming: reusing cached results under /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/raw/tenet
+[tenet] Resuming: reusing cached results under /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/raw/tenet/mmlu_pro
+[tenet] Resuming: reusing cached results under /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/raw/tenet/chat_0shot
+[tenet] Done in 0.0s: unclosed_think_rate=0.0
+Saved canonical evals to /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3.json
+Saved markdown report to /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/report.md
+ |
+| open_evals.stderr_tail |  |
+| open_evals.passed | True |
+| open_evals.export_returncode | 0 |
+| hf_upload.repo_id | mr-andrey-isachenko/Tenet-30B-A3B-GLM4.7-Unslop-v3 |
+| hf_upload.uploaded | True |
+| cache_cleanup.cleaned_up | False |
+| cache_cleanup.reason | s3-sync-up failed |
+| cache_cleanup.stderr_tail | ERROR "/mnt/nvme/tenet-lab/results": command not found
+ |
+| strata_toml | /mnt/nvme/tenet-lab/results/tenet_releases/Tenet-30B-A3B-GLM4.7-Unslop-v3/strata.toml |
+| model_card | /mnt/nvme/tenet-lab/results/tenet_releases/Tenet-30B-A3B-GLM4.7-Unslop-v3/Tenet-30B-A3B-GLM4.7-Unslop-v3.md |
+| mlflow_mirror | results/mlflow_mirror/foundry_surgery_Tenet-30B-A3B-GLM4.7-Unslop-v3_Tenet-30B-A3B-GLM4.7-Unslop-v3_20261126T030753_977095.json |
+| remote_mlflow_logged | True |
+
+
+#### `Tenet-35B-A3B-Qwen3.6-Unslop-v3` (full summary)
+
+| metric | value |
+|---|---|
+| mode | run |
+| status | ok |
+| release_id | Tenet-35B-A3B-Qwen3.6-Unslop-v3 |
+| model_id | Tenet-35B-A3B-Qwen3.6-Unslop-v3 |
+| tier | workhorse |
+| elapsed_seconds | 3274.633 |
+| plan.release_id | Tenet-35B-A3B-Qwen3.6-Unslop-v3 |
+| plan.model_id | Tenet-35B-A3B-Qwen3.6-Unslop-v3 |
+| plan.model_dir | /mnt/nvme/tenet-lab/hf_cache/models--Qwen--Qwen3.6-35B-A3B/snapshots/345d467b117d1fd5eda9b879a5988de9ae5f47a7 |
+| plan.materialized_dir | /mnt/nvme/tenet-lab/tenet_materialized/Tenet-35B-A3B-Qwen3.6-Unslop-v3 |
+| plan.tier | workhorse |
+| plan.base_model | Qwen/Qwen3.6-35B-A3B |
+| plan.naive_model | huihui-ai/Huihui-Qwen3.6-35B-A3B-abliterated |
+| plan.think_end_token | </think> |
+| plan.hypothesis_stack[0] | H21 |
+| plan.hypothesis_stack[1] | H22 |
+| plan.looped | False |
+| plan.has_drafter | True |
+| plan.hot_vram_expert_ids[0] | 0 |
+| plan.hot_vram_expert_ids[1] | 1 |
+| plan.hot_vram_expert_ids[2] | 2 |
+| plan.min_selectivity_threshold | 0.25 |
+| plan.shared_expert_damping | 0.4 |
+| plan.scale | 0.35 |
+| plan.quant_snap | True |
+| plan.max_block16_crest_factor | 3.2 |
+| h21.edited_layers[0] | 22 |
+| h21.edited_layers[1] | 23 |
+| h21.edited_layers[2] | 24 |
+| h21.edited_layers[3] | 25 |
+| h21.edited_layers[4] | 26 |
+| h21.edited_layers[5] | 27 |
+| h21.edited_layers[6] | 28 |
+| h21.edited_layers[7] | 29 |
+| h21.edited_o_proj | 2 |
+| h21.edited_shared_experts | 8 |
+| h21.edited_routed_experts | 1845 |
+| h21.skipped_routed_experts | 203 |
+| h21.untouched_expert_ratio | 0.0991 |
+| h21.router_weight_drift | 0 |
+| h21.max_row_crest_factor | 11.2137 |
+| h21.max_block16_crest_factor | 3.2 |
+| h21.peak_memory_mb | 0.7492 |
+| h21.quant_snap | True |
+| h21.output_dir | /mnt/nvme/tenet-lab/tenet_materialized/Tenet-35B-A3B-Qwen3.6-Unslop-v3 |
+| h21.mode | streaming |
+| h21.materialized_dir | /mnt/nvme/tenet-lab/tenet_materialized/Tenet-35B-A3B-Qwen3.6-Unslop-v3 |
+| h21.edited_count | 1855 |
+| h21.h21_verified | True |
+| h22.mode | streaming |
+| h22.looped.skipped | True |
+| h22.drafter.mode | streaming |
+| h22.drafter.edited_drafter_params | 3 |
+| h22.drafter.shards_touched | 1 |
+| h22.drafter.router_weight_drift | 0 |
+| h22.drafter.kl_before | 0.0012 |
+| h22.drafter.kl_after | 0.0005 |
+| h22.drafter.kl_reduction_pct | 57.487 |
+| h22.drafter.passed_kl_gate | True |
+| h22.router_weight_drift | 0 |
+| h22.loop_controller_drift | 0 |
+| h22.frozen_keys_checked | 41 |
+| h22.h22_verified | True |
+| fight_card_gate.total_evaluated | 24 |
+| fight_card_gate.cot_tag_integrity_rate | 1 |
+| fight_card_gate.length_collapse_rate | 0 |
+| fight_card_gate.slop_and_refusal_rate | 0 |
+| fight_card_gate.mean_response_words | 22.3333 |
+| fight_card_gate.mean_cot_words | 12 |
+| fight_card_gate.gate_passed | True |
+| fight_card_gate.gate_details.cot_tag_integrity.value | 1 |
+| fight_card_gate.gate_details.cot_tag_integrity.threshold_min | 0.995 |
+| fight_card_gate.gate_details.cot_tag_integrity.passed | True |
+| fight_card_gate.gate_details.length_collapse.value | 0 |
+| fight_card_gate.gate_details.length_collapse.threshold_max | 0.01 |
+| fight_card_gate.gate_details.length_collapse.passed | True |
+| fight_card_gate.gate_details.slop_and_refusal.value | 0 |
+| fight_card_gate.gate_details.slop_and_refusal.threshold_max | 0.02 |
+| fight_card_gate.gate_details.slop_and_refusal.passed | True |
+| strata_bench.returncode | 0 |
+| strata_bench.stdout_tail | report written: /mnt/nvme/tenet-lab/results/tenet_releases/Tenet-35B-A3B-Qwen3.6-Unslop-v3/strata_bench.json
+🏃 View run strata_bench_Tenet-35B-A3B-Qwen3.6-Unslop-v3 at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1/runs/ab2b8989d21047628d4b7a01fd1005b9
+🧪 View experiment at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1
+mlflow run: strata_bench_Tenet-35B-A3B-Qwen3.6-Unslop-v3
+ |
+| strata_bench.stderr_tail |  |
+| strata_bench.passed | True |
+| strata_bench.report.backend | sim |
+| strata_bench.report.base_model | Qwen/Qwen3.6-35B-A3B |
+| strata_bench.report.dry_run | False |
+| strata_bench.report.metrics.coactivation_graph_drift | 0 |
+| strata_bench.report.metrics.decode_tok_per_s | 74.5 |
+| strata_bench.report.metrics.expert_cache_hit_rate | 0.94 |
+| strata_bench.report.metrics.speculative_acceptance_rate | 0.71 |
+| strata_bench.report.metrics.ttft_ms | 128 |
+| strata_bench.report.model_name | Tenet-35B-A3B-Qwen3.6-Unslop-v3 |
+| strata_bench.report.release_id | Tenet-35B-A3B-Qwen3.6-Unslop-v3 |
+| strata_bench.report.strata_toml | /mnt/nvme/tenet-lab/results/tenet_releases/Tenet-35B-A3B-Qwen3.6-Unslop-v3/strata.toml |
+| open_evals.returncode | 0 |
+| open_evals.stdout_tail | -e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1
+[tenet] Running: lm_eval --tasks mmlu_pro --limit 72 --batch_size auto --output_path /mnt/nvme/tenet-lab/results/external_evals/Tenet-35B-A3B-Qwen3.6-Unslop-v3/raw/tenet/mmlu_pro --log_samples --gen_kwargs max_gen_toks=8192 --model vllm --model_args pretrained=/mnt/nvme/tenet-lab/tenet_materialized/Tenet-35B-A3B-Qwen3.6-Unslop-v3,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,think_end_token=</think>
+🏃 View run open_evals_Tenet-35B-A3B-Qwen3.6-Unslop-v3_tenet_mmlu_pro at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1/runs/272650935bb44b17a52ef2d85e227a02
+🧪 View experiment at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1
+[tenet] Running: lm_eval --tasks ifeval,hendrycks_math500 --batch_size auto --output_path /mnt/nvme/tenet-lab/results/external_evals/Tenet-35B-A3B-Qwen3.6-Unslop-v3/raw/tenet/chat_0shot --log_samples --gen_kwargs max_gen_toks=1280 --model vllm --model_args pretrained=/mnt/nvme/tenet-lab/tenet_materialized/Tenet-35B-A3B-Qwen3.6-Unslop-v3,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,enable_thinking=False --apply_chat_template
+🏃 View run open_evals_Tenet-35B-A3B-Qwen3.6-Unslop-v3_tenet_chat_0shot at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1/runs/46920eff1b72458b91ac782b52fa456a
+🧪 View experiment at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1
+[tenet] Done in 977.4776277542114s: unclosed_think_rate=0.001096
+Saved canonical evals to /mnt/nvme/tenet-lab/results/external_evals/Tenet-35B-A3B-Qwen3.6-Unslop-v3.json
+Saved markdown report to /mnt/nvme/tenet-lab/results/external_evals/Tenet-35B-A3B-Qwen3.6-Unslop-v3/report.md
+ |
+| open_evals.stderr_tail |  |
+| open_evals.passed | True |
+| open_evals.export_returncode | 0 |
+| hf_upload.repo_id | mr-andrey-isachenko/Tenet-35B-A3B-Qwen3.6-Unslop-v3 |
+| hf_upload.uploaded | True |
+| cache_cleanup.cleaned_up | False |
+| cache_cleanup.reason | s3-sync-up failed |
+| cache_cleanup.stderr_tail | ERROR "/mnt/nvme/tenet-lab/results": command not found
+ |
+| strata_toml | /mnt/nvme/tenet-lab/results/tenet_releases/Tenet-35B-A3B-Qwen3.6-Unslop-v3/strata.toml |
+| model_card | /mnt/nvme/tenet-lab/results/tenet_releases/Tenet-35B-A3B-Qwen3.6-Unslop-v3/Tenet-35B-A3B-Qwen3.6-Unslop-v3.md |
+| mlflow_mirror | results/mlflow_mirror/foundry_surgery_Tenet-35B-A3B-Qwen3.6-Unslop-v3_Tenet-35B-A3B-Qwen3.6-Unslop-v3_20261126T040727_182733.json |
+| remote_mlflow_logged | True |
+

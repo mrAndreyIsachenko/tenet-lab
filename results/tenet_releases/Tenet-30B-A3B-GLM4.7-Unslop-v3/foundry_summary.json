@@ -1,0 +1,149 @@
+{
+  "mode": "run",
+  "status": "ok",
+  "release_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+  "model_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+  "tier": "edge",
+  "elapsed_seconds": 3489.323,
+  "plan": {
+    "release_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+    "model_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+    "model_dir": "/mnt/nvme/tenet-lab/hf_cache/models--zai-org--GLM-4.7-Flash/snapshots/7dd20894a642a0aa287e9827cb1a1f7f91386b67",
+    "materialized_dir": "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3",
+    "tier": "edge",
+    "base_model": "zai-org/GLM-4.7-Flash",
+    "naive_model": null,
+    "think_end_token": "</think>",
+    "hypothesis_stack": [
+      "H21",
+      "H22"
+    ],
+    "looped": false,
+    "has_drafter": true,
+    "hot_vram_expert_ids": [
+      0,
+      1,
+      2
+    ],
+    "min_selectivity_threshold": 0.25,
+    "shared_expert_damping": 0.4,
+    "scale": 0.35,
+    "quant_snap": true,
+    "max_block16_crest_factor": 3.2
+  },
+  "h21": {
+    "edited_layers": [
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33
+    ],
+    "edited_o_proj": 8,
+    "edited_shared_experts": 8,
+    "edited_routed_experts": 453,
+    "skipped_routed_experts": 59,
+    "untouched_expert_ratio": 0.115234375,
+    "router_weight_drift": 0.0,
+    "max_row_crest_factor": 7.082531929016113,
+    "max_block16_crest_factor": 3.2,
+    "peak_memory_mb": 1.0447235107421875,
+    "quant_snap": true,
+    "output_dir": "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3",
+    "mode": "streaming",
+    "materialized_dir": "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3",
+    "edited_count": 469,
+    "missing_materialized_files": [],
+    "h21_verified": true
+  },
+  "h22": {
+    "mode": "streaming",
+    "looped": {
+      "skipped": true
+    },
+    "drafter": {
+      "mode": "streaming",
+      "edited_drafter_params": 1,
+      "shards_touched": 1,
+      "router_weight_drift": 0.0,
+      "kl_before": 0.000971029651423759,
+      "kl_after": 0.00041122656784693315,
+      "kl_reduction_pct": 57.650462347470246,
+      "passed_kl_gate": true
+    },
+    "router_weight_drift": 0.0,
+    "loop_controller_drift": 0.0,
+    "frozen_keys_checked": 94,
+    "h22_verified": true
+  },
+  "fight_card_gate": {
+    "total_evaluated": 24,
+    "cot_tag_integrity_rate": 1.0,
+    "length_collapse_rate": 0.0,
+    "slop_and_refusal_rate": 0.0,
+    "mean_response_words": 22.333333333333332,
+    "mean_cot_words": 12.0,
+    "gate_passed": true,
+    "gate_details": {
+      "cot_tag_integrity": {
+        "value": 1.0,
+        "threshold_min": 0.995,
+        "passed": true
+      },
+      "length_collapse": {
+        "value": 0.0,
+        "threshold_max": 0.01,
+        "passed": true
+      },
+      "slop_and_refusal": {
+        "value": 0.0,
+        "threshold_max": 0.02,
+        "passed": true
+      }
+    }
+  },
+  "strata_bench": {
+    "returncode": 0,
+    "stdout_tail": "report written: /mnt/nvme/tenet-lab/results/tenet_releases/Tenet-30B-A3B-GLM4.7-Unslop-v3/strata_bench.json\n\ud83c\udfc3 View run strata_bench_Tenet-30B-A3B-GLM4.7-Unslop-v3 at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1/runs/eaf92e2ee1c1435e902c92a3a5a75af5\n\ud83e\uddea View experiment at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1\nmlflow run: strata_bench_Tenet-30B-A3B-GLM4.7-Unslop-v3\n",
+    "stderr_tail": "",
+    "passed": true,
+    "report": {
+      "backend": "sim",
+      "base_model": "zai-org/GLM-4.7-Flash",
+      "dry_run": false,
+      "metrics": {
+        "coactivation_graph_drift": 0.0,
+        "decode_tok_per_s": 74.5,
+        "expert_cache_hit_rate": 0.94,
+        "speculative_acceptance_rate": 0.71,
+        "ttft_ms": 128.0
+      },
+      "model_name": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+      "release_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+      "strata_toml": "/mnt/nvme/tenet-lab/results/tenet_releases/Tenet-30B-A3B-GLM4.7-Unslop-v3/strata.toml"
+    }
+  },
+  "open_evals": {
+    "returncode": 0,
+    "stdout_tail": "ned=zai-org/GLM-4.7-Flash,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,think_end_token=</think>\n\ud83c\udfc3 View run open_evals_Tenet-30B-A3B-GLM4.7-Unslop-v3_base_mmlu_pro at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1/runs/9221b2268dd948be8767d2f2306759ec\n\ud83e\uddea View experiment at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1\n[base] Running: lm_eval --tasks ifeval,hendrycks_math500 --batch_size auto --output_path /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/raw/base/chat_0shot --log_samples --gen_kwargs max_gen_toks=1280 --model vllm --model_args pretrained=zai-org/GLM-4.7-Flash,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,enable_thinking=False --apply_chat_template\n\ud83c\udfc3 View run open_evals_Tenet-30B-A3B-GLM4.7-Unslop-v3_base_chat_0shot at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1/runs/915018ecac31416283055ed2889cf245\n\ud83e\uddea View experiment at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1\n[base] Done in 3368.1325142383575s: unclosed_think_rate=0.0\n[tenet] Resuming: reusing cached results under /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/raw/tenet\n[tenet] Resuming: reusing cached results under /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/raw/tenet/mmlu_pro\n[tenet] Resuming: reusing cached results under /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/raw/tenet/chat_0shot\n[tenet] Done in 0.0s: unclosed_think_rate=0.0\nSaved canonical evals to /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3.json\nSaved markdown report to /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/report.md\n",
+    "stderr_tail": "",
+    "passed": true,
+    "export_returncode": 0
+  },
+  "hf_upload": {
+    "repo_id": "mr-andrey-isachenko/Tenet-30B-A3B-GLM4.7-Unslop-v3",
+    "uploaded": true
+  },
+  "cache_cleanup": {
+    "cleaned_up": false,
+    "reason": "s3-sync-up failed",
+    "stderr_tail": "ERROR \"/mnt/nvme/tenet-lab/results\": command not found\n"
+  },
+  "strata_toml": "/mnt/nvme/tenet-lab/results/tenet_releases/Tenet-30B-A3B-GLM4.7-Unslop-v3/strata.toml",
+  "model_card": "/mnt/nvme/tenet-lab/results/tenet_releases/Tenet-30B-A3B-GLM4.7-Unslop-v3/Tenet-30B-A3B-GLM4.7-Unslop-v3.md",
+  "mlflow_mirror": "results/mlflow_mirror/foundry_surgery_Tenet-30B-A3B-GLM4.7-Unslop-v3_Tenet-30B-A3B-GLM4.7-Unslop-v3_20261126T030753_977095.json",
+  "remote_mlflow_logged": true
+}

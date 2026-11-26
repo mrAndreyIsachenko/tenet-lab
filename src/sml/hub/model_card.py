@@ -1058,6 +1058,8 @@ def build_model_index(
         number = _numeric_metric_value(values[key])
         if number is None:
             continue
+        if key in {"math_500", "hendrycks_math500"} and number <= 0.005:
+            continue
         entry = by_dataset.get((ds_type, ds_name))
         if entry is None:
             entry = {

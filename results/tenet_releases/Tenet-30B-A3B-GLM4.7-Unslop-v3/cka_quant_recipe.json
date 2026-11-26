@@ -1,0 +1,96 @@
+{
+  "model_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+  "schema": "cka-quant-recipe-v3-foundry",
+  "selected_layers": [
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33
+  ],
+  "q8_0_layers": [
+    26,
+    27,
+    28,
+    29
+  ],
+  "q6_k_layers": [
+    30,
+    31,
+    32,
+    33
+  ],
+  "protected_tensors": [
+    "attn_output",
+    "ffn_down"
+  ],
+  "layer_assignments": [
+    {
+      "layer": 26,
+      "quant": "Q8_0",
+      "tensors": [
+        "attn_output",
+        "ffn_down"
+      ]
+    },
+    {
+      "layer": 27,
+      "quant": "Q8_0",
+      "tensors": [
+        "attn_output",
+        "ffn_down"
+      ]
+    },
+    {
+      "layer": 28,
+      "quant": "Q8_0",
+      "tensors": [
+        "attn_output",
+        "ffn_down"
+      ]
+    },
+    {
+      "layer": 29,
+      "quant": "Q8_0",
+      "tensors": [
+        "attn_output",
+        "ffn_down"
+      ]
+    },
+    {
+      "layer": 30,
+      "quant": "Q6_K",
+      "tensors": [
+        "attn_output",
+        "ffn_down"
+      ]
+    },
+    {
+      "layer": 31,
+      "quant": "Q6_K",
+      "tensors": [
+        "attn_output",
+        "ffn_down"
+      ]
+    },
+    {
+      "layer": 32,
+      "quant": "Q6_K",
+      "tensors": [
+        "attn_output",
+        "ffn_down"
+      ]
+    },
+    {
+      "layer": 33,
+      "quant": "Q6_K",
+      "tensors": [
+        "attn_output",
+        "ffn_down"
+      ]
+    }
+  ]
+}
