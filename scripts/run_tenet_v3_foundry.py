@@ -1032,7 +1032,16 @@ def _run_fight_card_gate(
                     formatted = prompts
                 sampling = SamplingParams(temperature=0.0, max_tokens=1024)
                 outs = llm.generate(formatted, sampling)
-                results_by_model[checkpoint] = [o.outputs[0].text for o in outs]
+                completed_texts: list[str] = []
+                for fmt_p, o in zip(formatted, outs, strict=True):
+                    txt = o.outputs[0].text
+                    stripped_p = fmt_p.rstrip()
+                    for open_tag in ("<think>", "<|thought|>"):
+                        if stripped_p.endswith(open_tag) and not txt.lstrip().startswith(open_tag):
+                            txt = f"{open_tag}\n{txt}"
+                            break
+                    completed_texts.append(txt)
+                results_by_model[checkpoint] = completed_texts
                 del llm
                 gc.collect()
                 if torch.cuda.is_available():
