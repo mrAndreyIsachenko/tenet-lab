@@ -321,7 +321,9 @@ def _inspect_checkpoint_config(model_dir: Path) -> dict[str, Any]:
     hidden_size = text_cfg.get("hidden_size")
     if not isinstance(hidden_size, int) or hidden_size <= 0:
         for key, shard_name in key_to_shard.items():
-            if key.endswith(("self_attn.o_proj.weight", "mlp.down_proj.weight")):
+            if key.endswith(
+                ("self_attn.o_proj.weight", "attn.wo_ud.weight", "mlp.down_proj.weight")
+            ):
                 shard = model_dir / shard_name
                 with safe_open(shard, framework="pt", device="cpu") as f:
                     tensor = f.get_tensor(key)
@@ -353,6 +355,7 @@ def _find_projection_key(
     """Locate one projection weight for ``layer_idx`` across any nested prefix."""
     suffixes = (
         "self_attn.o_proj.weight",
+        "attn.wo_ud.weight",
         "mlp.shared_expert.down_proj.weight",
         "mlp.shared_experts.down_proj.weight",
         "mlp.down_proj.weight",

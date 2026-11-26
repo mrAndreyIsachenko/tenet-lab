@@ -330,6 +330,8 @@ def synchronize_speculative_drafter_streaming(
         with index_path.open("r", encoding="utf-8") as fh:
             weight_map = json.load(fh).get("weight_map", {})
         shard_names: list[str] = list(dict.fromkeys(weight_map.values()))
+        if (src_dir / "mtp.safetensors").is_file() and "mtp.safetensors" not in shard_names:
+            shard_names.append("mtp.safetensors")
     else:
         shard_names = sorted(
             p.name for p in src_dir.glob("*.safetensors") if p.name != "lancet_basis.safetensors"
@@ -347,7 +349,15 @@ def synchronize_speculative_drafter_streaming(
             continue
         with safe_open(str(src_shard), framework="pt", device="cpu") as handle:
             shard_keys = list(handle.keys())
-        drafter_keys = [k for k in shard_keys if is_drafter_weight_key(k)]
+        if shard_name == "mtp.safetensors":
+            drafter_keys = [
+                k
+                for k in shard_keys
+                if is_drafter_weight_key(k)
+                or k.endswith(("self_attn.o_proj.weight", "mlp.down_proj.weight"))
+            ]
+        else:
+            drafter_keys = [k for k in shard_keys if is_drafter_weight_key(k)]
         if not drafter_keys:
             if not same_dir:
                 shutil.copy2(src_shard, dst_dir / shard_name)
@@ -364,6 +374,13 @@ def synchronize_speculative_drafter_streaming(
             match = _LAYER_INDEX_RE.search(key)
             layer_idx = int(match.group(1)) if match else None
             dirs = _resolve_dirs(layer_bases, layer_idx)
+            if (
+                not dirs
+                and shard_name == "mtp.safetensors"
+                and isinstance(layer_bases, dict)
+                and layer_bases
+            ):
+                dirs = _resolve_dirs(layer_bases, max(layer_bases))
             if not dirs:
                 continue
             u = torch.stack([d.reshape(-1).to(dtype=torch.float32) for d in dirs], dim=0)
