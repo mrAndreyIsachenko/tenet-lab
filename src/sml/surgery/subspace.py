@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import tracemalloc
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -36,6 +37,393 @@ from sml.surgery.quantization import (
     quantize_tensor_groupwise,
     regularize_microblock_crest_factor,
 )
+
+
+class UnsupportedForwardArchError(RuntimeError):
+    """Raised when a checkpoint cannot be loaded for real forward-pass calibration."""
+
+
+def calibrate_streaming_moe_basis_from_activations(
+    model_dir: Path | str,
+    selected_layers: Sequence[int],
+    *,
+    num_experts: int | None = None,
+    basis_out_path: Path | None = None,
+    looped: bool = False,
+    loop_ticks: int = 3,
+    k_loop: int = 2,
+    pool_mode: str = "answer_only",
+    allow_weight_svd_fallback: bool = False,
+    max_prompts_per_group: int = 24,
+) -> tuple[dict[int, torch.Tensor], dict[int, dict[str, Any]], dict[str, Any]]:
+    """Calibrate a Lancet basis + expert profiles from real GPU forward passes.
+
+    Loads the checkpoint with ``AutoModelForCausalLM`` (bfloat16, device_map
+    ``auto``), runs real contrastive prompt batches through the live model with
+    forward hooks on the selected layers, and derives the per-layer anchor /
+    target bases from pooled hidden-state activations. Router selectivity comes
+    from real per-expert routing frequencies on target vs anchor prompts (no
+    min-max stretching). This never silently falls back to weight-space SVD.
+    """
+    import gc
+
+    from transformers import (
+        AutoConfig,
+        AutoModelForCausalLM,
+        AutoTokenizer,
+    )
+
+    from sml.surgery.probes import (
+        REASONING_ANCHOR_PAIRS,
+        REFUSAL_CONTRAST_PAIRS,
+        SLOP_CONTRAST_PAIRS,
+        TOOL_SQL_ANCHOR_PAIRS,
+    )
+
+    # ---- real prompt groups ----
+    reasoning_pos = [pos for pos, _neg in REASONING_ANCHOR_PAIRS[:max_prompts_per_group]]
+    tool_sql_pos = [pos for pos, _neg in TOOL_SQL_ANCHOR_PAIRS[:max_prompts_per_group]]
+    refusal_pos = [pos for pos, _neg in REFUSAL_CONTRAST_PAIRS[:max_prompts_per_group]]
+    slop_pos = [pos for pos, _neg in SLOP_CONTRAST_PAIRS[:max_prompts_per_group]]
+    refusal_neg = [neg for _pos, neg in REFUSAL_CONTRAST_PAIRS[:max_prompts_per_group]]
+    slop_neg = [neg for _pos, neg in SLOP_CONTRAST_PAIRS[:max_prompts_per_group]]
+
+    anchor_texts: list[str] = reasoning_pos + tool_sql_pos
+    target_pos_texts: list[str] = refusal_pos + slop_pos
+    target_neg_texts: list[str] = refusal_neg + slop_neg
+
+    # ---- load the real model for forward passes ----
+    try:
+        AutoConfig.from_pretrained(str(model_dir), trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(str(model_dir), trust_remote_code=True)
+        model = AutoModelForCausalLM.from_pretrained(
+            str(model_dir),
+            dtype=torch.bfloat16,
+            device_map="auto",
+            low_cpu_mem_usage=True,
+            trust_remote_code=True,
+        )
+    except (ValueError, KeyError, ImportError, OSError, AttributeError, RuntimeError) as exc:
+        raise UnsupportedForwardArchError(f"unsupported_forward_arch: {exc}") from exc
+    model.eval()
+
+    device = next(model.parameters()).device
+
+    def _resolve_layers(mdl: Any) -> list[Any]:
+        for attr_path in (
+            ("model", "layers"),
+            ("language_model", "model", "layers"),
+            ("language_model", "layers"),
+            ("layers",),
+        ):
+            obj: Any = mdl
+            try:
+                for attr in attr_path:
+                    obj = getattr(obj, attr)
+                if isinstance(obj, (list, tuple)) or hasattr(obj, "__getitem__"):
+                    return list(obj)
+            except AttributeError:
+                continue
+        raise UnsupportedForwardArchError(
+            "unsupported_forward_arch: cannot resolve transformer layer list"
+        )
+
+    layers = _resolve_layers(model)
+    if not any(0 <= i < len(layers) for i in selected_layers):
+        raise UnsupportedForwardArchError(
+            "unsupported_forward_arch: no selected layer resolves on the live model"
+        )
+
+    # ---- answer_only pooling: tokenize with the closing-think boundary ----
+    _THINK_END_TOKENS = ("</think>", "<|thought|>")
+
+    def _answer_span_offsets(text: str, ids: list[int]) -> tuple[int, int] | None:
+        """Return (start, end) token offsets of the answer span, when known."""
+        for token in _THINK_END_TOKENS:
+            if token in text:
+                prefix = text.split(token, 1)[0] + token
+                prefix_len = len(tokenizer(prefix, add_special_tokens=False)["input_ids"])
+                total = len(ids)
+                start = min(prefix_len, total - 1)
+                return (start, total)
+        return None
+
+    def _pool_offsets(text: str, ids: list[int]) -> tuple[int, int]:
+        span = _answer_span_offsets(text, ids) if pool_mode == "answer_only" else None
+        if span is not None:
+            return span
+        # Fallback: mean-pool the second half of the non-pad tokens.
+        n = max(1, len(ids))
+        return (n // 2, n)
+
+    def _batch(texts: list[str]) -> tuple[Any, list[tuple[int, int]]]:
+        encoded = [tokenizer(t, return_tensors=None, add_special_tokens=True) for t in texts]
+        ids_list = [list(e["input_ids"]) for e in encoded]
+        max_len = max(len(ids) for ids in ids_list)
+        pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
+        input_ids = torch.tensor(
+            [ids + [pad_id] * (max_len - len(ids)) for ids in ids_list], dtype=torch.long
+        )
+        offsets = [_pool_offsets(text, ids) for text, ids in zip(texts, ids_list, strict=True)]
+        return input_ids.to(device), offsets
+
+    # ---- forward hooks: pooled hidden states + router expert counts ----
+    pooled_hidden: dict[int, list[torch.Tensor]] = {idx: [] for idx in selected_layers}
+    hook_handles: list[Any] = []
+    pool_state: dict[str, Any] = {}
+
+    def _make_hidden_hook(idx: int):
+        def hook(_module, _args, output: Any) -> None:
+            hidden = output[0] if isinstance(output, tuple) else output
+            if not isinstance(hidden, torch.Tensor) or hidden.ndim != 3:
+                return
+            offsets = pool_state.get("offsets") or []
+            rows: list[torch.Tensor] = []
+            for b, (start, end) in enumerate(offsets):
+                if b >= hidden.shape[0]:
+                    continue
+                span = hidden[b, start:end, :].to(torch.float32)
+                rows.append(span.mean(dim=0).cpu())
+            if rows:
+                pooled_hidden[idx].append(torch.stack(rows))
+            del hidden
+
+        return hook
+
+    top_k_experts = int(getattr(getattr(model, "config", None), "num_experts_per_tok", 1) or 1)
+
+    def _make_router_hook(idx: int, num_text: int):
+        def hook(_module, _args, output: Any) -> None:
+            scores = output
+            if isinstance(scores, tuple):
+                scores = scores[0]
+            if not isinstance(scores, torch.Tensor):
+                return
+            scores = scores.to(torch.float32).detach()
+            if scores.ndim in (2, 3):
+                k = min(max(1, top_k_experts), int(scores.shape[-1]))
+                topk_idx = scores.topk(k, dim=-1).indices
+            else:
+                return
+            counts: dict[str, float] = {}
+            for e in range(scores.shape[-1]):
+                counts[str(e)] = float((topk_idx == e).sum().item())
+            pool_state.setdefault("router_counts", {}).setdefault(idx, []).append(
+                {"counts": counts, "num_text": num_text}
+            )
+            del scores
+
+        return hook
+
+    def _router_module(layer: Any) -> Any | None:
+        for candidate in ("mlp", "block_sparse_moe"):
+            mlp = getattr(layer, candidate, None)
+            if mlp is None:
+                continue
+            for gate_name in ("gate", "router"):
+                gate = getattr(mlp, gate_name, None)
+                if gate is not None and hasattr(gate, "weight"):
+                    return gate
+        return None
+
+    try:
+        for idx in selected_layers:
+            if not (0 <= idx < len(layers)):
+                continue
+            layer = layers[idx]
+            hook_handles.append(layer.register_forward_hook(_make_hidden_hook(idx)))
+            if num_experts is not None:
+                router = _router_module(layer)
+                if router is not None:
+                    hook_handles.append(router.register_forward_hook(_make_router_hook(idx, 0)))
+
+        def _attention_mask(input_ids: torch.Tensor, texts: list[str]) -> torch.Tensor:
+            encoded = [tokenizer(t, return_tensors=None, add_special_tokens=True) for t in texts]
+            lens = [
+                int(e["input_ids"].shape[-1])
+                if isinstance(e["input_ids"], torch.Tensor)
+                else len(e["input_ids"])
+                for e in encoded
+            ]
+            max_len = input_ids.shape[1]
+            return torch.tensor(
+                [[1] * n + [0] * (max_len - n) for n in lens],
+                dtype=torch.long,
+                device=input_ids.device,
+            )
+
+        # Hidden-state pool groups: anchor texts and paired target pos/neg.
+        anchor_ids, anchor_offsets = _batch(anchor_texts)
+        pool_state["offsets"] = anchor_offsets
+        pool_state["texts"] = anchor_texts
+        with torch.inference_mode():
+            model(input_ids=anchor_ids, attention_mask=_attention_mask(anchor_ids, anchor_texts))
+        anchor_hidden_by_layer: dict[int, torch.Tensor] = {}
+        for idx in selected_layers:
+            if pooled_hidden[idx]:
+                anchor_hidden_by_layer[idx] = torch.cat(pooled_hidden[idx], dim=0)
+            pooled_hidden[idx] = []
+        pool_state["offsets"] = []
+        pool_state["texts"] = []
+        del anchor_ids
+
+        target_pos_ids, target_pos_offsets = _batch(target_pos_texts)
+        pool_state["offsets"] = target_pos_offsets
+        pool_state["texts"] = target_pos_texts
+        with torch.inference_mode():
+            model(
+                input_ids=target_pos_ids,
+                attention_mask=_attention_mask(target_pos_ids, target_pos_texts),
+            )
+        target_pos_hidden_by_layer: dict[int, torch.Tensor] = {}
+        for idx in selected_layers:
+            if pooled_hidden[idx]:
+                target_pos_hidden_by_layer[idx] = torch.cat(pooled_hidden[idx], dim=0)
+            pooled_hidden[idx] = []
+        pool_state["offsets"] = []
+        pool_state["texts"] = []
+        del target_pos_ids
+
+        target_neg_ids, target_neg_offsets = _batch(target_neg_texts)
+        pool_state["offsets"] = target_neg_offsets
+        pool_state["texts"] = target_neg_texts
+        with torch.inference_mode():
+            model(
+                input_ids=target_neg_ids,
+                attention_mask=_attention_mask(target_neg_ids, target_neg_texts),
+            )
+        target_neg_hidden_by_layer: dict[int, torch.Tensor] = {}
+        for idx in selected_layers:
+            if pooled_hidden[idx]:
+                target_neg_hidden_by_layer[idx] = torch.cat(pooled_hidden[idx], dim=0)
+            pooled_hidden[idx] = []
+        pool_state["offsets"] = []
+        pool_state["texts"] = []
+        del target_neg_ids
+
+        # Router frequency groups: count top-1 expert selections on target
+        # positives vs (anchors + target negatives) per layer.
+        router_counts_by_layer: dict[int, dict[str, dict[int, float]]] = {}
+        if num_experts is not None:
+            f_target: dict[int, dict[int, float]] = {idx: {} for idx in selected_layers}
+            f_anchor: dict[int, dict[int, float]] = {idx: {} for idx in selected_layers}
+            for group_name, texts in (
+                ("target", target_pos_texts),
+                ("anchor", anchor_texts + target_neg_texts),
+            ):
+                for text in texts:
+                    ids = tokenizer(text, return_tensors="pt", add_special_tokens=True)
+                    input_ids = ids["input_ids"].to(device)
+                    pool_state["router_counts"] = {}
+                    with torch.inference_mode():
+                        model(input_ids=input_ids)
+                    counts_by_layer = pool_state.get("router_counts", {})
+                    for idx, entries in counts_by_layer.items():
+                        merged: dict[int, float] = (
+                            f_target[idx] if group_name == "target" else f_anchor[idx]
+                        )
+                        for entry in entries:
+                            for key, value in entry["counts"].items():
+                                merged[int(key)] = merged.get(int(key), 0.0) + value
+                    pool_state["router_counts"] = {}
+                    del input_ids
+            router_counts_by_layer = {"f_target": f_target, "f_anchor": f_anchor}
+    finally:
+        for handle in hook_handles:
+            handle.remove()
+        hook_handles.clear()
+
+    # ---- build the bi-projected basis per layer ----
+    layer_bases: dict[int, torch.Tensor] = {}
+    expert_profiles: dict[int, dict[str, Any]] = {}
+    anchor_rank = 0
+    basis_rank = 0
+
+    for idx in selected_layers:
+        if idx not in anchor_hidden_by_layer or idx not in target_pos_hidden_by_layer:
+            continue
+        H_anchor = anchor_hidden_by_layer[idx]  # (B, hidden)
+        H_pos = target_pos_hidden_by_layer[idx]  # (B, hidden)
+        H_neg = target_neg_hidden_by_layer.get(idx, torch.zeros_like(H_pos))
+
+        # U_anchor: top-k_anchor right singular vectors of the anchor pool.
+        k_anchor = min(16, max(1, min(H_anchor.shape) // 4))
+        rank = min(2, max(1, H_anchor.shape[1] - k_anchor))
+        _Ua, _Sa, Va = torch.linalg.svd(H_anchor.to(torch.float32), full_matrices=False)
+        U_anchor = Va[:k_anchor].T.contiguous()  # (hidden, k_anchor)
+        anchor_rank = int(k_anchor)
+
+        # U_target: top-`rank` right singular vectors of the paired diffs.
+        paired = H_pos - H_neg[: H_pos.shape[0]]
+        _Ut, _St, Vt = torch.linalg.svd(paired.to(torch.float32), full_matrices=False)
+        U_target = Vt[:rank].T.contiguous()  # (hidden, rank)
+
+        # Twice bi-orthogonalize the target rows against the anchor subspace.
+        for _ in range(2):
+            U_target = U_target - U_anchor @ (U_anchor.T @ U_target)
+            U_target, _ = torch.linalg.qr(U_target)
+        U_target = U_target.T.contiguous()  # (rank, hidden)
+
+        if looped:
+            ticks = max(1, int(loop_ticks))
+            anchor_rows = [U_anchor[:, c].contiguous() for c in range(U_anchor.shape[1])]
+            target_rows = [U_target[r].contiguous() for r in range(U_target.shape[0])]
+            anchor_by_tick = [anchor_rows for _ in range(ticks)]
+            target_by_tick = [target_rows for _ in range(ticks)]
+            u_anchor_loop, u_target_loop = build_loop_unrolled_biprojected_basis(
+                anchor_by_tick, target_by_tick, k_loop=max(1, int(k_loop))
+            )
+            basis = u_target_loop.to(torch.float32).contiguous()
+            anchor_rank = int(u_anchor_loop.shape[0])
+            basis_rank = int(basis.shape[0])
+            layer_bases[idx] = basis
+        else:
+            layer_bases[idx] = U_target
+            basis_rank = int(U_target.shape[0])
+
+        # ---- router selectivity from real routing frequencies ----
+        if num_experts is not None:
+            f_target = router_counts_by_layer["f_target"].get(idx, {})
+            f_anchor = router_counts_by_layer["f_anchor"].get(idx, {})
+            E = int(num_experts)
+            selectivity: list[float] = []
+            for e in range(E):
+                ft = f_target.get(e, 0.0)
+                fa = f_anchor.get(e, 0.0)
+                # NO min-max stretching: bounded relative-frequency contrast.
+                s_value = (ft - fa) / (ft + fa + 1e-6)
+                selectivity.append(float(max(0.0, min(1.0, s_value))))
+            s_tensor = torch.tensor(selectivity, dtype=torch.float32)
+            expert_profiles[idx] = {
+                "num_experts": E,
+                "f_target": {str(e): f_target.get(e, 0.0) for e in range(E)},
+                "f_anchor": {str(e): f_anchor.get(e, 0.0) for e in range(E)},
+                "selective_weights": s_tensor.contiguous(),
+                "beta": 1.0,
+                "eps": 1e-6,
+            }
+
+    # ---- cleanup before returning ----
+    del model
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    if basis_out_path is not None and layer_bases:
+        payload = {
+            f"layer_{idx}": t.cpu().to(torch.float32).contiguous() for idx, t in layer_bases.items()
+        }
+        basis_out_path.parent.mkdir(parents=True, exist_ok=True)
+        save_file(payload, str(basis_out_path))
+
+    meta = {
+        "calibration_mode": "activation_contrastive",
+        "selected_layers": sorted(layer_bases),
+        "anchor_rank": anchor_rank,
+        "basis_rank": basis_rank,
+        "pool_mode": pool_mode,
+    }
+    return layer_bases, expert_profiles, meta
 
 
 def _resolve_pool_mask(
@@ -1680,7 +2068,7 @@ def apply_lancet_recipe(
 
 _TARGET_WEIGHT_KEY_RE = re.compile(
     r"^(?:model\.|language_model\.model\.|language_model\.|model\.language_model\.)?"
-    r"layers\.(\d+)\.(self_attn\.o_proj|mlp\.down_proj)\.weight$"
+    r"layers\.(\d+)\.(self_attn\.o_proj|linear_attn\.out_proj|mlp\.down_proj)\.weight$"
 )
 
 
@@ -2504,6 +2892,8 @@ _MOE_SHARED_DOWN_PROJ_SUFFIXES = frozenset(
         "mlp.shared_experts.down_proj.weight",
         # Dense layers (and Gemma4-style shared MLPs) get the full scale.
         "mlp.down_proj.weight",
+        # LatentMoE compressed routed-expert up projection (pullback target).
+        "mlp.routed_expert_up_proj.weight",
     }
 )
 
@@ -2535,7 +2925,11 @@ def _parse_moe_weight_key(key: str, tensor_ndim: int = 2) -> tuple[str, int, int
     if is_router_weight_key(key):
         return ("router", layer_idx, None)
     suffix = key[match.end() :]
-    if suffix in ("self_attn.o_proj.weight", "attn.wo_ud.weight"):
+    if suffix in (
+        "self_attn.o_proj.weight",
+        "attn.wo_ud.weight",
+        "linear_attn.out_proj.weight",
+    ):
         return ("o_proj", layer_idx, None)
     if suffix in _MOE_SHARED_DOWN_PROJ_SUFFIXES:
         return ("shared_down_proj", layer_idx, None)
@@ -2702,6 +3096,7 @@ def apply_moe_lancet_recipe_streaming(
     dst_dir.mkdir(parents=True, exist_ok=True)
     shards, index_data = _resolve_safetensors_shards(src_dir)
     same_dir = src_dir.resolve() == dst_dir.resolve()
+    from safetensors import safe_open  # noqa: PLC0415
 
     # Resolve layer_bases without a model instance (no known layer count).
     dirs_map: dict[int, list[torch.Tensor]] = {}
@@ -2725,6 +3120,53 @@ def apply_moe_lancet_recipe_streaming(
     hot_expert_ids = hot_vram_expert_ids if hot_vram_expert_ids is not None else set()
     router_weight_drift = 0.0
     max_row_crest_factor = 1.0
+
+    # LatentMoE pullback support: routed experts compressed to
+    # routed_expert_hidden_size carry bases in hidden_size space, so the
+    # directions must be pulled back through ``mlp.routed_expert_up_proj``
+    # (shape (basis_dim, expert_out_dim)) via QR before projection.
+    routed_up_key_by_layer: dict[int, tuple[str, str]] = {}
+    routed_up_cache: dict[int, torch.Tensor] = {}
+    weight_map = index_data.get("weight_map", {}) if isinstance(index_data, dict) else {}
+    for key, filename in weight_map.items():
+        if isinstance(key, str) and key.endswith("mlp.routed_expert_up_proj.weight"):
+            match = _MOE_WEIGHT_PREFIX_RE.match(key)
+            if match is not None:
+                routed_up_key_by_layer[int(match.group(1))] = (str(filename), key)
+    if not routed_up_key_by_layer:
+        for shard_name in shards:
+            with safe_open(str(src_dir / shard_name), framework="pt", device="cpu") as handle:
+                for k in list(handle.keys()):
+                    if k.endswith("mlp.routed_expert_up_proj.weight"):
+                        match = _MOE_WEIGHT_PREFIX_RE.match(k)
+                        if match is not None:
+                            routed_up_key_by_layer[int(match.group(1))] = (shard_name, k)
+
+    def _load_routed_up(layer_idx: int) -> torch.Tensor | None:
+        if layer_idx in routed_up_cache:
+            return routed_up_cache[layer_idx]
+        entry = routed_up_key_by_layer.get(layer_idx)
+        if entry is None:
+            return None
+        shard_file, up_key = entry
+        with safe_open(str(src_dir / shard_file), framework="pt", device="cpu") as handle:
+            tensor = handle.get_tensor(up_key)
+        tensor = tensor.to(torch.float32)
+        routed_up_cache[layer_idx] = tensor
+        return tensor
+
+    def _latent_expert_dirs(
+        layer_idx: int, base_dirs: list[torch.Tensor], expert_out_dim: int
+    ) -> list[torch.Tensor]:
+        basis_dim = int(base_dirs[0].numel())
+        if expert_out_dim == basis_dim:
+            return base_dirs
+        w_up = _load_routed_up(layer_idx)
+        if w_up is None or w_up.ndim != 2 or tuple(w_up.shape) != (basis_dim, expert_out_dim):
+            return base_dirs
+        u_mat = torch.stack([d.reshape(-1).to(torch.float32) for d in base_dirs], dim=1)
+        u_lat = torch.linalg.qr(w_up.to(torch.float32).T @ u_mat)[0].T.contiguous()
+        return [u_lat[i] for i in range(u_lat.shape[0])]
 
     tracemalloc.start()
     try:
@@ -2791,9 +3233,10 @@ def apply_moe_lancet_recipe_streaming(
                     if s_e < max(min_selective_weight, min_selectivity_threshold):
                         skipped_routed_experts += 1
                         continue
+                    expert_dirs = _latent_expert_dirs(layer_idx, dirs, int(tensor.shape[0]))
                     shard_tensors[key] = _apply_tiered_lancet_to_weight(
                         tensor,
-                        dirs,
+                        expert_dirs,
                         scale=scale * s_e,
                         quant_snap=use_quant_snap,
                         quant_snap_iters=quant_snap_iters,
@@ -2822,13 +3265,17 @@ def apply_moe_lancet_recipe_streaming(
                         e_idx: int,
                         _selective: Any = selective,
                         _dirs: Any = dirs,
+                        _layer_idx: int = layer_idx,
                     ) -> torch.Tensor | None:
                         s_e = 1.0 if _selective is None else float(_selective[e_idx])
                         if s_e < max(min_selective_weight, min_selectivity_threshold):
                             return None
+                        expert_dirs = _latent_expert_dirs(
+                            _layer_idx, _dirs, int(expert_tensor.shape[0])
+                        )
                         return _apply_tiered_lancet_to_weight(
                             expert_tensor,
-                            _dirs,
+                            expert_dirs,
                             scale=scale * s_e,
                             quant_snap=use_quant_snap,
                             quant_snap_iters=quant_snap_iters,
@@ -2847,6 +3294,7 @@ def apply_moe_lancet_recipe_streaming(
 
                 any_expert_edited = False
                 orig_expert_device = tensor.device
+                packed_expert_dirs = _latent_expert_dirs(layer_idx, dirs, int(tensor.shape[1]))
                 work_tensor = (
                     tensor.to(device="cuda")
                     if orig_expert_device.type == "cpu" and torch.cuda.is_available()
@@ -2860,7 +3308,7 @@ def apply_moe_lancet_recipe_streaming(
                         continue
                     work_tensor[e_idx] = _apply_tiered_lancet_to_weight(
                         work_tensor[e_idx],
-                        dirs,
+                        packed_expert_dirs,
                         scale=scale * s_e,
                         quant_snap=use_quant_snap,
                         quant_snap_iters=quant_snap_iters,

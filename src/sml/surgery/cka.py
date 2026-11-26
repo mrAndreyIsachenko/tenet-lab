@@ -63,6 +63,12 @@ _FROZEN_STRUCTURE_TOKENS = (
     "tick_embed",
     "l2_clip",
     "attn_res",
+    "attn_hyper_connection",
+    "mlp_hyper_connection",
+    "hc_attn_layer",
+    "hc_mlp_layer",
+    "engram_layer",
+    "compressed_indexer",
 )
 
 

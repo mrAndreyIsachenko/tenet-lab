@@ -793,6 +793,29 @@ def _eval_arm(
             )
             if returncode == 0:
                 break
+            failure_text = ((stderr or "") + "\n" + (stdout or ""))[-4000:]
+            if not failure_text.strip():
+                with contextlib.suppress(OSError):
+                    failure_text = (sub_dir / "lm_eval_live.log").read_text(
+                        encoding="utf-8", errors="replace"
+                    )[-4000:]
+            if attempt == 0 and any(
+                m in failure_text
+                for m in (
+                    "Inkling2ForConditionalGeneration",
+                    "Inkling2LoopForConditionalGeneration",
+                    "Qwen4ExpForConditionalGeneration",
+                    "HYV4FlashForConditionalGeneration",
+                    "are not supported",
+                    "does not recognize",
+                )
+            ):
+                print(
+                    f"[{arm}] attempt {attempt + 1}/{attempts} failed (rc={returncode}); "
+                    "unsupported architecture — not retrying",
+                    flush=True,
+                )
+                break
             if attempt < attempts - 1:
                 print(
                     f"[{arm}] attempt {attempt + 1}/{attempts} failed (rc={returncode}); "
