@@ -281,6 +281,11 @@ def run_peer_eval_gate(
         is_cot_valid = span.is_balanced
         if require_think and span.open_count == 0:
             is_cot_valid = False
+        if not is_cot_valid and response.lstrip().startswith("<think>") and "</think>" in response:
+            _head_part, _tail_part = response.rsplit("</think>", 1)
+            if "<think>" not in _tail_part and _tail_part.strip():
+                is_cot_valid = True
+                surface = _tail_part.strip()
         cot_valid += int(is_cot_valid)
 
         artifact_type = spec.artifact_type if spec is not None else None
