@@ -1,0 +1,162 @@
+{
+  "mode": "run",
+  "status": "error",
+  "release_id": "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+  "model_id": "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+  "tier": "workhorse",
+  "elapsed_seconds": 547.705,
+  "plan": {
+    "release_id": "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+    "model_id": "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+    "model_dir": "/mnt/nvme/tenet-lab/hf_cache/models--Qwen--Qwen3.6-35B-A3B/snapshots/345d467b117d1fd5eda9b879a5988de9ae5f47a7",
+    "materialized_dir": "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+    "tier": "workhorse",
+    "base_model": "Qwen/Qwen3.6-35B-A3B",
+    "naive_model": "huihui-ai/Huihui-Qwen3.6-35B-A3B-abliterated",
+    "think_end_token": "</think>",
+    "hypothesis_stack": [
+      "H21",
+      "H22"
+    ],
+    "looped": false,
+    "has_drafter": true,
+    "hot_vram_expert_ids": [
+      0,
+      1,
+      2
+    ],
+    "min_selectivity_threshold": 0.25,
+    "shared_expert_damping": 0.4,
+    "scale": 0.35,
+    "quant_snap": true,
+    "max_block16_crest_factor": 3.2
+  },
+  "h21": {
+    "edited_layers": [
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29
+    ],
+    "edited_o_proj": 8,
+    "edited_shared_experts": 8,
+    "edited_routed_experts": 202,
+    "skipped_routed_experts": 1846,
+    "untouched_expert_ratio": 0.9013671875,
+    "router_weight_drift": 0.0,
+    "max_row_crest_factor": 11.213685989379883,
+    "max_block16_crest_factor": 3.2,
+    "peak_memory_mb": 0.7503032684326172,
+    "quant_snap": true,
+    "output_dir": "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+    "mode": "streaming",
+    "materialized_dir": "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+    "edited_count": 218,
+    "missing_materialized_files": [],
+    "h21_verified": true
+  },
+  "h22": {
+    "mode": "streaming",
+    "looped": {
+      "skipped": true
+    },
+    "drafter": {
+      "mode": "streaming",
+      "edited_drafter_params": 3,
+      "shards_touched": 1,
+      "router_weight_drift": 0.0,
+      "kl_before": 0.00112405145990589,
+      "kl_after": 0.0004812345274045594,
+      "kl_reduction_pct": 57.18750034408121,
+      "passed_kl_gate": true
+    },
+    "router_weight_drift": 0.0,
+    "loop_controller_drift": 0.0,
+    "frozen_keys_checked": 41,
+    "h22_verified": true
+  },
+  "fight_card_gate": {
+    "total_evaluated": 24,
+    "cot_tag_integrity_rate": 1.0,
+    "length_collapse_rate": 0.0,
+    "slop_and_refusal_rate": 0.0,
+    "mean_response_words": 722.2083333333334,
+    "mean_cot_words": 525.4583333333334,
+    "gate_passed": true,
+    "gate_details": {
+      "cot_tag_integrity": {
+        "value": 1.0,
+        "threshold_min": 0.995,
+        "passed": true
+      },
+      "length_collapse": {
+        "value": 0.0,
+        "threshold_max": 0.01,
+        "passed": true
+      },
+      "slop_and_refusal": {
+        "value": 0.0,
+        "threshold_max": 0.02,
+        "passed": true
+      }
+    },
+    "status": "ok",
+    "house_base": {
+      "total_evaluated": 24,
+      "cot_tag_integrity_rate": 0.8333333333333334,
+      "length_collapse_rate": 0.0,
+      "slop_and_refusal_rate": 0.041666666666666664,
+      "mean_response_words": 1120.4166666666667,
+      "mean_cot_words": 866.9166666666666,
+      "gate_passed": false,
+      "gate_details": {
+        "cot_tag_integrity": {
+          "value": 0.8333333333333334,
+          "threshold_min": 0.995,
+          "passed": false
+        },
+        "length_collapse": {
+          "value": 0.0,
+          "threshold_max": 0.01,
+          "passed": true
+        },
+        "slop_and_refusal": {
+          "value": 0.041666666666666664,
+          "threshold_max": 0.02,
+          "passed": false
+        }
+      }
+    },
+    "false_refusal_rate_base": 0.0625,
+    "false_refusal_rate_tenet": 0.0625,
+    "false_refusal_delta_pp": 0.0,
+    "slop_rate_base": 0.4583,
+    "slop_rate_tenet": 0.4167,
+    "slop_delta_pp": -4.17,
+    "model_id": "Tenet-35B-A3B-Qwen3.6-Unslop-v3"
+  },
+  "strata_bench": {
+    "skipped": true
+  },
+  "open_evals": {
+    "returncode": 0,
+    "stdout_tail": "[base] Reusing completed arm_summary.json under /mnt/nvme/tenet-lab/results/external_evals/Tenet-35B-A3B-Qwen3.6-Unslop-v3/raw/base/arm_summary.json\n[naive] Reusing completed arm_summary.json under /mnt/nvme/tenet-lab/results/external_evals/Tenet-35B-A3B-Qwen3.6-Unslop-v3/raw/naive/arm_summary.json\n[tenet] Reusing completed arm_summary.json under /mnt/nvme/tenet-lab/results/external_evals/Tenet-35B-A3B-Qwen3.6-Unslop-v3/raw/tenet/arm_summary.json\nSaved canonical evals to /mnt/nvme/tenet-lab/results/external_evals/Tenet-35B-A3B-Qwen3.6-Unslop-v3.json\nSaved markdown report to /mnt/nvme/tenet-lab/results/external_evals/Tenet-35B-A3B-Qwen3.6-Unslop-v3/report.md\n",
+    "stderr_tail": "",
+    "passed": true,
+    "export_returncode": 0
+  },
+  "hf_upload": {
+    "skipped": false
+  },
+  "cache_cleanup": {
+    "skipped": false
+  },
+  "strata_toml": "results/tenet_v3_foundry/Tenet-35B-A3B-Qwen3.6-Unslop-v3/strata.toml",
+  "model_card": "results/tenet_v3_foundry/Tenet-35B-A3B-Qwen3.6-Unslop-v3/Tenet-35B-A3B-Qwen3.6-Unslop-v3.md",
+  "mlflow_mirror": "results/mlflow_mirror/foundry_surgery_Tenet-35B-A3B-Qwen3.6-Unslop-v3_Tenet-35B-A3B-Qwen3.6-Unslop-v3_20261126T195828_408822.json",
+  "remote_mlflow_logged": true
+}

@@ -1,0 +1,162 @@
+{
+  "mode": "run",
+  "status": "error",
+  "release_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+  "model_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+  "tier": "edge",
+  "elapsed_seconds": 962.662,
+  "plan": {
+    "release_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+    "model_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+    "model_dir": "/mnt/nvme/tenet-lab/hf_cache/models--zai-org--GLM-4.7-Flash/snapshots/7dd20894a642a0aa287e9827cb1a1f7f91386b67",
+    "materialized_dir": "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3",
+    "tier": "edge",
+    "base_model": "zai-org/GLM-4.7-Flash",
+    "naive_model": null,
+    "think_end_token": "</think>",
+    "hypothesis_stack": [
+      "H21",
+      "H22"
+    ],
+    "looped": false,
+    "has_drafter": true,
+    "hot_vram_expert_ids": [
+      0,
+      1,
+      2
+    ],
+    "min_selectivity_threshold": 0.25,
+    "shared_expert_damping": 0.4,
+    "scale": 0.35,
+    "quant_snap": true,
+    "max_block16_crest_factor": 3.2
+  },
+  "h21": {
+    "edited_layers": [
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33
+    ],
+    "edited_o_proj": 8,
+    "edited_shared_experts": 8,
+    "edited_routed_experts": 31,
+    "skipped_routed_experts": 481,
+    "untouched_expert_ratio": 0.939453125,
+    "router_weight_drift": 0.0,
+    "max_row_crest_factor": 7.082531929016113,
+    "max_block16_crest_factor": 3.2,
+    "peak_memory_mb": 1.028249740600586,
+    "quant_snap": true,
+    "output_dir": "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3",
+    "mode": "streaming",
+    "materialized_dir": "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3",
+    "edited_count": 47,
+    "missing_materialized_files": [],
+    "h21_verified": true
+  },
+  "h22": {
+    "mode": "streaming",
+    "looped": {
+      "skipped": true
+    },
+    "drafter": {
+      "mode": "streaming",
+      "edited_drafter_params": 3,
+      "shards_touched": 1,
+      "router_weight_drift": 0.0,
+      "kl_before": 0.0010695113748823938,
+      "kl_after": 0.00045388529601688376,
+      "kl_reduction_pct": 57.56143350351985,
+      "passed_kl_gate": true
+    },
+    "router_weight_drift": 0.0,
+    "loop_controller_drift": 0.0,
+    "frozen_keys_checked": 94,
+    "h22_verified": true
+  },
+  "fight_card_gate": {
+    "total_evaluated": 24,
+    "cot_tag_integrity_rate": 0.9583333333333334,
+    "length_collapse_rate": 0.0,
+    "slop_and_refusal_rate": 0.0,
+    "mean_response_words": 611.0416666666666,
+    "mean_cot_words": 544.625,
+    "gate_passed": false,
+    "gate_details": {
+      "cot_tag_integrity": {
+        "value": 0.9583333333333334,
+        "threshold_min": 0.995,
+        "passed": false
+      },
+      "length_collapse": {
+        "value": 0.0,
+        "threshold_max": 0.01,
+        "passed": true
+      },
+      "slop_and_refusal": {
+        "value": 0.0,
+        "threshold_max": 0.02,
+        "passed": true
+      }
+    },
+    "status": "ok",
+    "house_base": {
+      "total_evaluated": 24,
+      "cot_tag_integrity_rate": 0.9583333333333334,
+      "length_collapse_rate": 0.0,
+      "slop_and_refusal_rate": 0.0,
+      "mean_response_words": 701.875,
+      "mean_cot_words": 609.0416666666666,
+      "gate_passed": false,
+      "gate_details": {
+        "cot_tag_integrity": {
+          "value": 0.9583333333333334,
+          "threshold_min": 0.995,
+          "passed": false
+        },
+        "length_collapse": {
+          "value": 0.0,
+          "threshold_max": 0.01,
+          "passed": true
+        },
+        "slop_and_refusal": {
+          "value": 0.0,
+          "threshold_max": 0.02,
+          "passed": true
+        }
+      }
+    },
+    "false_refusal_rate_base": 0.0312,
+    "false_refusal_rate_tenet": 0.0312,
+    "false_refusal_delta_pp": 0.0,
+    "slop_rate_base": 0.5,
+    "slop_rate_tenet": 0.3333,
+    "slop_delta_pp": -16.67,
+    "model_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3"
+  },
+  "strata_bench": {
+    "skipped": true
+  },
+  "open_evals": {
+    "returncode": 0,
+    "stdout_tail": "[base] Reusing completed arm_summary.json under /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/raw/base/arm_summary.json\n[tenet] Reusing completed arm_summary.json under /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/raw/tenet/arm_summary.json\nSaved canonical evals to /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3.json\nSaved markdown report to /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/report.md\n",
+    "stderr_tail": "",
+    "passed": true,
+    "export_returncode": 0
+  },
+  "hf_upload": {
+    "skipped": false
+  },
+  "cache_cleanup": {
+    "skipped": false
+  },
+  "strata_toml": "results/tenet_v3_foundry/Tenet-30B-A3B-GLM4.7-Unslop-v3/strata.toml",
+  "model_card": "results/tenet_v3_foundry/Tenet-30B-A3B-GLM4.7-Unslop-v3/Tenet-30B-A3B-GLM4.7-Unslop-v3.md",
+  "mlflow_mirror": "results/mlflow_mirror/foundry_surgery_Tenet-30B-A3B-GLM4.7-Unslop-v3_Tenet-30B-A3B-GLM4.7-Unslop-v3_20261126T201339_370888.json",
+  "remote_mlflow_logged": true
+}
