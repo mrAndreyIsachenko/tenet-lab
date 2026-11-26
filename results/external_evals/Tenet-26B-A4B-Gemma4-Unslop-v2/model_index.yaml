@@ -1,5 +1,5 @@
 model-index:
-- name: /workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
+- name: Tenet-26B-A4B-Gemma4-Unslop-v2
   results:
   - task:
       type: text-generation
@@ -9,28 +9,13 @@ model-index:
     metrics:
     - name: Prompt-level Strict Accuracy
       type: ifeval_strict
-      value: 0.863216
+      value: 0.879852
     - name: Instruction-level Strict Accuracy
       type: ifeval_inst_strict
-      value: 0.904077
+      value: 0.913669
     source:
       name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
-  - task:
-      type: text-generation
-    dataset:
-      name: MATH-500
-      type: HuggingFaceH4/MATH-500
-    metrics:
-    - name: Accuracy
-      type: math_500
-      value: 0.75
-    - name: Accuracy
-      type: hendrycks_math500
-      value: 0.75
-    source:
-      name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2
   - task:
       type: text-generation
     dataset:
@@ -39,16 +24,16 @@ model-index:
     metrics:
     - name: Strict Match
       type: gsm8k_cot_strict
-      value: 0.21304
+      value: 0.432904
     - name: Accuracy
       type: gsm8k_math_acc
-      value: 0.218347
+      value: 0.463988
     - name: Flexible Extract
       type: gsm8k_cot_flexible
-      value: 0.218347
+      value: 0.463988
     source:
       name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2
   - task:
       type: text-generation
     dataset:
@@ -57,13 +42,13 @@ model-index:
     metrics:
     - name: Accuracy
       type: gpqa_diamond
-      value: 0.287879
+      value: 0.323232
     - name: Zero-shot Accuracy
       type: gpqa_diamond_zeroshot
-      value: 0.287879
+      value: 0.323232
     source:
       name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2
   - task:
       type: text-generation
     dataset:
@@ -72,7 +57,7 @@ model-index:
     metrics:
     - name: Accuracy
       type: mmlu_pro
-      value: 0.255952
+      value: 0.246032
     source:
       name: Tenet OpenEvals (vLLM)
-      url: https://huggingface.co//workspace/tenet_materialized/Tenet-26B-A4B-Gemma4-Unslop-v2
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2

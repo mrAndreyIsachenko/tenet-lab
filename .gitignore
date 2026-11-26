@@ -41,6 +41,10 @@ results/dry_run_*/
 results/smoke_*/
 reports/release_kit/
 results/external_evals/*/raw/
+results/.pod_status.json
+results/worker.log
+results/mlflow_mirror/
+results/*/*-smoke*
 
 # macOS & IDE
 .DS_Store

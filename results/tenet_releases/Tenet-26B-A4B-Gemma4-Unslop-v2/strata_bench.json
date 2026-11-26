@@ -1,0 +1,15 @@
+{
+  "backend": "sim",
+  "base_model": "google/gemma-4-26B-A4B-it",
+  "dry_run": false,
+  "metrics": {
+    "coactivation_graph_drift": 0.0,
+    "decode_tok_per_s": 74.5,
+    "expert_cache_hit_rate": 0.94,
+    "speculative_acceptance_rate": 0.71,
+    "ttft_ms": 128.0
+  },
+  "model_name": "Tenet-26B-A4B-Gemma4-Unslop-v2",
+  "release_id": "Tenet-26B-A4B-Gemma4-Unslop-v2",
+  "strata_toml": "/mnt/nvme/tenet-lab/results/tenet_releases/Tenet-26B-A4B-Gemma4-Unslop-v2/strata.toml"
+}

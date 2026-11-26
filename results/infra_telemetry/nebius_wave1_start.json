@@ -1,0 +1,11 @@
+{
+  "run_id": "nebius_wave1_start",
+  "provider": "nebius",
+  "gpu_model": null,
+  "nvme_read_mb_s": null,
+  "s3_upload_gb_s": null,
+  "instance_uptime_min": null,
+  "estimated_cost_usd": null,
+  "timestamp_utc": "2026-11-25T20:52:07.951072+00:00",
+  "dry_run": true
+}

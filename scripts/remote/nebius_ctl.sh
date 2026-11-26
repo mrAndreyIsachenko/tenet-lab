@@ -249,10 +249,20 @@ s3_sync() {
     fi
     return
   fi
-  if [[ "$direction" == "up" ]]; then
-    s3_cmd "$RESULTS_DIR" "s3://$S3_BUCKET/results"
+  if command -v s5cmd >/dev/null 2>&1; then
+    if [[ "$direction" == "up" ]]; then
+      s5cmd --endpoint-url "$S3_ENDPOINT" sync "${RESULTS_DIR%/}/*" "s3://$S3_BUCKET/results/"
+    else
+      mkdir -p "$RESULTS_DIR"
+      s5cmd --endpoint-url "$S3_ENDPOINT" sync "s3://$S3_BUCKET/results/*" "${RESULTS_DIR%/}/"
+    fi
   else
-    s3_cmd "s3://$S3_BUCKET/results" "$RESULTS_DIR"
+    if [[ "$direction" == "up" ]]; then
+      aws s3 sync --endpoint-url "$S3_ENDPOINT" "$RESULTS_DIR" "s3://$S3_BUCKET/results" | sed 's/^/[nebius_ctl][aws] /'
+    else
+      mkdir -p "$RESULTS_DIR"
+      aws s3 sync --endpoint-url "$S3_ENDPOINT" "s3://$S3_BUCKET/results" "$RESULTS_DIR" | sed 's/^/[nebius_ctl][aws] /'
+    fi
   fi
 }
 
@@ -294,10 +304,37 @@ with open(output, "w") as fh:
     fh.write("\n")
 PYEOF
   else
-    run_ssh "mkdir -p '$RESULTS_DIR'" >/dev/null
-    run_ssh "bash -c 'nvidia-smi --query-gpu=name --format=csv,noheader | head -1'" >/dev/null 2>&1 || true
-    run_ssh "bash -c 'uptime -s'" >/dev/null 2>&1 || true
-    fail "live telemetry collection requires the full probe suite (nvidia-smi/dd/uptime); use --dry-run for a JSON stub"
+    local gpu_model="" nvme_mb_s="" uptime_sec=""
+    if [[ -n "$SSH_HOST" ]]; then
+      gpu_model="$(run_ssh "nvidia-smi --query-gpu=name --format=csv,noheader | paste -sd ',' -" 2>/dev/null || true)"
+      nvme_mb_s="$(run_ssh "python3 -c 'import time; p=\"/mnt/nvme/.bench_tmp\"; open(p,\"wb\").write(b\"0\"*67108864) if True else None; t0=time.perf_counter(); open(p,\"rb\").read(); dt=max(time.perf_counter()-t0,1e-6); import os; os.remove(p); print(round(64.0/dt,1))'" 2>/dev/null || true)"
+      uptime_sec="$(run_ssh "awk '{print \$1}' /proc/uptime" 2>/dev/null || true)"
+    elif command -v nvidia-smi >/dev/null 2>&1; then
+      gpu_model="$(nvidia-smi --query-gpu=name --format=csv,noheader | paste -sd ',' - 2>/dev/null || true)"
+      uptime_sec="$(awk '{print $1}' /proc/uptime 2>/dev/null || true)"
+    fi
+    python3 - "$output" "$run_id" "$gpu_model" "$nvme_mb_s" "$uptime_sec" <<'PYEOF'
+import json, sys
+from datetime import datetime, timezone
+
+output, run_id, gpu_model, nvme_mb_s, uptime_sec = sys.argv[1:6]
+uptime_min = round(float(uptime_sec) / 60.0, 2) if uptime_sec else None
+nvme_val = float(nvme_mb_s) if nvme_mb_s else None
+passport = {
+    "run_id": run_id,
+    "provider": "nebius",
+    "gpu_model": gpu_model or None,
+    "nvme_read_mb_s": nvme_val,
+    "s3_upload_gb_s": None,
+    "instance_uptime_min": uptime_min,
+    "estimated_cost_usd": round((uptime_min / 60.0) * 3.50, 2) if uptime_min is not None else None,
+    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+    "dry_run": False,
+}
+with open(output, "w") as fh:
+    json.dump(passport, fh, indent=2)
+    fh.write("\n")
+PYEOF
   fi
   log "telemetry-snapshot: wrote $output"
 }

@@ -33,6 +33,6 @@
   "engram_drift": 0.0,
   "gated_residual_drift": 0.0,
   "h21_acceptance_passed": true,
-  "elapsed_seconds": 0.003,
+  "elapsed_seconds": 0.008,
   "run_path": "results/h21_strata_tier_aware_moe/h21_strata_tier_aware_moe"
 }

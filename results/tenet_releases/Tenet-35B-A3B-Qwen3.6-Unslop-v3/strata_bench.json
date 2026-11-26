@@ -1,0 +1,15 @@
+{
+  "backend": "sim",
+  "base_model": "Qwen/Qwen3.6-35B-A3B",
+  "dry_run": false,
+  "metrics": {
+    "coactivation_graph_drift": 0.0,
+    "decode_tok_per_s": 74.5,
+    "expert_cache_hit_rate": 0.94,
+    "speculative_acceptance_rate": 0.71,
+    "ttft_ms": 128.0
+  },
+  "model_name": "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+  "release_id": "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+  "strata_toml": "/mnt/nvme/tenet-lab/results/tenet_releases/Tenet-35B-A3B-Qwen3.6-Unslop-v3/strata.toml"
+}

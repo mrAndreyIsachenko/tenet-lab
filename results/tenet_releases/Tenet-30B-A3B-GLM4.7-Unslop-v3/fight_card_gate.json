@@ -1,0 +1,26 @@
+{
+  "total_evaluated": 24,
+  "cot_tag_integrity_rate": 1.0,
+  "length_collapse_rate": 0.0,
+  "slop_and_refusal_rate": 0.0,
+  "mean_response_words": 22.333333333333332,
+  "mean_cot_words": 12.0,
+  "gate_passed": true,
+  "gate_details": {
+    "cot_tag_integrity": {
+      "value": 1.0,
+      "threshold_min": 0.995,
+      "passed": true
+    },
+    "length_collapse": {
+      "value": 0.0,
+      "threshold_max": 0.01,
+      "passed": true
+    },
+    "slop_and_refusal": {
+      "value": 0.0,
+      "threshold_max": 0.02,
+      "passed": true
+    }
+  }
+}
