@@ -71,6 +71,8 @@ BASE_MODELS: dict[str, str] = {
     "Tenet-8B-Qwen3-Unslop-v2": "Qwen/Qwen3-8B",
     "Tenet-14B-Qwen3-Unslop-v2": "Qwen/Qwen3-14B",
     "Tenet-32B-Qwen3-Unslop-v2": "Qwen/Qwen3-32B",
+    "Tenet-35B-A3B-Qwen3.6-Unslop-v3": "Qwen/Qwen3.6-35B-A3B",
+    "Tenet-30B-A3B-GLM4.7-Unslop-v3": "zai-org/GLM-4.7-Flash",
 }
 
 _PROTECTED_TENSORS: tuple[str, ...] = ("attn_output", "ffn_down")

@@ -207,6 +207,22 @@ class TestExtractLmEvalSamplesUnclosedThinkRate:
             samples, think_end_token="||END||"
         ) == pytest.approx(0.0)
 
+    def test_vllm_system_instruction_flag(self, vllm_runner, tmp_path):
+        cmd = vllm_runner.build_lm_eval_command(
+            "org/model",
+            tasks=("ifeval",),
+            output_path=tmp_path / "out",
+            system_instruction=(
+                "Please reason step by step, and put your final answer within \\boxed{}."
+            ),
+        )
+        assert cmd[cmd.index("--system_instruction") + 1].startswith("Please reason step by step")
+        # Omitted -> no flag.
+        cmd_plain = vllm_runner.build_lm_eval_command(
+            "org/model", tasks=("ifeval",), output_path=tmp_path / "out2"
+        )
+        assert "--system_instruction" not in cmd_plain
+
 
 class TestSuiteProfiles:
     def test_full_profile_no_limit_and_all_tasks(self, vllm_runner):
@@ -553,16 +569,30 @@ class TestEvalArmChat0ShotSplit:
 
         assert record["status"] == "dry-run"
         cmds = record["commands"]
-        # main (non-chat, non-mmlu) + mmlu_pro split + chat_0shot split.
-        assert len(cmds) == 3
-        chat_cmd = cmds[-1]
-        assert chat_cmd[chat_cmd.index("--tasks") + 1] == "ifeval,hendrycks_math500"
-        assert chat_cmd[chat_cmd.index("--output_path") + 1] == str(raw_dir / "chat_0shot")
-        assert "--apply_chat_template" in chat_cmd
-        chat_model_args = chat_cmd[chat_cmd.index("--model_args") + 1]
-        assert "enable_thinking=False" in chat_model_args
-        assert "think_end_token" not in chat_model_args
-        assert f"max_gen_toks={vllm_runner.DEFAULT_CHAT_0SHOT_MAX_GEN_TOKS}" in chat_cmd
+        # main (non-chat, non-mmlu) + mmlu_pro split + ifeval chat_0shot
+        # + hendrycks_math500 chat_0shot_math split.
+        assert len(cmds) == 4
+        ifeval_cmd = cmds[-2]
+        assert ifeval_cmd[ifeval_cmd.index("--tasks") + 1] == "ifeval"
+        assert ifeval_cmd[ifeval_cmd.index("--output_path") + 1] == str(raw_dir / "chat_0shot")
+        assert "--apply_chat_template" in ifeval_cmd
+        assert "--system_instruction" not in ifeval_cmd
+        ifeval_model_args = ifeval_cmd[ifeval_cmd.index("--model_args") + 1]
+        assert "enable_thinking=False" in ifeval_model_args
+        assert "think_end_token" not in ifeval_model_args
+        assert f"max_gen_toks={vllm_runner.DEFAULT_CHAT_0SHOT_MAX_GEN_TOKS}" in ifeval_cmd
+
+        math_cmd = cmds[-1]
+        assert math_cmd[math_cmd.index("--tasks") + 1] == "hendrycks_math500"
+        assert math_cmd[math_cmd.index("--output_path") + 1] == str(raw_dir / "chat_0shot_math")
+        assert "--apply_chat_template" in math_cmd
+        assert math_cmd[math_cmd.index("--system_instruction") + 1] == (
+            vllm_runner.DEFAULT_MATH_500_SYSTEM_INSTRUCTION
+        )
+        assert "boxed{}" in math_cmd[math_cmd.index("--system_instruction") + 1]
+        math_model_args = math_cmd[math_cmd.index("--model_args") + 1]
+        assert "enable_thinking=False" in math_model_args
+        assert f"max_gen_toks={vllm_runner.DEFAULT_CHAT_0SHOT_MATH_MAX_GEN_TOKS}" in math_cmd
 
         main_cmd = cmds[0]
         assert main_cmd[main_cmd.index("--tasks") + 1] == "gsm8k_cot,gpqa_diamond_zeroshot"

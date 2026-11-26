@@ -87,7 +87,12 @@ TENET_V2_GGUF_REPOS: dict[str, str] = {
     "Tenet-8B-Qwen3-Unslop-v2": "Tenet-Qwen3-8B-Abliterated-Unslop-v2-GGUF",
     "Tenet-14B-Qwen3-Unslop-v2": "Tenet-Qwen3-14B-Abliterated-Unslop-v2-GGUF",
     "Tenet-32B-Qwen3-Unslop-v2": "Tenet-Qwen3-32B-Abliterated-Unslop-v2-GGUF",
+    "Tenet-35B-A3B-Qwen3.6-Unslop-v3": "Tenet-Qwen3.6-35B-A3B-Abliterated-Unslop-v3-GGUF",
+    "Tenet-30B-A3B-GLM4.7-Unslop-v3": "Tenet-GLM-4.7-Flash-30B-A3B-Abliterated-Unslop-v3-GGUF",
 }
+
+# Preferred alias: the registry now also covers v3 MoE models.
+TENET_GGUF_REPOS = TENET_V2_GGUF_REPOS
 
 # v2 models that ship no bundled GGUF in the parent repo (the weights live
 # in the dedicated ``-GGUF`` companion repositories above).

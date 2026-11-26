@@ -477,3 +477,31 @@ def test_build_tensor_type_args_respects_quant_rank_and_moe() -> None:
     # MoE runs always freeze the router gate at F16.
     moe_q4_args = build_tensor_type_args(recipe, "Q4_K_M", is_moe=True)
     assert any("ffn_gate_inp" in arg and arg.endswith("=F16") for arg in moe_q4_args)
+
+
+@pytest.mark.parametrize(
+    ("model_id", "expected_gguf_repo", "expected_base_model"),
+    [
+        (
+            "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+            "Tenet-Qwen3.6-35B-A3B-Abliterated-Unslop-v3-GGUF",
+            "Qwen/Qwen3.6-35B-A3B",
+        ),
+        (
+            "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+            "Tenet-GLM-4.7-Flash-30B-A3B-Abliterated-Unslop-v3-GGUF",
+            "zai-org/GLM-4.7-Flash",
+        ),
+    ],
+)
+def test_resolve_gguf_repo_spec_v3_moe(
+    model_id: str, expected_gguf_repo: str, expected_base_model: str
+) -> None:
+    spec = resolve_gguf_repo_spec(model_id)
+    assert spec["model_id"] == model_id
+    assert spec["gguf_repo_name"] == expected_gguf_repo
+    assert spec["gguf_repo_id"] == f"mr-andrey-isachenko/{expected_gguf_repo}"
+    assert spec["parent_repo_id"] == f"mr-andrey-isachenko/{model_id}"
+    assert spec["base_model"] == expected_base_model
+    assert spec["is_moe"] is True
+    assert spec["file_stem"] == expected_gguf_repo.removesuffix("-GGUF")

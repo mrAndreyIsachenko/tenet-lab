@@ -45,6 +45,67 @@
     executable: /bin/bash
   when: uv_check.rc != 0
 
+- name: Check if nebius CLI is installed
+  ansible.builtin.stat:
+    path: /home/ubuntu/.nebius/bin/nebius
+  register: nebius_bin
+
+- name: Install nebius CLI
+  ansible.builtin.shell: |
+    set -euo pipefail
+    curl -sSL https://storage.eu-north1.nebius.cloud/cli/install.sh | bash -s -- -y
+  args:
+    executable: /bin/bash
+  when: not nebius_bin.stat.exists
+  become_user: "{{ tenet_user }}"
+
+- name: Check for tenet-sa credentials on the Ansible controller
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.nebius/tenet-sa-credentials.json"
+  delegate_to: localhost
+  become: false
+  register: sa_credentials_local
+
+- name: Ensure .nebius directory exists on the VM
+  ansible.builtin.file:
+    path: /home/ubuntu/.nebius
+    state: directory
+    owner: "{{ tenet_user }}"
+    group: "{{ tenet_user }}"
+    mode: "0700"
+  when: sa_credentials_local.stat.exists
+
+- name: Copy tenet-sa credentials to the VM
+  ansible.builtin.copy:
+    src: "{{ lookup('env', 'HOME') }}/.nebius/tenet-sa-credentials.json"
+    dest: /home/ubuntu/.nebius/tenet-sa-credentials.json
+    owner: "{{ tenet_user }}"
+    group: "{{ tenet_user }}"
+    mode: "0600"
+  when: sa_credentials_local.stat.exists
+
+- name: Create or update tenet-sa nebius CLI profile
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export PATH="$HOME/.nebius/bin:$PATH"
+    if nebius profile list 2>/dev/null | grep -q tenet-sa; then
+      nebius profile update tenet-sa \
+        --service-account-file /home/ubuntu/.nebius/tenet-sa-credentials.json \
+        --parent-id "{{ nebius_project_id }}"
+    else
+      nebius profile create tenet-sa \
+        --endpoint api.nebius.cloud \
+        --service-account-file /home/ubuntu/.nebius/tenet-sa-credentials.json \
+        --parent-id "{{ nebius_project_id }}" </dev/null
+    fi
+  args:
+    executable: /bin/bash
+  when:
+    - sa_credentials_local.stat.exists
+    - nebius_project_id is defined
+    - nebius_project_id | length > 0
+  become_user: "{{ tenet_user }}"
+
 - name: Sync Small Model Lab repository to /mnt/nvme/tenet-lab via rsync
   ansible.builtin.command:
     cmd: >-

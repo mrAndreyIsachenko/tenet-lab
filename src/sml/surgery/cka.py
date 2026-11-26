@@ -34,6 +34,8 @@ def get_transformer_layers(model: torch.nn.Module) -> torch.nn.ModuleList:
             return model.model.language_model.layers
         if hasattr(model.model, "layers"):
             return model.model.layers
+    if hasattr(model, "llm") and hasattr(model.llm, "layers"):
+        return model.llm.layers
     return model.layers
 
 
@@ -59,6 +61,8 @@ _FROZEN_STRUCTURE_TOKENS = (
     "loop_controller",
     "loop_gate",
     "tick_embed",
+    "l2_clip",
+    "attn_res",
 )
 
 
@@ -91,6 +95,8 @@ def is_router_weight_key(key: str) -> bool:
     Per-expert ``gate_proj`` / ``gate_up_proj`` weights are *not* router
     parameters and are never matched.
     """
+    if key.endswith(("mlp.gate.weight", "mlp.gate.bias")):
+        return True
     return _ROUTER_WEIGHT_KEY_RE.search(key) is not None or _is_frozen_structure_key(key)
 
 
@@ -177,6 +183,7 @@ def get_moe_layer_components(layer: torch.nn.Module) -> dict[str, Any]:
                 "qsa.o_proj",
                 "index_pool.o_proj",
                 "swa.o_proj",
+                "attn.wo_ud",
             )
         )
         if module is not None
@@ -203,6 +210,8 @@ def get_moe_layer_components(layer: torch.nn.Module) -> dict[str, Any]:
     routed_experts_packed = None
     if experts_container is not None:
         packed = getattr(experts_container, "down_proj", None)
+        if packed is None:
+            packed = getattr(experts_container, "w2_weight", None)
         if isinstance(packed, (torch.nn.Parameter, torch.Tensor)) and packed.ndim == 3:
             routed_experts_packed = packed
 

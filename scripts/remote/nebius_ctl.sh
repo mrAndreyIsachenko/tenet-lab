@@ -18,6 +18,7 @@ Global flags:
 
 Subcommands:
   preflight          Check auth, GPU instance, SSH, NVMe scratch, S3 bucket, MLflow URI
+  setup-sa-auth      Generate service-account credentials and create the tenet-sa CLI profile
   start              Start the GPU instance (Nebius Compute API)
   stop               Stop the GPU instance (SSH shutdown fallback; $0/hr GPU billing stops)
   s3-sync-up         Sync results/ from VM to s3://<NEBIUS_S3_BUCKET>/results
@@ -60,6 +61,62 @@ run_ssh() {
   fi
 }
 
+SA_CREDENTIALS_FILE="${NEBIUS_SA_CREDENTIALS_FILE:-$HOME/.nebius/tenet-sa-credentials.json}"
+SA_PROFILE="tenet-sa"
+NEBIUS_PROFILE_ARGS=()
+
+ensure_nebius_auth() {
+  # Use the tenet-sa profile when available so instance commands authenticate
+  # without an interactive login or a hand-managed IAM token.
+  local has_profile=0
+  if [[ -f "$SA_CREDENTIALS_FILE" ]] || nebius profile list 2>/dev/null | grep -q "$SA_PROFILE"; then
+    has_profile=1
+  fi
+  if [[ "$has_profile" == "1" ]]; then
+    if [[ -z "${NEBIUS_IAM_TOKEN:-}" ]]; then
+      NEBIUS_IAM_TOKEN="$(nebius --profile "$SA_PROFILE" iam get-access-token 2>/dev/null || true)"
+      export NEBIUS_IAM_TOKEN
+    fi
+    NEBIUS_PROFILE_ARGS=(--profile "$SA_PROFILE")
+  else
+    NEBIUS_PROFILE_ARGS=()
+  fi
+}
+
+cmd_setup_sa_auth() {
+  local sa_id="${NEBIUS_SA_ID:-}"
+  if [[ -z "$sa_id" ]]; then
+    local tf_dir
+    tf_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../infra/terraform/nebius" 2>/dev/null && pwd)"
+    if [[ -n "$tf_dir" ]] && command -v terraform >/dev/null 2>&1 && [[ -d "$tf_dir" ]]; then
+      sa_id="$( (cd "$tf_dir" && terraform output -raw service_account_id 2>/dev/null) || true)"
+    fi
+  fi
+  if [[ -z "$sa_id" ]] && [[ -n "${NEBIUS_PROJECT_ID:-}" ]]; then
+    sa_id="$(nebius iam service-account get-by-name --name tenet-v3-sa --parent-id "$NEBIUS_PROJECT_ID" --format json 2>/dev/null | jq -r .metadata.id || true)"
+  fi
+  [[ -n "$sa_id" ]] || fail "cannot resolve SA_ID: set NEBIUS_SA_ID or NEBIUS_PROJECT_ID"
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    log "DRY-RUN setup-sa-auth: sa_id=$sa_id credentials=$SA_CREDENTIALS_FILE profile=$SA_PROFILE"
+    return
+  fi
+
+  log "setup-sa-auth: generating service-account credentials for $sa_id"
+  nebius iam auth-public-key generate --service-account-id "$sa_id" \
+    --output "$SA_CREDENTIALS_FILE" --output-format service-account-json
+  chmod 600 "$SA_CREDENTIALS_FILE"
+
+  if nebius profile list 2>/dev/null | grep -q "$SA_PROFILE"; then
+    log "setup-sa-auth: profile '$SA_PROFILE' already exists; updating"
+    nebius profile update "$SA_PROFILE" --service-account-file "$SA_CREDENTIALS_FILE" --parent-id "$NEBIUS_PROJECT_ID"
+  else
+    log "setup-sa-auth: creating profile '$SA_PROFILE'"
+    nebius profile create "$SA_PROFILE" --endpoint api.nebius.cloud --service-account-file "$SA_CREDENTIALS_FILE" --parent-id "$NEBIUS_PROJECT_ID" </dev/null
+  fi
+  log "setup-sa-auth: OK (credentials=$SA_CREDENTIALS_FILE)"
+}
+
 s3_cmd() {
   if command -v s5cmd >/dev/null 2>&1; then
     s5cmd --endpoint-url "$S3_ENDPOINT" "$@"
@@ -70,6 +127,7 @@ s3_cmd() {
 
 cmd_preflight() {
   log "preflight: Nebius GPU VM & storage readiness"
+  ensure_nebius_auth
 
   # 1. CLI auth
   if [[ "$DRY_RUN" != "1" ]]; then
@@ -91,7 +149,7 @@ cmd_preflight() {
   if [[ "$DRY_RUN" == "1" ]]; then
     log "DRY-RUN instance status: nebius compute instance get --id '$INSTANCE_ID'"
   else
-    nebius compute instance get --id "$INSTANCE_ID" >/dev/null \
+    nebius "${NEBIUS_PROFILE_ARGS[@]}" compute instance get --id "$INSTANCE_ID" >/dev/null \
       || fail "instance '$INSTANCE_ID' not found or not accessible"
     log "instance: $INSTANCE_ID is reachable"
   fi
@@ -146,16 +204,18 @@ cmd_preflight() {
 
 cmd_start() {
   [[ -n "$INSTANCE_ID" ]] || fail "NEBIUS_INSTANCE_ID is required for start"
+  ensure_nebius_auth
   if [[ "$DRY_RUN" == "1" ]]; then
     log "DRY-RUN start: nebius compute instance start --id '$INSTANCE_ID'"
   else
-    nebius compute instance start --id "$INSTANCE_ID"
+    nebius "${NEBIUS_PROFILE_ARGS[@]}" compute instance start --id "$INSTANCE_ID"
     log "start: instance $INSTANCE_ID started"
   fi
 }
 
 cmd_stop() {
   [[ -n "$INSTANCE_ID" ]] || fail "NEBIUS_INSTANCE_ID is required for stop"
+  ensure_nebius_auth
   if [[ "$DRY_RUN" == "1" ]]; then
     log "DRY-RUN stop: nebius compute instance stop --id '$INSTANCE_ID'"
     if [[ -n "$SSH_HOST" ]]; then
@@ -164,12 +224,17 @@ cmd_stop() {
     log "stop: GPU billing drops to \$0/hr; Persistent Boot SSD (incl. .venv) is preserved"
     return
   fi
-  if nebius compute instance stop --id "$INSTANCE_ID"; then
+  if nebius "${NEBIUS_PROFILE_ARGS[@]}" compute instance stop --id "$INSTANCE_ID"; then
     log "stop: instance $INSTANCE_ID stopped via Nebius API"
   else
-    log "stop: 'nebius compute instance stop' failed; falling back to SSH shutdown"
-    run_ssh "sudo shutdown -h now"
-    log "stop: shutdown issued over SSH"
+    log "stop: local 'nebius compute instance stop' failed; trying service-account profile on the VM"
+    if [[ -n "$SSH_HOST" ]] && run_ssh "command -v nebius >/dev/null 2>&1 && nebius --profile tenet-sa compute instance stop --id '$INSTANCE_ID'"; then
+      log "stop: instance $INSTANCE_ID stopped via VM-side Nebius CLI (tenet-sa profile)"
+    else
+      log "stop: Nebius API unavailable; falling back to SSH shutdown"
+      run_ssh "sudo shutdown -h now"
+      log "stop: shutdown issued over SSH"
+    fi
   fi
   log "stop: GPU billing drops to \$0/hr; Persistent Boot SSD (incl. .venv) is preserved"
 }
@@ -241,6 +306,7 @@ case "$SUBCOMMAND" in
   preflight)          cmd_preflight ;;
   start)              cmd_start ;;
   stop)               cmd_stop ;;
+  setup-sa-auth)      cmd_setup_sa_auth ;;
   s3-sync-up)         s3_sync up ;;
   s3-sync-down)       s3_sync down ;;
   telemetry-snapshot) cmd_telemetry_snapshot "$@" ;;

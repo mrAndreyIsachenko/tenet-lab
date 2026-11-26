@@ -51,10 +51,13 @@ After any environment setup, package install, or script modification on a pod:
 - Retry workers start with `start_new_session=True` and are terminated via `os.killpg(..., signal.SIGKILL)` so no orphaned GPU processes linger.
 - Always stream live `lm-eval` progress to the worker log file so `tail -n 20 /workspace/b300_*.log` shows real-time `tqdm` prompt counts and `tok/s`.
 
-### Law 5 — Zero-Token Supervision (`No schedule / manage_task Loops`)
-- **STRICTLY FORBIDDEN:** Using `schedule` (`*/15 * * * *`) or repeated `manage_task` turns in the main LLM session to poll `nvidia-smi` or `tail` logs. Every wakeup re-bills 150K–250K context tokens.
-- Instead, wait only via `make pod-wait POD_HOST=<host>` (`harness pod wait`) inside a single blocking call at **0 LLM token cost**, max 180 seconds (`POD_MAX_WAIT_SEC`); it returns only when a checkpoint completes, a worker errors, or the timeout elapses.
-- If `pod-wait` reports `STATUS: RUNNING`, **end your turn and yield control back to the user** — do not chain a second wait in the same turn.
+### Law 5 — Zero-Token Autonomous Supervision (`No schedule / manage_task Loops & No 180s Babysitting`)
+- **STRICTLY FORBIDDEN:**
+  1. Using `schedule` (`*/15 * * * *`) or repeated `manage_task` turns in the main LLM session to poll `nvidia-smi` or `tail` logs.
+  2. Setting short 180s timeouts (`POD_MAX_WAIT_SEC=180` or `NotificationTimeoutSeconds=120`) and stopping to ask the user *"Продолжай / Continue?"* while a pod job is `RUNNING`. Every wakeup re-bills 150K+ tokens and forces human babysitting.
+- **Autonomous Full-Run Rule:**
+  1. Wait via `make pod-wait POD_HOST=<host> POD_MAX_WAIT_SEC=14400` (`harness pod wait --max-wait-sec 14400 --poll-interval-sec 30`, **omit `NotificationTimeoutSeconds`** on `run_command` and set `WaitMsBeforeAsync: 5000` so the background task sleeps quietly at **0 LLM token cost** and wakes you **only once** when `DONE`, `ERROR`, or `CHECKPOINT` occurs).
+  2. As soon as the Smoke Gate passes, launch the **entire remaining multi-model queue + S3/HF sync + `nebius-stop`** inside a single autonomous remote script via `make pod-launch`, start one `make pod-wait POD_MAX_WAIT_SEC=21600` background task, and let it run unattended to completion without ever asking the user for permission to continue.
 
 ---
 
