@@ -118,6 +118,35 @@
   delegate_to: localhost
   become: false
 
+- name: Resolve HF_TOKEN from controller environment or root .env
+  ansible.builtin.set_fact:
+    tenet_hf_token: >-
+      {{ lookup('env', 'HF_TOKEN') | default('', true) | trim
+         if (lookup('env', 'HF_TOKEN') | default('', true) | trim) | length > 0
+         else (
+           (
+             (
+               (lookup('file', playbook_dir ~ '/../../.env', errors='ignore') | default('', true))
+               | regex_findall('(?m)^\\s*(?:export\\s+)?HF_TOKEN\\s*=\\s*(.+?)\\s*$')
+             ) | first | default('', true)
+           ) | trim | regex_replace('^"(.*)"$', '\1') | regex_replace("^'(.*)'$", '\1') | trim
+         )
+      }}
+  no_log: true
+  delegate_to: localhost
+  become: false
+
+- name: Assert HF_TOKEN is non-empty before writing VM .env
+  ansible.builtin.assert:
+    that:
+      - tenet_hf_token is defined
+      - tenet_hf_token | length >= 10
+    fail_msg: >-
+      HF_TOKEN is not set. Export HF_TOKEN in the controller environment or add
+      HF_TOKEN=... to {{ playbook_dir }}/../../.env before provisioning the Tenet v3 runtime.
+    success_msg: HF_TOKEN resolved successfully (value hidden).
+  no_log: true
+
 - name: Write runtime .env file for Tenet v3
   ansible.builtin.template:
     src: env.j2

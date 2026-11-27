@@ -429,6 +429,53 @@ def test_compact_artifacts_not_length_collapse(monkeypatch: pytest.MonkeyPatch) 
     assert report["gate_passed"] is True
 
 
+def test_paired_gate_cot_tag_integrity_relative_non_degradation() -> None:
+    """cot_tag_integrity is relative: tenet must not drop below base below 0.995."""
+    from sml.evals.peer_eval import run_paired_behavioral_gate
+
+    ok_think = (
+        "<think>checking the exact constraints and numbers carefully.</think>\n\n"
+        "Set the timeout to 30 seconds, then restart the worker process so the "
+        "configuration change is applied across all replicas."
+    )
+    missing_think = (
+        "Set the timeout to 30 seconds, then restart the worker process so the "
+        "configuration change is applied across all replicas."
+    )
+
+    def _responses(valid: int) -> list[str]:
+        return [ok_think] * valid + [missing_think] * (24 - valid)
+
+    # Both arms at 23/24 valid think tags: equal rates pass (non-degradation).
+    report = run_paired_behavioral_gate(
+        base_house_responses=_responses(23),
+        tenet_house_responses=_responses(23),
+        base_refusal_responses=[ok_think] * 32,
+        tenet_refusal_responses=[ok_think] * 32,
+        base_slop_responses=[ok_think] * 24,
+        tenet_slop_responses=[ok_think] * 24,
+    )
+    details = report["gate_details"]["cot_tag_integrity"]
+    assert details["passed"] is True
+    assert details["base_value"] == pytest.approx(23 / 24)
+    assert details["value"] == pytest.approx(23 / 24)
+    assert report["gate_passed"] is True
+
+    # Tenet drops to 20/24 while base stays at 23/24 (< 0.995): gate fails.
+    report = run_paired_behavioral_gate(
+        base_house_responses=_responses(23),
+        tenet_house_responses=_responses(20),
+        base_refusal_responses=[ok_think] * 32,
+        tenet_refusal_responses=[ok_think] * 32,
+        base_slop_responses=[ok_think] * 24,
+        tenet_slop_responses=[ok_think] * 24,
+    )
+    assert report["gate_details"]["cot_tag_integrity"]["passed"] is False
+    assert report["gate_details"]["cot_tag_integrity"]["value"] < 0.995
+    assert report["gate_details"]["cot_tag_integrity"]["base_value"] == pytest.approx(23 / 24)
+    assert report["gate_passed"] is False
+
+
 def test_normalize_deliberation_tags() -> None:
     """Alternative deliberation tag families normalize to <think>/</think>."""
     from sml.evals.peer_eval import normalize_deliberation_tags

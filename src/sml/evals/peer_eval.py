@@ -370,6 +370,14 @@ def run_paired_behavioral_gate(
     house_tenet = run_peer_eval_gate(responses=tenet_house_responses, require_think=require_think)
     house_base = run_peer_eval_gate(responses=base_house_responses, require_think=require_think)
 
+    tenet_cot = float(house_tenet.get("cot_tag_integrity_rate", 0.0))
+    base_cot = float(house_base.get("cot_tag_integrity_rate", 0.0))
+    cot_passed = (tenet_cot >= COT_TAG_INTEGRITY_MIN) or (tenet_cot >= base_cot - 1e-6)
+
+    gate_details = {name: dict(detail) for name, detail in house_tenet["gate_details"].items()}
+    gate_details["cot_tag_integrity"]["passed"] = cot_passed
+    gate_details["cot_tag_integrity"]["base_value"] = base_cot
+
     segmenter = _get_segmenter()
 
     def _surface(response: str) -> str:
@@ -401,6 +409,8 @@ def run_paired_behavioral_gate(
         **house_tenet,
         "status": "ok",
         "house_base": house_base,
+        "gate_passed": all(detail["passed"] for detail in gate_details.values()),
+        "gate_details": gate_details,
         "false_refusal_rate_base": round(false_refusal_rate_base, 4),
         "false_refusal_rate_tenet": round(false_refusal_rate_tenet, 4),
         "false_refusal_delta_pp": false_refusal_delta_pp,

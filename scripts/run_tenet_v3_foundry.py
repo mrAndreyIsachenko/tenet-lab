@@ -1179,6 +1179,13 @@ def _run_open_evals(
     sanity_gate: bool = True,
 ) -> dict[str, Any]:
     """Run the vLLM open-eval suite (base/naive/tenet arms) as a subprocess."""
+    # Always clear the tenet arm cache: a re-materialized checkpoint is a new
+    # model even under the same release_id, so stale tenet results must never
+    # be reused (base/naive caches stay intact).
+    shutil.rmtree(
+        REPO_ROOT / "results" / "external_evals" / release_id / "raw" / "tenet",
+        ignore_errors=True,
+    )
     arms = "base,naive,tenet" if spec.get("naive_model") else "base,tenet"
     suite_flags = (
         ["--suite", "quick", "--limit", "2", "--mmlu-pro-limit", "2"]

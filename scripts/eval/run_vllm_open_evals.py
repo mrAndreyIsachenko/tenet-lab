@@ -1041,12 +1041,35 @@ def main(argv: list[str] | None = None) -> int:
                     and cached.get("status") == "ok"
                     and cached.get("scores")
                 ):
-                    print(
-                        f"[{arm}] Reusing completed arm_summary.json under {summary_path}",
-                        flush=True,
-                    )
-                    arms[arm] = cached
-                    continue
+                    cached_scores = cached.get("scores", {})
+                    math_score = float(cached_scores.get("math_500", 0.0) or 0.0)
+                    math_raw = base_raw / arm / "chat_0shot_math"
+                    math_required = "hendrycks_math500" in tasks
+                    math_missing = "math_500" not in cached_scores or math_score <= 0.05
+                    # Invalidate cached arm_summary whenever math_500 is required
+                    # but missing or near-zero, so _eval_arm runs chat_0shot_math
+                    # while other cached subtasks remain reusable via --resume.
+                    if math_required and math_missing:
+                        # Do not reuse the summary as a whole when math_500 is
+                        # absent/near-zero: drop it, clear a broken math raw
+                        # dir, and rerun only chat_0shot_math while other
+                        # cached subtasks remain reusable via --resume.
+                        print(
+                            f"[{arm}] arm_summary.json lacks usable math_500 "
+                            f"(score={math_score}); invalidating cache and "
+                            "rerunning chat_0shot_math only",
+                            flush=True,
+                        )
+                        summary_path.unlink(missing_ok=True)
+                        if math_score <= 0.05:
+                            shutil.rmtree(math_raw, ignore_errors=True)
+                    else:
+                        print(
+                            f"[{arm}] Reusing completed arm_summary.json under {summary_path}",
+                            flush=True,
+                        )
+                        arms[arm] = cached
+                        continue
             except (json.JSONDecodeError, OSError):
                 pass
         arms[arm] = _eval_arm(
