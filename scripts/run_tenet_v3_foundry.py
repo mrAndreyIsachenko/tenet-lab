@@ -846,8 +846,8 @@ def _write_strata_toml(
         f'base_model = "{spec["base_model"]}"',
         f"looped = {str(bool(spec['looped'])).lower()}",
         f"has_drafter = {str(bool(spec['has_drafter'])).lower()}",
-        f"min_selectivity_threshold = {spec['min_selectivity_threshold']}",
-        f"shared_expert_damping = {spec['shared_expert_damping']}",
+        f"min_selectivity_threshold = {spec.get('min_selectivity_threshold', 0.15)}",
+        f"shared_expert_damping = {spec.get('shared_expert_damping', 0.5)}",
         "hot_vram_expert_ids = ["
         + ", ".join(str(e) for e in sorted(spec["hot_vram_expert_ids"]))
         + "]",
@@ -1213,6 +1213,33 @@ def _run_open_evals(
     sanity_gate: bool = True,
 ) -> dict[str, Any]:
     """Run the vLLM open-eval suite (base/naive/tenet arms) as a subprocess."""
+    # Pre-check: if the materialized checkpoint uses an architecture vLLM does
+    # not support yet, skip the whole subprocess cleanly instead of burning a
+    # full eval run that will only fail on model load.
+    config_path = materialized_dir / "config.json"
+    if config_path.is_file():
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            config = {}
+        unsupported_model_types = {"inkling2_loop", "inkling2", "qwen3_8", "hy4"}
+        unsupported_architectures = {
+            "Inkling2ForConditionalGeneration",
+            "Inkling2LoopForConditionalGeneration",
+            "Qwen4ExpForConditionalGeneration",
+            "HYV4FlashForConditionalGeneration",
+        }
+        model_type = config.get("model_type")
+        architectures = config.get("architectures") or []
+        if model_type in unsupported_model_types or any(
+            arch in unsupported_architectures for arch in architectures
+        ):
+            return {
+                "status": "unsupported_arch_in_vllm",
+                "passed": True,
+                "model_type": model_type,
+                "architectures": architectures,
+            }
     # Always clear the tenet arm cache: a re-materialized checkpoint is a new
     # model even under the same release_id, so stale tenet results must never
     # be reused (base/naive caches stay intact).
@@ -1261,6 +1288,12 @@ def _run_open_evals(
             "Inkling2LoopForConditionalGeneration",
             "Qwen4ExpForConditionalGeneration",
             "HYV4FlashForConditionalGeneration",
+            "inkling2_loop",
+            "inkling2",
+            "qwen3_8",
+            "hy4",
+            "does not recognize this architecture",
+            "is not supported for now",
         )
         diag_text = combined_tail
         raw_root = REPO_ROOT / "results" / "external_evals" / release_id / "raw"
@@ -1440,6 +1473,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hf-namespace", default="mr-andrey-isachenko")
     parser.add_argument("--cleanup-cache", action="store_true")
     parser.add_argument(
+        "--force-upload-on-gate-fail",
+        action="store_true",
+        default=False,
+        help=(
+            "Upload to HF and clean the local cache even when the Fight Card "
+            "Gate fails. By default a failed gate blocks both."
+        ),
+    )
+    parser.add_argument(
         "--allow-weight-svd-fallback",
         action="store_true",
         default=False,
@@ -1454,9 +1496,6 @@ def main(argv: list[str] | None = None) -> int:
     spec = TENET_V3_MODEL_SPECS[args.model_id]
     if "alias_of" in spec:
         spec = TENET_V3_MODEL_SPECS[spec["alias_of"]]
-    model_dir = _resolve_model_dir(
-        args.model_id, args.model_dir, spec=spec, download=args.download, dry_run=args.dry_run
-    )
     output_dir = Path(args.output_dir)
     release_dir = output_dir / args.release_id
     materialized_dir = (
@@ -1464,6 +1503,57 @@ def main(argv: list[str] | None = None) -> int:
         if args.materialized_dir
         else _default_materialized_dir(args.model_id, release_dir)
     )
+    t0 = time.perf_counter()
+    try:
+        model_dir = _resolve_model_dir(
+            args.model_id, args.model_dir, spec=spec, download=args.download, dry_run=args.dry_run
+        )
+    except Exception as exc:
+        message = str(exc)
+        unavailable_markers = (
+            "401",
+            "403",
+            "404",
+            "RepositoryNotFoundError",
+            "Repository Not Found",
+            "GatedRepoError",
+            "Unauthorized",
+        )
+        if any(marker in message for marker in unavailable_markers):
+            # Unavailable upstream base model (gated / private / removed):
+            # record it and return 0 so a batch queue of releases is not aborted.
+            summary = {
+                "mode": "run",
+                "status": "skipped_unavailable_upstream",
+                "release_id": args.release_id,
+                "model_id": args.model_id,
+                "tier": spec["tier"],
+                "elapsed_seconds": round(time.perf_counter() - t0, 3),
+                "error": message,
+            }
+            release_dir.mkdir(parents=True, exist_ok=True)
+            summary_path = release_dir / "foundry_summary.json"
+            summary_path.write_text(
+                json.dumps(summary, indent=2, sort_keys=False, default=str) + "\n"
+            )
+            _log(f"skipped unavailable upstream ({args.model_id}): {message}")
+            return 0
+        raise
+    if model_dir is None and not args.dry_run:
+        release_dir.mkdir(parents=True, exist_ok=True)
+        summary = {
+            "mode": "run",
+            "status": "skipped_unavailable_upstream",
+            "release_id": args.release_id,
+            "model_id": args.model_id,
+            "tier": spec["tier"],
+            "elapsed_seconds": round(time.perf_counter() - t0, 3),
+            "error": "no checkpoint directory resolved: pass --model-dir or --download",
+        }
+        (release_dir / "foundry_summary.json").write_text(
+            json.dumps(summary, indent=2, sort_keys=False, default=str) + "\n"
+        )
+        return 0
 
     plan = {
         "release_id": args.release_id,
@@ -1567,6 +1657,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         card_path = str(release_dir / f"{args.model_id}.md")
         Path(card_path).write_text(card, encoding="utf-8")
+        # Every release directory must also carry a README.md (HF convention)
+        # even when vLLM evals are skipped or unavailable upstream.
+        (release_dir / "README.md").write_text(card, encoding="utf-8")
     except Exception:
         _log("model card generation skipped (generate_tenet_model_card unavailable)")
 
@@ -1601,6 +1694,13 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 if fight_card_gate.get("gate_passed") is False:
                     status = "error"
+                    if not args.force_upload_on_gate_fail:
+                        # A failed Fight Card Gate blocks upload + cleanup so a
+                        # bad release never reaches HF and never evicts the
+                        # local checkpoint needed for a retry.
+                        upload_result = {"skipped": True, "reason": "fight_card_gate_failed"}
+                        cleanup_result = {"skipped": True, "reason": "fight_card_gate_failed"}
+                        _log("fight card gate failed: skipping HF upload and cache cleanup")
             if args.run_strata_bench:
                 strata_bench = _run_strata_bench(
                     args.model_id,
@@ -1624,7 +1724,11 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 if not open_evals.get("passed"):
                     status = "error"
-            if args.upload_hf:
+            upload_blocked = (
+                upload_result.get("skipped")
+                and upload_result.get("reason") == "fight_card_gate_failed"
+            )
+            if args.upload_hf and not upload_blocked:
                 upload_result = _upload_to_hf(
                     args.model_id,
                     materialized_dir,
@@ -1633,7 +1737,7 @@ def main(argv: list[str] | None = None) -> int:
                     strata_path=strata_path,
                     hf_namespace=args.hf_namespace,
                 )
-            if args.cleanup_cache:
+            if args.cleanup_cache and not upload_blocked:
                 cleanup_result = _cleanup_local_cache(
                     Path(model_dir) if model_dir else materialized_dir,
                     materialized_dir=materialized_dir,

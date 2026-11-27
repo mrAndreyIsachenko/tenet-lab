@@ -19,6 +19,21 @@ model-index:
   - task:
       type: text-generation
     dataset:
+      name: MATH-500
+      type: HuggingFaceH4/MATH-500
+    metrics:
+    - name: Accuracy
+      type: math_500
+      value: 0.87
+    - name: Accuracy
+      type: hendrycks_math500
+      value: 0.87
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v2
+  - task:
+      type: text-generation
+    dataset:
       name: GSM8K
       type: openai/gsm8k
     metrics:

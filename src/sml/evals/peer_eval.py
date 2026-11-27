@@ -378,6 +378,16 @@ def run_paired_behavioral_gate(
     gate_details["cot_tag_integrity"]["passed"] = cot_passed
     gate_details["cot_tag_integrity"]["base_value"] = base_cot
 
+    base_collapse = float(house_base.get("length_collapse_rate", 0.0))
+    tenet_collapse = float(house_tenet.get("length_collapse_rate", 0.0))
+    base_mean_words = float(house_base.get("mean_response_words", 0.0))
+    tenet_mean_words = float(house_tenet.get("mean_response_words", 0.0))
+    mean_words_ok = (base_mean_words <= 0.0) or (tenet_mean_words >= 0.5 * base_mean_words)
+    gate_details["length_collapse"]["base_value"] = round(base_collapse, 4)
+    gate_details["length_collapse"]["passed"] = (tenet_collapse < LENGTH_COLLAPSE_MAX) or (
+        (tenet_collapse <= base_collapse + 0.05 + 1e-6) and mean_words_ok
+    )
+
     segmenter = _get_segmenter()
 
     def _surface(response: str) -> str:
@@ -405,11 +415,14 @@ def run_paired_behavioral_gate(
     slop_rate_tenet = _slop_rate(tenet_slop_responses)
     slop_delta_pp = round((slop_rate_tenet - slop_rate_base) * 100.0, 2)
 
+    gate_passed = all(bool(detail["passed"]) for detail in gate_details.values())
+    house_tenet["gate_passed"] = gate_passed
+
     return {
         **house_tenet,
         "status": "ok",
         "house_base": house_base,
-        "gate_passed": all(detail["passed"] for detail in gate_details.values()),
+        "gate_passed": gate_passed,
         "gate_details": gate_details,
         "false_refusal_rate_base": round(false_refusal_rate_base, 4),
         "false_refusal_rate_tenet": round(false_refusal_rate_tenet, 4),

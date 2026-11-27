@@ -161,7 +161,7 @@ nebius-wait-and-stop:
 	$(HARNESS) pod wait --host "$$HOST" --workdir "$$WORKDIR" --max-wait-sec "$(POD_MAX_WAIT_SEC)" --local-dir "$(POD_LOCAL_DIR)"; \
 	WAIT_RC=$$?; \
 	$(HARNESS) pod sync --host "$$HOST" --remote-dir "$$WORKDIR" --local-dir "$(POD_LOCAL_DIR)" --paths "$(POD_PATHS)" --stop || true; \
-	bash scripts/remote/nebius_ctl.sh s3-sync-down || true; \
+	NEBIUS_LOCAL_RESULTS_DIR="$(POD_LOCAL_DIR)/results" bash scripts/remote/nebius_ctl.sh s3-sync-down || true; \
 	bash scripts/remote/nebius_ctl.sh stop || true; \
 	exit $$WAIT_RC'
 
@@ -175,7 +175,8 @@ nebius-stop:
 	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; bash scripts/remote/nebius_ctl.sh stop'
 
 nebius-s3-pull:
-	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; bash scripts/remote/nebius_ctl.sh s3-sync-down'
+	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; \
+	NEBIUS_LOCAL_RESULTS_DIR="$(CURDIR)/results" bash scripts/remote/nebius_ctl.sh s3-sync-down'
 
 nebius-mlflow-backfill:
 	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; uv run python scripts/hub/backfill_mlflow_history.py'

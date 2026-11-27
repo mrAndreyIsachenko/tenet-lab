@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -186,6 +187,42 @@ def test_makefile_nebius_iac_targets() -> None:
         assert target in mk_text
 
 
+def test_s3_sync_down_uses_local_results_dir_not_vm_path(tmp_path: Path) -> None:
+    """s3-sync-down must not mkdir /mnt/nvme on macOS: it uses NEBIUS_LOCAL_RESULTS_DIR."""
+    local_results = tmp_path / "results"
+    env = {
+        "PATH": subprocess.os.environ["PATH"],
+        "HOME": str(tmp_path),
+        "NEBIUS_RESULTS_DIR": "/mnt/nvme/tenet-lab/results",
+        "NEBIUS_LOCAL_RESULTS_DIR": str(local_results),
+        "AWS_ACCESS_KEY_ID": "",
+    }
+    res = subprocess.run(
+        ["bash", str(NEBIUS_CTL), "s3-sync-down"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, f"nebius_ctl.sh s3-sync-down failed:\n{res.stderr}"
+    assert local_results.is_dir(), "NEBIUS_LOCAL_RESULTS_DIR was not created"
+    assert not Path("/mnt/nvme/tenet-lab/results").is_dir()
+
+
+def test_makefile_passes_nebius_local_results_dir_for_s3_sync_down() -> None:
+    """Makefile s3-sync-down invocations set NEBIUS_LOCAL_RESULTS_DIR to a local path."""
+    mk_text = MAKEFILE.read_text(encoding="utf-8")
+    assert "NEBIUS_LOCAL_RESULTS_DIR" in mk_text
+    for target in ("nebius-wait-and-stop:", "nebius-s3-pull:"):
+        assert target in mk_text
+    assert 'NEBIUS_LOCAL_RESULTS_DIR="$(POD_LOCAL_DIR)/results"' in mk_text
+    assert 'NEBIUS_LOCAL_RESULTS_DIR="$(CURDIR)/results"' in mk_text
+    for line in mk_text.splitlines():
+        if "nebius_ctl.sh s3-sync-down" in line:
+            assert "NEBIUS_LOCAL_RESULTS_DIR=" in line
+
+
 def test_github_actions_nebius_workflow() -> None:
     """Verify .github/workflows/nebius-infra.yml is valid YAML with workflow_dispatch."""
     wf_path = REPO_ROOT / ".github" / "workflows" / "nebius-infra.yml"
@@ -221,11 +258,16 @@ def test_cli_terraform_fmt_and_ansible_syntax() -> None:
             assert val.returncode == 0, f"terraform validate failed:\n{val.stdout}\n{val.stderr}"
 
     if shutil.which("ansible-playbook"):
+        # Sandboxed environments may deny writes to ~/.ansible/tmp; point the
+        # local temp dir at the system temp location instead.
+        ans_env = dict(subprocess.os.environ)
+        ans_env["ANSIBLE_LOCAL_TEMP"] = tempfile.mkdtemp(prefix="ansible-local-")
         ans = subprocess.run(
             ["ansible-playbook", "-i", "localhost,", "--syntax-check", "playbook.yml"],
             cwd=ANSIBLE_DIR,
             capture_output=True,
             text=True,
             check=False,
+            env=ans_env,
         )
         assert ans.returncode == 0, f"ansible syntax-check failed:\n{ans.stdout}\n{ans.stderr}"

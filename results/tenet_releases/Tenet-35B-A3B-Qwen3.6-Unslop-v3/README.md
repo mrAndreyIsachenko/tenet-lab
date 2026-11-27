@@ -17,6 +17,7 @@ tags:
 - tool-use
 - coding
 - safetensors
+- gguf
 - conversational
 ---
 
@@ -119,7 +120,7 @@ precision.
 | FP8 (E4M3) | n/a |
 | Naive Abliteration | n/a |
 
-Max row crest-factor: 11.21
+Max row crest-factor: n/a
 
 ## Why Tenet instead of Naive Abliteration?
 
@@ -130,7 +131,7 @@ Max row crest-factor: 11.21
 | Tool/SQL Anchor Orthogonality | — | — | — | — |
 | LoRA Re-Leakage | — | — | — | — |
 | FP8 Subspace Re-Leakage | — | — | — | — |
-| Max Row Crest-Factor (< 25.0) | — | — | 11.21 | 11.21 |
+| Max Row Crest-Factor (< 25.0) | — | — | — | — |
 
 ## External Benchmarks
 
@@ -151,7 +152,7 @@ Nebius benchmark passport pipeline.
 | `expert_cache_hit_rate` (H21) | n/a |
 | `coactivation_graph_drift` (H21) | n/a |
 | `speculative_acceptance_rate` (H22) | n/a |
-| `untouched_expert_ratio` | 9.9% |
+| `untouched_expert_ratio` | n/a |
 | `peak_host_ram_mb` | n/a |
 
 ## Side-by-Side: Naive Abliteration vs Tenet (Engineering & SQL Tool-Call)
