@@ -91,6 +91,55 @@ def test_nebius_env_template_matches_nebius_ctl() -> None:
     assert "SKIP_UV_SYNC=1" in tpl_text
 
 
+def test_hf_token_resolution_and_idle_watchdog_guard() -> None:
+    """Watchdog pgrep covers foundry; runtime role resolves/asserts HF token; watchdog restarts."""
+    watchdog_text = (REPO_ROOT / "scripts" / "remote" / "idle_watchdog.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "run_tenet_v3_foundry" in watchdog_text
+    assert 'pgrep -f "run_tenet_v3_foundry' in watchdog_text
+
+    runtime_path = ANSIBLE_DIR / "roles" / "runtime" / "tasks" / "main.yml"
+    runtime_data = yaml.safe_load(runtime_path.read_text(encoding="utf-8"))
+    names = [task.get("name") for task in runtime_data]
+    resolve_name = "Resolve HF_TOKEN from controller environment or root .env"
+    assert_name = "Assert HF_TOKEN is non-empty before writing VM .env"
+    template_name = "Write runtime .env file for Tenet v3"
+    for required in (resolve_name, assert_name, template_name):
+        assert required in names, f"Missing runtime task: {required}"
+
+    resolve_task = runtime_data[names.index(resolve_name)]
+    resolve_src = yaml.safe_dump(resolve_task)
+    assert "HF_TOKEN" in resolve_src
+    assert ".env" in resolve_src
+    assert resolve_task.get("no_log") is True
+
+    assert_task = runtime_data[names.index(assert_name)]
+    assert "tenet_hf_token | length >= 10" in yaml.safe_dump(assert_task)
+    assert assert_task.get("no_log") is True
+
+    template_task = runtime_data[names.index(template_name)]
+    assert template_task["ansible.builtin.template"]["src"] == "env.j2"
+
+    env_text = (ANSIBLE_DIR / "roles" / "runtime" / "templates" / "env.j2").read_text(
+        encoding="utf-8"
+    )
+    assert "tenet_hf_token" in env_text
+
+    guards_data = yaml.safe_load(
+        (ANSIBLE_DIR / "roles" / "systemd_guards" / "tasks" / "main.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    watchdog_tasks = [
+        task
+        for task in guards_data
+        if task.get("ansible.builtin.systemd", {}).get("name") == "tenet-idle-watchdog.service"
+    ]
+    assert watchdog_tasks, "expected a systemd task for tenet-idle-watchdog.service"
+    assert watchdog_tasks[0]["ansible.builtin.systemd"]["state"] == "restarted"
+
+
 def test_ansible_structure_and_roles() -> None:
     """Verify Ansible config, playbook, and all 3 roles/templates are valid YAML & complete."""
     assert (ANSIBLE_DIR / "ansible.cfg").is_file()

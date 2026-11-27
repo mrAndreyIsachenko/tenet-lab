@@ -34,5 +34,5 @@
   ansible.builtin.systemd:
     name: tenet-idle-watchdog.service
     enabled: true
-    state: started
+    state: restarted
     daemon_reload: true

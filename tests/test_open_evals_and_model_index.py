@@ -1092,7 +1092,9 @@ class TestMainTwoWayReport:
             summary = raw_root / arm / "arm_summary.json"
             summary.parent.mkdir(parents=True, exist_ok=True)
             summary.write_text(
-                json.dumps({"arm": arm, "status": "ok", "scores": {"ifeval": 0.5}}),
+                json.dumps(
+                    {"arm": arm, "status": "ok", "scores": {"ifeval": 0.5, "math_500": 0.5}}
+                ),
                 encoding="utf-8",
             )
         monkeypatch.setattr(vllm_runner, "REPO_ROOT", tmp_path)
@@ -1118,3 +1120,83 @@ class TestMainTwoWayReport:
         assert set(payload["arms"]) == {"base", "tenet"}
         assert payload["deltas_vs_naive"] == {}
         assert payload["deltas_vs_base"] == payload["deltas"]
+
+
+class TestMainResumeArmSummaryCache:
+    @staticmethod
+    def _main_argv(release_id: str) -> list[str]:
+        return [
+            "--release-id",
+            release_id,
+            "--base-model",
+            "org/base",
+            "--naive-model",
+            "org/naive",
+            "--tenet-repo",
+            "org/tenet",
+            "--arms",
+            "tenet",
+            "--resume",
+        ]
+
+    def test_resume_stale_arm_summary_reruns_arm(self, vllm_runner, tmp_path, monkeypatch):
+        release_id = "release-resume-stale"
+        raw_dir = tmp_path / "results" / "external_evals" / release_id / "raw" / "tenet"
+        raw_dir.mkdir(parents=True)
+        summary = raw_dir / "arm_summary.json"
+        summary.write_text(
+            json.dumps(
+                {"arm": "tenet", "status": "ok", "scores": {"ifeval": 0.8, "math_500": 0.0}}
+            ),
+            encoding="utf-8",
+        )
+        chat_math = raw_dir / "chat_0shot_math"
+        chat_math.mkdir()
+        (chat_math / "stale_results.json").write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(vllm_runner, "REPO_ROOT", tmp_path)
+
+        calls: list[tuple[str, str]] = []
+
+        def fake_eval_arm(arm, model, **kwargs):
+            # arm_summary.json and the stale chat_0shot_math dir must already
+            # be gone by the time the arm is re-evaluated.
+            assert not summary.exists()
+            assert not chat_math.exists()
+            calls.append((arm, model))
+            return {
+                "arm": arm,
+                "model": model,
+                "status": "ok",
+                "scores": {"ifeval_acc": 0.5, "math_500_acc": 0.4},
+                "commands": [],
+            }
+
+        monkeypatch.setattr(vllm_runner, "_eval_arm", fake_eval_arm)
+
+        exit_code = vllm_runner.main(self._main_argv(release_id))
+
+        assert exit_code == 0
+        assert calls == [("tenet", "org/tenet")]
+
+    def test_resume_healthy_arm_summary_is_reused(self, vllm_runner, tmp_path, monkeypatch):
+        release_id = "release-resume-cached"
+        raw_dir = tmp_path / "results" / "external_evals" / release_id / "raw" / "tenet"
+        raw_dir.mkdir(parents=True)
+        summary = raw_dir / "arm_summary.json"
+        summary.write_text(
+            json.dumps(
+                {"arm": "tenet", "status": "ok", "scores": {"ifeval": 0.8, "math_500": 0.5}}
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(vllm_runner, "REPO_ROOT", tmp_path)
+
+        def fail_eval_arm(arm, model, **kwargs):
+            raise AssertionError("_eval_arm must not run when arm_summary is healthy")
+
+        monkeypatch.setattr(vllm_runner, "_eval_arm", fail_eval_arm)
+
+        exit_code = vllm_runner.main(self._main_argv(release_id))
+
+        assert exit_code == 0
+        assert summary.exists()
