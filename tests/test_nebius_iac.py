@@ -417,6 +417,7 @@ def test_reconfigure_live_switches_to_wave2_preemptible(tmp_path: Path) -> None:
     payload = json.loads(next(a for a in create_call if a.lstrip().startswith("{")))
     spec = payload["spec"]
     assert spec["preemptible"] == {"on_preemption": "STOP"}
+    assert spec["follows_spot_price"] == {}
     assert spec["recovery_policy"] == "FAIL"
     assert spec["resources"] == {"platform": "gpu-h200-sxm", "preset": "8gpu-128vcpu-1600gb"}
     assert spec["boot_disk"]["existing_disk"]["id"] == "disk-boot-1"
@@ -508,3 +509,69 @@ def test_cli_terraform_fmt_and_ansible_syntax() -> None:
             env=ans_env,
         )
         assert ans.returncode == 0, f"ansible syntax-check failed:\n{ans.stdout}\n{ans.stderr}"
+
+
+def test_reconfigure_works_when_service_account_id_is_null(tmp_path: Path) -> None:
+    """Spot instances created without service_account_id (null) must reconfigure cleanly."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_nebius_shim(bin_dir)
+
+    env = _reconfigure_live_env(tmp_path)
+    inst_path = Path(env["NEBIUS_SHIM_FIXTURES"]) / "instance.json"
+    inst = json.loads(inst_path.read_text(encoding="utf-8"))
+    inst["spec"]["service_account_id"] = None
+    inst["spec"]["preemptible"] = {"on_preemption": "STOP"}
+    inst_path.write_text(json.dumps(inst), encoding="utf-8")
+
+    res = subprocess.run(
+        [
+            "bash",
+            str(NEBIUS_CTL),
+            "reconfigure",
+            "--preset",
+            "wave2",
+            "--preemptible",
+            "--nvme-gib",
+            "1860",
+            "--running",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, f"reconfigure with null SA failed:\n{res.stdout}\n{res.stderr}"
+
+
+def test_make_pod_launch_never_splits_semicolons_on_local_host(tmp_path: Path) -> None:
+    """POD_CMD with `;` and `&&` must be passed to remote bash -c, never run on local Mac."""
+    shim = tmp_path / "fake_harness"
+    out_log = tmp_path / "harness_argv.json"
+    canary = tmp_path / "canary_must_not_exist"
+    shim.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        f"open({str(out_log)!r}, 'w').write(json.dumps(sys.argv[1:]))\n",
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    pod_cmd = f"set -a; touch {canary} && echo ok"
+    res = subprocess.run(
+        [
+            "make",
+            "pod-launch",
+            f"HARNESS={shim}",
+            "POD_HOST=ubuntu@1.2.3.4",
+            f"POD_CMD={pod_cmd}",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, f"make pod-launch failed:\n{res.stdout}\n{res.stderr}"
+    assert not canary.exists(), "POD_CMD executed locally on Mac instead of remote pod!"
+    argv = json.loads(out_log.read_text(encoding="utf-8"))
+    assert argv[-3:] == ["bash", "-c", pod_cmd]

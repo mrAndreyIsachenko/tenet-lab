@@ -271,7 +271,7 @@ def need(label, value):
     return value
 
 parent_id = need("metadata.parent_id", meta.get("parent_id"))
-sa_id = need("spec.service_account_id", spec.get("service_account_id"))
+sa_id = spec.get("service_account_id") or ""
 boot = spec.get("boot_disk") or {}
 boot_disk_id = need("spec.boot_disk.existing_disk.id", (boot.get("existing_disk") or {}).get("id"))
 secondary = spec.get("secondary_disks") or [{}]
@@ -376,7 +376,6 @@ spec = inst.get("spec") or {}
 payload = {
     "metadata": {"parent_id": parent_id, "name": f"tenet-v3-gpu-{preset_name}"},
     "spec": {
-        "service_account_id": sa_id,
         "stopped": want_stopped == "true",
         "recovery_policy": "FAIL" if want_preempt == "1" else "RECOVER",
         "resources": {"platform": platform, "preset": target_preset},
@@ -394,6 +393,7 @@ payload = {
 }
 if want_preempt == "1":
     payload["spec"]["preemptible"] = {"on_preemption": "STOP"}
+    payload["spec"]["follows_spot_price"] = {}
 print(json.dumps(payload))
 ' "$inst_json" "$preset_name" "$platform" "$target_preset" "$want_preempt" "$want_stopped" \
   "$boot_disk_id" "$nvme_disk_id" "$nvme_dev_id" "$subnet_id" "$alloc_id" "$sa_id" "$parent_id")"

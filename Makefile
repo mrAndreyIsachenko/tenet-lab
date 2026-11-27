@@ -116,10 +116,12 @@ pod-sync-stop:
 	@test -n "$(POD_HOST)" || { echo "POD_HOST is required (make pod-sync-stop POD_HOST=<host>)"; exit 1; }
 	$(HARNESS) pod sync --host "$(POD_HOST)" --remote-dir "$(POD_WORKDIR)" --local-dir "$(POD_LOCAL_DIR)" --paths "$(POD_PATHS)" --stop
 
+export POD_CMD
+
 pod-launch:
 	@test -n "$(POD_HOST)" || { echo "POD_HOST is required (make pod-launch POD_HOST=<host> POD_CMD=...)"; exit 1; }
-	@test -n "$(POD_CMD)" || { echo "POD_CMD is required (make pod-launch POD_HOST=<host> POD_CMD=...)"; exit 1; }
-	$(HARNESS) pod launch --host "$(POD_HOST)" --workdir "$(POD_WORKDIR)" --session "$(POD_SESSION)" --stagger-vram-mib "$(POD_MIN_VRAM_MIB)" $(if $(POD_ON_CHECKPOINT),--on-checkpoint "$(POD_ON_CHECKPOINT)",) -- $(POD_CMD)
+	@test -n "$$POD_CMD" || { echo "POD_CMD is required (make pod-launch POD_HOST=<host> POD_CMD=...)"; exit 1; }
+	$(HARNESS) pod launch --host "$(POD_HOST)" --workdir "$(POD_WORKDIR)" --session "$(POD_SESSION)" --stagger-vram-mib "$(POD_MIN_VRAM_MIB)" $(if $(POD_ON_CHECKPOINT),--on-checkpoint "$(POD_ON_CHECKPOINT)",) -- bash -c "$$POD_CMD"
 
 pod-wait:
 	@test -n "$(POD_HOST)" || { echo "POD_HOST is required (make pod-wait POD_HOST=<host>)"; exit 1; }
@@ -206,6 +208,24 @@ nebius-iac-validate:
 
 report:
 	uv run sml report --results-dir results --output reports/sprint1/summary.md
+
+v3-status:
+	uv run python scripts/eval/tenet_v3_status.py --results-dir results
+
+v3-status-live:
+	uv run python scripts/eval/tenet_v3_status.py --results-dir results --remote --watch 10
+
+wave1-launch:
+	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; \
+	HOST="$${POD_HOST:-$${NEBIUS_SSH_HOST}}"; \
+	WORKDIR="$${POD_WORKDIR:-/mnt/nvme/tenet-lab}"; \
+	$(HARNESS) pod launch --host "$$HOST" --workdir "$$WORKDIR" --session wave1 --stagger-vram-mib "$(POD_MIN_VRAM_MIB)" -- uv run python scripts/remote/run_wave.py --wave 1'
+
+wave2-launch:
+	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; \
+	HOST="$${POD_HOST:-$${NEBIUS_SSH_HOST}}"; \
+	WORKDIR="$${POD_WORKDIR:-/mnt/nvme/tenet-lab}"; \
+	$(HARNESS) pod launch --host "$$HOST" --workdir "$$WORKDIR" --session wave2 --stagger-vram-mib "$(POD_MIN_VRAM_MIB)" -- uv run python scripts/remote/run_wave.py --wave 2'
 
 clean:
 	rm -rf results/dry_run_* results/smoke_* shards/smoke_* reports/sprint1/dry_run_preview.md reports/sprint1/smoke_gpu.md .pytest_cache .ruff_cache

@@ -246,6 +246,194 @@ def test_no_synthetic_fight_card_gate_and_auto_tp(monkeypatch: pytest.MonkeyPatc
     assert foundry._detect_tensor_parallel_size() == 4
 
 
+def test_fight_card_gate_uses_spawned_worker_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """vLLM runs in spawned children per checkpoint; parent stays vllm-free."""
+    import importlib.util
+    import inspect
+    import json
+    import multiprocessing
+    import types
+
+    foundry_path = Path(__file__).resolve().parents[1] / "scripts" / "run_tenet_v3_foundry.py"
+    spec = importlib.util.spec_from_file_location("run_tenet_v3_foundry", foundry_path)
+    assert spec is not None and spec.loader is not None
+    foundry = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(foundry)
+
+    gate_src = inspect.getsource(foundry._run_fight_card_gate)
+    worker_src = inspect.getsource(foundry._fight_card_vllm_worker)
+    assert "from vllm import" not in gate_src
+    assert "from vllm import" in worker_src
+    assert 'get_context("spawn")' in gate_src
+
+    from sml.evals.peer_eval import (
+        ANTI_SLOP_PROMPTS,
+        BORDERLINE_OVER_REFUSAL_PROMPTS,
+        TENET_ARENA_HOUSE_SERIES,
+    )
+
+    spawned: list[tuple[str, tuple[object, ...]]] = []
+
+    class _FakeProcess:
+        def __init__(self, target: object, args: tuple[object, ...]) -> None:
+            self.target = target
+            self.args = args
+            self.exitcode = 0
+
+        def start(self) -> None:
+            spawned.append((getattr(self.target, "__name__", "?"), self.args))
+            assert callable(self.target)
+            self.target(*self.args)
+
+        def join(self) -> None:
+            return None
+
+    fake_ctx = types.SimpleNamespace(Process=_FakeProcess)
+
+    def _fake_get_context(name: str) -> types.SimpleNamespace:
+        assert name == "spawn"
+        return fake_ctx
+
+    monkeypatch.setattr(multiprocessing, "get_context", _fake_get_context)
+
+    n_items = (
+        len(TENET_ARENA_HOUSE_SERIES)
+        + len(BORDERLINE_OVER_REFUSAL_PROMPTS)
+        + len(ANTI_SLOP_PROMPTS)
+    )
+    ok_think = (
+        "<think>checking the constraints and exact numbers carefully.</think>\n\n"
+        "Set the timeout to 30 seconds and restart the worker process to apply the change."
+    )
+
+    def _fake_worker(
+        checkpoint: str,
+        tp_size: int,
+        house_prompts: list[str],
+        direct_prompts: list[str],
+        result_path: str,
+    ) -> None:
+        assert tp_size == 2
+        assert len(house_prompts) == len(TENET_ARENA_HOUSE_SERIES)
+        assert len(direct_prompts) == len(BORDERLINE_OVER_REFUSAL_PROMPTS) + len(ANTI_SLOP_PROMPTS)
+        Path(result_path).write_text(json.dumps({"status": "ok", "texts": [ok_think] * n_items}))
+
+    monkeypatch.setattr(foundry, "_fight_card_vllm_worker", _fake_worker)
+    monkeypatch.setattr(foundry, "_detect_tensor_parallel_size", lambda: 2)
+
+    release_dir = tmp_path / "release"
+    materialized = release_dir / "materialized"
+    materialized.mkdir(parents=True)
+
+    report = foundry._run_fight_card_gate(
+        "tenet-test",
+        {"base_model": "base-model", "think_end_token": "</think>"},
+        release_dir,
+        materialized_dir=materialized,
+    )
+
+    assert [name for name, _ in spawned] == ["_fake_worker", "_fake_worker"]
+    assert spawned[0][1][0].endswith("materialized")
+    assert spawned[1][1][0] == "base-model"
+
+    gate = json.loads((release_dir / "fight_card_gate.json").read_text())
+    assert gate["model_id"] == "tenet-test"
+    assert gate["status"] == "ok"
+    assert report["status"] == "ok"
+
+
+def test_surgery_stage_isolated_spawn_helper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """_run_surgery_isolated runs surgery in a spawned child and returns (h21, h22)."""
+    import importlib.util
+    import json
+    import multiprocessing
+
+    foundry_path = Path(__file__).resolve().parents[1] / "scripts" / "run_tenet_v3_foundry.py"
+    spec = importlib.util.spec_from_file_location("run_tenet_v3_foundry", foundry_path)
+    assert spec is not None and spec.loader is not None
+    foundry = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(foundry)
+
+    helper_src = inspect.getsource(foundry._run_surgery_isolated)
+    assert 'get_context("spawn")' in helper_src
+
+    calls: list[tuple[str, str, float]] = []
+
+    def _fake_worker(
+        model_dir_str: str,
+        materialized_dir_str: str,
+        release_dir_str: str,
+        spec: dict,
+        args_ns_dict: dict,
+        result_path: str,
+    ) -> None:
+        calls.append((model_dir_str, materialized_dir_str, args_ns_dict["scale"]))
+        Path(result_path).write_text(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "h21": {"h21_verified": True, "router_weight_drift": 0.0},
+                    "h22": {"h22_verified": True},
+                }
+            )
+        )
+
+    monkeypatch.setattr(foundry, "_surgery_stage_worker", _fake_worker)
+
+    # A real spawn cannot pickle a locally-defined fake worker, so replace the
+    # context with a synchronous stand-in and record the requested start method.
+    requested_methods: list[str] = []
+
+    class _FakeProcess:
+        def __init__(self, target: object, args: tuple[object, ...]) -> None:
+            self.target = target
+            self.args = args
+            self.exitcode = 0
+
+        def start(self) -> None:
+            assert callable(self.target)
+            self.target(*self.args)
+
+        def join(self) -> None:
+            return None
+
+    def _fake_get_context(method: str) -> types.SimpleNamespace:
+        requested_methods.append(method)
+        return types.SimpleNamespace(Process=_FakeProcess)
+
+    monkeypatch.setattr(multiprocessing, "get_context", _fake_get_context)
+
+    args = types.SimpleNamespace(
+        scale=0.35,
+        min_selectivity_threshold=0.25,
+        shared_expert_damping=0.40,
+        strata_config=None,
+        allow_weight_svd_fallback=False,
+    )
+    model_dir = tmp_path / "model"
+    materialized = tmp_path / "materialized"
+    release_dir = tmp_path / "release"
+    for d in (model_dir, materialized, release_dir):
+        d.mkdir()
+
+    h21, h22 = foundry._run_surgery_isolated(
+        model_dir,
+        materialized,
+        release_dir,
+        {"looped": True, "has_drafter": False},
+        args,
+    )
+
+    assert h21["h21_verified"] is True
+    assert h22["h22_verified"] is True
+    assert calls == [(str(model_dir), str(materialized), 0.35)]
+    assert requested_methods == ["spawn"]
+
+
 def test_peer_eval_quoted_think_inside_closed_envelope() -> None:
     """Quoted <think> mentions inside a closed <think>...</think> envelope still pass."""
     from sml.evals.peer_eval import run_peer_eval_gate
@@ -293,6 +481,27 @@ def test_fight_card_gate_vllm_batching_and_dynamic_require_think(
     import sml.evals.peer_eval as peer_eval_mod
 
     foundry = _load_foundry()
+
+    import multiprocessing
+
+    class _InProcessProcess:
+        def __init__(self, target: object, args: tuple[object, ...]) -> None:
+            self.target = target
+            self.args = args
+            self.exitcode = 0
+
+        def start(self) -> None:
+            assert callable(self.target)
+            self.target(*self.args)
+
+        def join(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        multiprocessing,
+        "get_context",
+        lambda name: types.SimpleNamespace(Process=_InProcessProcess),
+    )
 
     class _FakeTok:
         chat_template = "x"
@@ -360,6 +569,27 @@ def test_fight_card_gate_dynamic_require_think_direct_base(
     import sml.evals.peer_eval as peer_eval_mod
 
     foundry = _load_foundry()
+
+    import multiprocessing
+
+    class _InProcessProcess:
+        def __init__(self, target: object, args: tuple[object, ...]) -> None:
+            self.target = target
+            self.args = args
+            self.exitcode = 0
+
+        def start(self) -> None:
+            assert callable(self.target)
+            self.target(*self.args)
+
+        def join(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        multiprocessing,
+        "get_context",
+        lambda name: types.SimpleNamespace(Process=_InProcessProcess),
+    )
 
     class _FakeTok:
         chat_template = "x"

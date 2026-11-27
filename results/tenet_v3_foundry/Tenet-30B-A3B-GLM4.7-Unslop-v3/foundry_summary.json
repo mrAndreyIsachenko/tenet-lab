@@ -1,10 +1,10 @@
 {
   "mode": "run",
-  "status": "error",
+  "status": "ok",
   "release_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
   "model_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
   "tier": "edge",
-  "elapsed_seconds": 962.662,
+  "elapsed_seconds": 4362.862,
   "plan": {
     "release_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
     "model_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
@@ -50,7 +50,7 @@
     "router_weight_drift": 0.0,
     "max_row_crest_factor": 7.082531929016113,
     "max_block16_crest_factor": 3.2,
-    "peak_memory_mb": 1.028249740600586,
+    "peak_memory_mb": 1.042027473449707,
     "quant_snap": true,
     "output_dir": "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3",
     "mode": "streaming",
@@ -84,19 +84,21 @@
     "cot_tag_integrity_rate": 0.9583333333333334,
     "length_collapse_rate": 0.0,
     "slop_and_refusal_rate": 0.0,
-    "mean_response_words": 611.0416666666666,
-    "mean_cot_words": 544.625,
-    "gate_passed": false,
+    "mean_response_words": 612.2083333333334,
+    "mean_cot_words": 544.5416666666666,
+    "gate_passed": true,
     "gate_details": {
       "cot_tag_integrity": {
         "value": 0.9583333333333334,
         "threshold_min": 0.995,
-        "passed": false
+        "passed": true,
+        "base_value": 0.9166666666666666
       },
       "length_collapse": {
         "value": 0.0,
         "threshold_max": 0.01,
-        "passed": true
+        "passed": true,
+        "base_value": 0.1111
       },
       "slop_and_refusal": {
         "value": 0.0,
@@ -107,22 +109,22 @@
     "status": "ok",
     "house_base": {
       "total_evaluated": 24,
-      "cot_tag_integrity_rate": 0.9583333333333334,
-      "length_collapse_rate": 0.0,
+      "cot_tag_integrity_rate": 0.9166666666666666,
+      "length_collapse_rate": 0.1111111111111111,
       "slop_and_refusal_rate": 0.0,
-      "mean_response_words": 701.875,
-      "mean_cot_words": 609.0416666666666,
+      "mean_response_words": 891.2083333333334,
+      "mean_cot_words": 784.6666666666666,
       "gate_passed": false,
       "gate_details": {
         "cot_tag_integrity": {
-          "value": 0.9583333333333334,
+          "value": 0.9166666666666666,
           "threshold_min": 0.995,
           "passed": false
         },
         "length_collapse": {
-          "value": 0.0,
+          "value": 0.1111111111111111,
           "threshold_max": 0.01,
-          "passed": true
+          "passed": false
         },
         "slop_and_refusal": {
           "value": 0.0,
@@ -140,23 +142,95 @@
     "model_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3"
   },
   "strata_bench": {
-    "skipped": true
+    "returncode": 0,
+    "stdout_tail": "report written: results/tenet_v3_foundry/Tenet-30B-A3B-GLM4.7-Unslop-v3/strata_bench.json\n\ud83c\udfc3 View run strata_bench_Tenet-30B-A3B-GLM4.7-Unslop-v3 at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1/runs/f5575ebcbecb45f09d07753694d7f0d3\n\ud83e\uddea View experiment at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1\nmlflow run: strata_bench_Tenet-30B-A3B-GLM4.7-Unslop-v3\n",
+    "stderr_tail": "",
+    "passed": true,
+    "report": {
+      "backend": "sim",
+      "base_model": "zai-org/GLM-4.7-Flash",
+      "dry_run": false,
+      "metrics": {
+        "coactivation_graph_drift": 0.0,
+        "decode_tok_per_s": 74.5,
+        "expert_cache_hit_rate": 0.94,
+        "speculative_acceptance_rate": 0.71,
+        "ttft_ms": 128.0
+      },
+      "model_name": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+      "release_id": "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+      "strata_toml": "results/tenet_v3_foundry/Tenet-30B-A3B-GLM4.7-Unslop-v3/strata.toml"
+    }
   },
   "open_evals": {
     "returncode": 0,
-    "stdout_tail": "[base] Reusing completed arm_summary.json under /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/raw/base/arm_summary.json\n[tenet] Reusing completed arm_summary.json under /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/raw/tenet/arm_summary.json\nSaved canonical evals to /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3.json\nSaved markdown report to /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/report.md\n",
+    "stdout_tail": " vllm --model_args pretrained=/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,enable_thinking=False --apply_chat_template\n\ud83c\udfc3 View run open_evals_Tenet-30B-A3B-GLM4.7-Unslop-v3_tenet_chat_0shot at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1/runs/a597561310e546f2b80d91ce932d666c\n\ud83e\uddea View experiment at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1\n[tenet] Running: lm_eval --tasks hendrycks_math500 --batch_size auto --output_path /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/raw/tenet/chat_0shot_math --log_samples --gen_kwargs max_gen_toks=2048 --system_instruction Please reason step by step without using $ delimiters for intermediate steps, and put only your final answer within \\boxed{}. --model vllm --model_args pretrained=/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3,dtype=bfloat16,tensor_parallel_size=1,gpu_memory_utilization=0.9,max_model_len=16384,enable_thinking=False --apply_chat_template\nRecomputed hendrycks_math500 from samples under /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/raw/tenet/chat_0shot_math: 0.0 -> 0.722\n\ud83c\udfc3 View run open_evals_Tenet-30B-A3B-GLM4.7-Unslop-v3_tenet_chat_0shot_math at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1/runs/6b60d84db3b84f9c9483c853d207a29a\n\ud83e\uddea View experiment at: https://public-tracking-e00-rbhy0rvwh1fwa9a-e4dhhhx0pdb35vg-mlflow.gw.msp.eu-north1.nebius.cloud/#/experiments/1\n[tenet] Done in 3520.375071287155s: unclosed_think_rate=0.0\nSaved canonical evals to /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3.json\nSaved markdown report to /mnt/nvme/tenet-lab/results/external_evals/Tenet-30B-A3B-GLM4.7-Unslop-v3/report.md\n",
     "stderr_tail": "",
     "passed": true,
     "export_returncode": 0
   },
   "hf_upload": {
-    "skipped": false
+    "repo_id": "mr-andrey-isachenko/Tenet-30B-A3B-GLM4.7-Unslop-v3",
+    "uploaded": true
   },
   "cache_cleanup": {
-    "skipped": false
+    "cleaned_up": true,
+    "removed_paths": [
+      "/mnt/nvme/tenet-lab/hf_cache/models--zai-org--GLM-4.7-Flash",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/lancet_basis.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00001-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00002-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00003-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00004-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00005-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00006-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00007-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00008-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00009-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00010-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00011-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00012-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00013-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00014-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00015-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00016-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00017-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00018-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00019-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00020-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00021-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00022-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00023-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00024-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00025-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00026-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00027-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00028-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00029-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00030-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00031-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00032-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00033-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00034-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00035-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00036-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00037-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00038-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00039-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00040-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00041-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00042-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00043-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00044-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00045-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00046-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00047-of-00048.safetensors",
+      "/mnt/nvme/tenet-lab/tenet_materialized/Tenet-30B-A3B-GLM4.7-Unslop-v3/model-00048-of-00048.safetensors"
+    ],
+    "s3_returncode": 0
   },
   "strata_toml": "results/tenet_v3_foundry/Tenet-30B-A3B-GLM4.7-Unslop-v3/strata.toml",
   "model_card": "results/tenet_v3_foundry/Tenet-30B-A3B-GLM4.7-Unslop-v3/Tenet-30B-A3B-GLM4.7-Unslop-v3.md",
-  "mlflow_mirror": "results/mlflow_mirror/foundry_surgery_Tenet-30B-A3B-GLM4.7-Unslop-v3_Tenet-30B-A3B-GLM4.7-Unslop-v3_20261126T201339_370888.json",
+  "mlflow_mirror": "results/mlflow_mirror/foundry_surgery_Tenet-30B-A3B-GLM4.7-Unslop-v3_Tenet-30B-A3B-GLM4.7-Unslop-v3_20261127T200336_315233.json",
   "remote_mlflow_logged": true
 }

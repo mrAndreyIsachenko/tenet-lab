@@ -3,19 +3,21 @@
   "cot_tag_integrity_rate": 0.9583333333333334,
   "length_collapse_rate": 0.0,
   "slop_and_refusal_rate": 0.0,
-  "mean_response_words": 611.0416666666666,
-  "mean_cot_words": 544.625,
-  "gate_passed": false,
+  "mean_response_words": 612.2083333333334,
+  "mean_cot_words": 544.5416666666666,
+  "gate_passed": true,
   "gate_details": {
     "cot_tag_integrity": {
       "value": 0.9583333333333334,
       "threshold_min": 0.995,
-      "passed": false
+      "passed": true,
+      "base_value": 0.9166666666666666
     },
     "length_collapse": {
       "value": 0.0,
       "threshold_max": 0.01,
-      "passed": true
+      "passed": true,
+      "base_value": 0.1111
     },
     "slop_and_refusal": {
       "value": 0.0,
@@ -26,22 +28,22 @@
   "status": "ok",
   "house_base": {
     "total_evaluated": 24,
-    "cot_tag_integrity_rate": 0.9583333333333334,
-    "length_collapse_rate": 0.0,
+    "cot_tag_integrity_rate": 0.9166666666666666,
+    "length_collapse_rate": 0.1111111111111111,
     "slop_and_refusal_rate": 0.0,
-    "mean_response_words": 701.875,
-    "mean_cot_words": 609.0416666666666,
+    "mean_response_words": 891.2083333333334,
+    "mean_cot_words": 784.6666666666666,
     "gate_passed": false,
     "gate_details": {
       "cot_tag_integrity": {
-        "value": 0.9583333333333334,
+        "value": 0.9166666666666666,
         "threshold_min": 0.995,
         "passed": false
       },
       "length_collapse": {
-        "value": 0.0,
+        "value": 0.1111111111111111,
         "threshold_max": 0.01,
-        "passed": true
+        "passed": false
       },
       "slop_and_refusal": {
         "value": 0.0,
