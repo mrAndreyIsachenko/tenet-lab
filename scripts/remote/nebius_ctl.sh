@@ -24,6 +24,12 @@ Subcommands:
   stop               Stop the GPU instance (SSH shutdown fallback; $0/hr GPU billing stops)
   s3-sync-up         Sync results/ from VM to s3://<NEBIUS_S3_BUCKET>/results
   s3-sync-down       Sync results/ from s3://<NEBIUS_S3_BUCKET>/results to VM
+  reconfigure        Reconfigure the VM shell without terraform.tfstate:
+                     reconfigure --preset <wave1|wave2> [--platform <platform>]
+                       [--preemptible|--on-demand] [--nvme-gib <gib>]
+                       [--running|--stopped]
+                     Switches 1xH200 <-> 8xH200, billing mode, and grows the
+                     NVMe scratch disk; persistent disks are always preserved.
   telemetry-snapshot [--run-id <id>] [--output <path>]
                      Write an infrastructure telemetry passport JSON
 
@@ -66,7 +72,7 @@ run_ssh() {
 
 SA_CREDENTIALS_FILE="${NEBIUS_SA_CREDENTIALS_FILE:-$HOME/.nebius/tenet-sa-credentials.json}"
 SA_PROFILE="tenet-sa"
-NEBIUS_PROFILE_ARGS=()
+declare -a NEBIUS_PROFILE_ARGS=()
 
 ensure_nebius_auth() {
   # Use the tenet-sa profile when available so instance commands authenticate
@@ -156,7 +162,7 @@ cmd_preflight() {
   if [[ "$DRY_RUN" == "1" ]]; then
     log "DRY-RUN instance status: nebius compute instance get --id '$INSTANCE_ID'"
   else
-    nebius "${NEBIUS_PROFILE_ARGS[@]}" compute instance get --id "$INSTANCE_ID" >/dev/null \
+    nebius ${NEBIUS_PROFILE_ARGS[@]+"${NEBIUS_PROFILE_ARGS[@]}"} compute instance get --id "$INSTANCE_ID" >/dev/null \
       || fail "instance '$INSTANCE_ID' not found or not accessible"
     log "instance: $INSTANCE_ID is reachable"
   fi
@@ -219,7 +225,7 @@ cmd_start() {
   if [[ "$DRY_RUN" == "1" ]]; then
     log "DRY-RUN start: nebius compute instance start --id '$INSTANCE_ID'"
   else
-    nebius "${NEBIUS_PROFILE_ARGS[@]}" compute instance start --id "$INSTANCE_ID"
+    nebius ${NEBIUS_PROFILE_ARGS[@]+"${NEBIUS_PROFILE_ARGS[@]}"} compute instance start --id "$INSTANCE_ID"
     log "start: instance $INSTANCE_ID started"
   fi
 }
@@ -235,7 +241,7 @@ cmd_stop() {
     log "stop: GPU billing drops to \$0/hr; Persistent Boot SSD (incl. .venv) is preserved"
     return
   fi
-  if nebius "${NEBIUS_PROFILE_ARGS[@]}" compute instance stop --id "$INSTANCE_ID"; then
+  if nebius ${NEBIUS_PROFILE_ARGS[@]+"${NEBIUS_PROFILE_ARGS[@]}"} compute instance stop --id "$INSTANCE_ID"; then
     log "stop: instance $INSTANCE_ID stopped via Nebius API"
   else
     log "stop: local 'nebius compute instance stop' failed; trying service-account profile on the VM"
@@ -248,6 +254,227 @@ cmd_stop() {
     fi
   fi
   log "stop: GPU billing drops to \$0/hr; Persistent Boot SSD (incl. .venv) is preserved"
+}
+
+reconfigure_extract_json() {
+  # Reconfigure field extraction: fails hard if managed disks are missing so
+  # boot/NVMe disks are NEVER orphaned by a shell recreation.
+  python3 -c '
+import json, shlex, sys
+inst = json.loads(sys.argv[1])
+spec = inst.get("spec") or {}
+meta = inst.get("metadata") or {}
+
+def need(label, value):
+    if value is None or value == "":
+        sys.exit("reconfigure: missing %s in instance JSON; refusing to proceed" % label)
+    return value
+
+parent_id = need("metadata.parent_id", meta.get("parent_id"))
+sa_id = need("spec.service_account_id", spec.get("service_account_id"))
+boot = spec.get("boot_disk") or {}
+boot_disk_id = need("spec.boot_disk.existing_disk.id", (boot.get("existing_disk") or {}).get("id"))
+secondary = spec.get("secondary_disks") or [{}]
+nvme_disk_id = need("spec.secondary_disks[0].existing_disk.id", (secondary[0].get("existing_disk") or {}).get("id"))
+nvme_dev_id = secondary[0].get("device_id") or "nvme-scratch"
+ni = (spec.get("network_interfaces") or [{}])[0]
+subnet_id = need("spec.network_interfaces[0].subnet_id", ni.get("subnet_id"))
+alloc_id = (ni.get("public_ip_address") or {}).get("allocation_id") or ""
+cur_state = (inst.get("status") or {}).get("state") or ""
+res = spec.get("resources") or {}
+cur_platform = res.get("platform") or ""
+cur_preset = res.get("preset") or ""
+cur_preempt = "1" if spec.get("preemptible") else "0"
+for name, value in (
+    ("parent_id", parent_id), ("sa_id", sa_id), ("boot_disk_id", boot_disk_id),
+    ("nvme_disk_id", nvme_disk_id), ("nvme_dev_id", nvme_dev_id),
+    ("subnet_id", subnet_id), ("alloc_id", alloc_id), ("cur_state", cur_state),
+    ("cur_platform", cur_platform), ("cur_preset", cur_preset),
+    ("cur_preempt", cur_preempt),
+):
+    print(f"{name}={shlex.quote(str(value))}")
+' "$1"
+}
+
+cmd_reconfigure() {
+  # Reconfigure an existing VM shell (and optionally grow its NVMe disk)
+  # WITHOUT terraform.tfstate: stop -> resize disk -> delete shell -> create
+  # shell re-attaching the same persistent disks -> update env/hosts files.
+  local preset="" platform="gpu-h200-sxm" want_preempt=1 want_stopped=true nvme_gib=""
+  local aligned_gib="" target_preset="" preset_name=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --preset) preset="$2"; shift 2 ;;
+      --platform) platform="$2"; shift 2 ;;
+      --preemptible) want_preempt=1; shift ;;
+      --on-demand) want_preempt=0; shift ;;
+      --nvme-gib) nvme_gib="$2"; shift 2 ;;
+      --running) want_stopped=false; shift ;;
+      --stopped) want_stopped=true; shift ;;
+      *) fail "unknown reconfigure option: $1" ;;
+    esac
+  done
+  case "$preset" in
+    wave1) target_preset="1gpu-16vcpu-200gb"; preset_name="wave1" ;;
+    wave2) target_preset="8gpu-128vcpu-1600gb"; preset_name="wave2" ;;
+    *) fail "reconfigure: --preset must be wave1 or wave2 (got '${preset:-}')" ;;
+  esac
+  if [[ -n "$nvme_gib" ]]; then
+    [[ "$nvme_gib" =~ ^[0-9]+$ ]] || fail "reconfigure: --nvme-gib must be an integer (GiB)"
+    aligned_gib=$(( (nvme_gib / 93) * 93 ))
+    if (( aligned_gib < 93 )); then
+      aligned_gib=93
+    fi
+  fi
+  [[ -n "$INSTANCE_ID" ]] || fail "NEBIUS_INSTANCE_ID is required for reconfigure"
+  ensure_nebius_auth
+  if [[ "$DRY_RUN" == "1" ]]; then
+    log "DRY-RUN reconfigure: instance=$INSTANCE_ID platform=$platform preset=$target_preset preemptible=$want_preempt nvme_gib=${aligned_gib:-unchanged} stopped=$want_stopped"
+    return 0
+  fi
+
+  # a) Fetch current instance JSON
+  inst_json="$(nebius ${NEBIUS_PROFILE_ARGS[@]+"${NEBIUS_PROFILE_ARGS[@]}"} compute instance get --id "$INSTANCE_ID" --format json)"
+
+  # b) Validate & extract fields (refuses to continue without managed disk ids)
+  eval "$(reconfigure_extract_json "$inst_json")"
+
+  # c) Stop the instance before touching its disks / shell
+  if [[ "$cur_state" != "STOPPED" ]]; then
+    log "reconfigure: stopping instance $INSTANCE_ID (state=$cur_state)"
+    nebius ${NEBIUS_PROFILE_ARGS[@]+"${NEBIUS_PROFILE_ARGS[@]}"} compute instance stop --id "$INSTANCE_ID"
+  fi
+
+  # d) Grow the NVMe scratch disk if requested and needed (never shrink)
+  if [[ -n "$aligned_gib" ]]; then
+    disk_json="$(nebius ${NEBIUS_PROFILE_ARGS[@]+"${NEBIUS_PROFILE_ARGS[@]}"} compute disk get --id "$nvme_disk_id" --format json)"
+    cur_gib="$(python3 -c '
+import json, sys
+d = json.loads(sys.argv[1])
+size = (d.get("spec") or {}).get("size_gibibytes")
+if size is None:
+    size = int((d.get("spec") or {}).get("size_bytes") or 0) // 1073741824
+print(int(size))
+' "$disk_json")"
+    if (( aligned_gib > cur_gib )); then
+      log "reconfigure: resizing NVMe disk $nvme_disk_id ${cur_gib} -> ${aligned_gib} GiB"
+      nebius ${NEBIUS_PROFILE_ARGS[@]+"${NEBIUS_PROFILE_ARGS[@]}"} compute disk update --id "$nvme_disk_id" --size-gibibytes "$aligned_gib"
+    else
+      log "reconfigure: NVMe disk already ${cur_gib} GiB (target $aligned_gib); no resize"
+    fi
+  fi
+
+  # e) Recreate the VM shell only when platform/preset/billing mode changed
+  if [[ "$cur_preempt" != "$want_preempt" || "$cur_platform" != "$platform" || "$cur_preset" != "$target_preset" ]]; then
+    create_payload="$(python3 -c '
+import json, sys
+inst = json.loads(sys.argv[1])
+(preset_name, platform, target_preset, want_preempt, want_stopped,
+ boot_disk_id, nvme_disk_id, nvme_dev_id, subnet_id, alloc_id,
+ sa_id, parent_id) = sys.argv[2:14]
+spec = inst.get("spec") or {}
+payload = {
+    "metadata": {"parent_id": parent_id, "name": f"tenet-v3-gpu-{preset_name}"},
+    "spec": {
+        "service_account_id": sa_id,
+        "stopped": want_stopped == "true",
+        "recovery_policy": "FAIL" if want_preempt == "1" else "RECOVER",
+        "resources": {"platform": platform, "preset": target_preset},
+        "boot_disk": {"attach_mode": "READ_WRITE", "existing_disk": {"id": boot_disk_id}},
+        "secondary_disks": [
+            {"attach_mode": "READ_WRITE", "device_id": nvme_dev_id,
+             "existing_disk": {"id": nvme_disk_id}}
+        ],
+        "network_interfaces": [
+            {"name": "eth0", "subnet_id": subnet_id, "ip_address": {},
+             "public_ip_address": {"allocation_id": alloc_id, "static": True}}
+        ],
+        "cloud_init_user_data": spec.get("cloud_init_user_data", ""),
+    },
+}
+if want_preempt == "1":
+    payload["spec"]["preemptible"] = {"on_preemption": "STOP"}
+print(json.dumps(payload))
+' "$inst_json" "$preset_name" "$platform" "$target_preset" "$want_preempt" "$want_stopped" \
+  "$boot_disk_id" "$nvme_disk_id" "$nvme_dev_id" "$subnet_id" "$alloc_id" "$sa_id" "$parent_id")"
+
+    log "reconfigure: deleting stopped VM shell $INSTANCE_ID (persistent disks kept)"
+    nebius ${NEBIUS_PROFILE_ARGS[@]+"${NEBIUS_PROFILE_ARGS[@]}"} compute instance delete --id "$INSTANCE_ID"
+
+    log "reconfigure: creating reconfigured VM shell (preset=$target_preset preemptible=$want_preempt stopped=$want_stopped)"
+    create_out="$(nebius ${NEBIUS_PROFILE_ARGS[@]+"${NEBIUS_PROFILE_ARGS[@]}"} compute instance create "$create_payload" --format json)"
+    new_id="$(python3 -c '
+import json, sys
+out = json.loads(sys.argv[1])
+print((out.get("metadata") or {}).get("id") or out.get("resource_id") or "")
+' "$create_out")"
+    if [[ -z "$new_id" ]]; then
+      new_id="$(nebius ${NEBIUS_PROFILE_ARGS[@]+"${NEBIUS_PROFILE_ARGS[@]}"} compute instance get-by-name \
+        --parent-id "$parent_id" --name "tenet-v3-gpu-${preset_name}" --format json \
+        | python3 -c 'import json, sys; print((json.load(sys.stdin).get("metadata") or {}).get("id") or "")')"
+    fi
+    [[ -n "$new_id" ]] || fail "reconfigure: could not determine the new instance id"
+
+    python3 - "$new_id" "$parent_id" <<'PYEOF'
+import os, re, sys
+
+new_id, parent_id = sys.argv[1], sys.argv[2]
+
+
+def rewrite(path, replacements, appends):
+    """Replace matching lines preserving leading indent; append missing keys."""
+    if not os.path.isfile(path):
+        return
+    st = os.stat(path)
+    with open(path) as fh:
+        lines = fh.readlines()
+    out, anchor_idx, anchor_indent = [], None, ""
+    for line in lines:
+        new_line = line
+        for pat, repl in replacements:
+            m = re.match(pat, line)
+            if m:
+                indent = m.group(1) if m.lastindex else ""
+                new_line = f"{indent}{repl}"
+                if anchor_idx is None:
+                    anchor_idx = len(out) + 1
+                    anchor_indent = indent
+                break
+        out.append(new_line)
+    for pat, extra in appends:
+        if not any(re.search(pat, l) for l in out):
+            if anchor_idx is not None:
+                out.insert(anchor_idx, f"{anchor_indent}{extra}")
+                anchor_idx += 1
+            else:
+                out.append(extra)
+    with open(path, "w") as fh:
+        fh.writelines(out)
+    os.chmod(path, st.st_mode)
+
+
+rewrite(
+    os.environ.get("NEBIUS_ENV_FILE", ".env.nebius"),
+    [(r"^(\s*)NEBIUS_INSTANCE_ID=.*", f"NEBIUS_INSTANCE_ID={new_id}\n")],
+    [(r"^\s*NEBIUS_PROJECT_ID=", f"NEBIUS_PROJECT_ID={parent_id}\n")],
+)
+rewrite(
+    os.environ.get("NEBIUS_ANSIBLE_HOSTS_FILE", "infra/ansible/inventory/hosts.yml"),
+    [(r"^(\s*)nebius_instance_id:.*", f"nebius_instance_id: {new_id}\n")],
+    [(r"^\s*nebius_project_id:", f"nebius_project_id: {parent_id}\n")],
+)
+PYEOF
+
+    log "reconfigure: updated env/hosts files with new instance id $new_id"
+    INSTANCE_ID="$new_id"
+  else
+    # f) No shell recreation needed: just start when a running VM is wanted
+    if [[ "$want_stopped" == "false" && "$cur_state" == "STOPPED" ]]; then
+      log "reconfigure: starting instance $INSTANCE_ID"
+      nebius ${NEBIUS_PROFILE_ARGS[@]+"${NEBIUS_PROFILE_ARGS[@]}"} compute instance start --id "$INSTANCE_ID"
+    fi
+  fi
+  log "reconfigure: OK"
 }
 
 s3_sync() {
@@ -365,6 +592,7 @@ case "$SUBCOMMAND" in
   setup-sa-auth)      cmd_setup_sa_auth ;;
   s3-sync-up)         s3_sync up ;;
   s3-sync-down)       s3_sync down ;;
+  reconfigure)        cmd_reconfigure "$@" ;;
   telemetry-snapshot) cmd_telemetry_snapshot "$@" ;;
   *)                  fail "unknown subcommand: $SUBCOMMAND (use --help)" ;;
 esac

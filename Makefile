@@ -1,4 +1,4 @@
-.PHONY: help sync test lint format verify-h1 verify-env compare-adaptation run-surgery verify-h9 verify-h10 verify-h11 verify-h12 build-tenet train-smoke profile-h2-local gpu-smoke smoke report clean pod-preflight pod-sync-daemon pod-sync-stop pod-launch pod-wait pod-logs nebius-preflight nebius-start nebius-stop nebius-status nebius-logs nebius-logs-follow nebius-s3-pull nebius-mlflow-backfill nebius-up nebius-down nebius-iac-validate nebius-wait-and-stop
+.PHONY: help sync test lint format verify-h1 verify-env compare-adaptation run-surgery verify-h9 verify-h10 verify-h11 verify-h12 build-tenet train-smoke profile-h2-local gpu-smoke smoke report clean pod-preflight pod-sync-daemon pod-sync-stop pod-launch pod-wait pod-logs nebius-preflight nebius-start nebius-stop nebius-reconfigure-wave1 nebius-reconfigure-wave2 nebius-status nebius-logs nebius-logs-follow nebius-s3-pull nebius-mlflow-backfill nebius-up nebius-down nebius-iac-validate nebius-wait-and-stop
 
 HARNESS ?= harness
 POD_HOST ?=
@@ -39,6 +39,8 @@ help:
 	@echo "  make nebius-preflight   Run Nebius GPU VM & storage preflight checks"
 	@echo "  make nebius-start       Start the Nebius GPU instance"
 	@echo "  make nebius-stop        Stop the Nebius GPU instance (\$0/hr GPU billing)"
+	@echo "  make nebius-reconfigure-wave1  Reconfigure Nebius VM to wave1 (1x H200, spot)"
+	@echo "  make nebius-reconfigure-wave2  Reconfigure Nebius VM to wave2 (8x H200, spot, 1860GB scratch)"
 	@echo "  make nebius-s3-pull     Sync results/ down from Nebius Object Storage"
 	@echo "  make nebius-mlflow-backfill  Backfill MLflow history from local runs"
 	@echo "  make nebius-up          Provision Nebius IaC (Terraform) & bootstrap VM (Ansible)"
@@ -173,6 +175,12 @@ nebius-start:
 
 nebius-stop:
 	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; bash scripts/remote/nebius_ctl.sh stop'
+
+nebius-reconfigure-wave1:
+	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; bash scripts/remote/nebius_ctl.sh reconfigure --preset wave1 --preemptible --running'
+
+nebius-reconfigure-wave2:
+	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; bash scripts/remote/nebius_ctl.sh reconfigure --preset wave2 --preemptible --nvme-gib 1860 --running'
 
 nebius-s3-pull:
 	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; \

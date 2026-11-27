@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import tempfile
@@ -233,6 +234,242 @@ def test_github_actions_nebius_workflow() -> None:
     assert isinstance(on_block, dict) and "workflow_dispatch" in on_block
     inputs = on_block["workflow_dispatch"]["inputs"]
     assert "action" in inputs and "gpu_preset" in inputs
+
+
+def test_reconfigure_dry_run_plans_expected_fields() -> None:
+    """DRY-RUN reconfigure prints the plan (preset, preemptibility, nvme, stop state)."""
+    env = {
+        "PATH": subprocess.os.environ["PATH"],
+        "HOME": subprocess.os.environ["HOME"],
+        "DRY_RUN": "1",
+        "NEBIUS_INSTANCE_ID": "inst-dry-1",
+        "NEBIUS_SSH_HOST": "",
+    }
+    res = subprocess.run(
+        [
+            "bash",
+            str(NEBIUS_CTL),
+            "reconfigure",
+            "--preset",
+            "wave2",
+            "--preemptible",
+            "--nvme-gib",
+            "1860",
+            "--running",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, f"reconfigure dry-run failed:\n{res.stderr}"
+    assert (
+        "DRY-RUN reconfigure: instance=inst-dry-1 platform=gpu-h200-sxm"
+        " preset=8gpu-128vcpu-1600gb preemptible=1 nvme_gib=1860 stopped=false"
+    ) in res.stdout
+
+
+def test_reconfigure_rejects_unknown_preset(tmp_path: Path) -> None:
+    """--preset must be wave1 or wave2; anything else fails before any API call."""
+    env = {
+        "PATH": subprocess.os.environ["PATH"],
+        "HOME": str(tmp_path),
+        "DRY_RUN": "1",
+        "NEBIUS_INSTANCE_ID": "inst-x",
+    }
+    res = subprocess.run(
+        ["bash", str(NEBIUS_CTL), "reconfigure", "--preset", "wave3"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode != 0
+    assert "wave1 or wave2" in res.stderr
+
+
+def _write_nebius_shim(bin_dir: Path) -> None:
+    """Fake `nebius` CLI: logs every invocation, serves canned JSON, no network."""
+    shim = bin_dir / "nebius"
+    shim.write_text(
+        "#!/usr/bin/env bash\n"
+        "python3 -c 'import json, os, sys; "
+        'open(os.environ["NEBIUS_SHIM_LOG"], "a").write(json.dumps(sys.argv[1:]) + "\\n")\' '
+        '"$@"\n'
+        'case "$1 $2 $3" in\n'
+        '  "profile list") exit 0 ;;\n'
+        '  "compute instance get") cat "$NEBIUS_SHIM_FIXTURES/instance.json" ;;\n'
+        '  "compute disk get") cat "$NEBIUS_SHIM_FIXTURES/disk.json" ;;\n'
+        '  "compute instance create") echo \'{"metadata": {"id": "inst-new-999"}}\' ;;\n'
+        '  "compute instance get-by-name")'
+        ' echo \'{"metadata": {"id": "inst-new-999"}}\' ;;\n'
+        "  *) exit 0 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+
+
+def _reconfigure_live_env(tmp_path: Path) -> dict:
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    instance = {
+        "metadata": {"id": "inst-old-123", "parent_id": "project-abc"},
+        "spec": {
+            "service_account_id": "sa-xyz",
+            "resources": {"platform": "gpu-h200-sxm", "preset": "1gpu-16vcpu-200gb"},
+            "boot_disk": {"attach_mode": "READ_WRITE", "existing_disk": {"id": "disk-boot-1"}},
+            "secondary_disks": [
+                {
+                    "attach_mode": "READ_WRITE",
+                    "device_id": "nvme-scratch",
+                    "existing_disk": {"id": "disk-nvme-1"},
+                }
+            ],
+            "network_interfaces": [
+                {
+                    "name": "eth0",
+                    "subnet_id": "subnet-1",
+                    "ip_address": {},
+                    "public_ip_address": {"allocation_id": "alloc-1", "static": False},
+                }
+            ],
+            "cloud_init_user_data": "#cloud-config\n",
+        },
+        "status": {"state": "STOPPED"},
+    }
+    disk = {"spec": {"size_gibibytes": 1023}}
+    (fixtures / "instance.json").write_text(json.dumps(instance), encoding="utf-8")
+    (fixtures / "disk.json").write_text(json.dumps(disk), encoding="utf-8")
+
+    env_file = tmp_path / "env.nebius"
+    env_file.write_text(
+        "NEBIUS_INSTANCE_ID=inst-old-123\nNEBIUS_SSH_HOST=1.2.3.4\n",
+        encoding="utf-8",
+    )
+    hosts_file = tmp_path / "hosts.yml"
+    hosts_file.write_text(
+        "all:\n"
+        "  children:\n"
+        "    nebius-gpu:\n"
+        "      hosts:\n"
+        "        gpu-vm:\n"
+        "          ansible_host: 1.2.3.4\n"
+        "          nebius_instance_id: inst-old-123\n",
+        encoding="utf-8",
+    )
+
+    env = {
+        "PATH": f"{tmp_path / 'bin'}:{subprocess.os.environ['PATH']}",
+        "HOME": str(tmp_path),
+        "NEBIUS_INSTANCE_ID": "inst-old-123",
+        "NEBIUS_SHIM_LOG": str(tmp_path / "shim.log"),
+        "NEBIUS_SHIM_FIXTURES": str(fixtures),
+        "NEBIUS_ENV_FILE": str(env_file),
+        "NEBIUS_ANSIBLE_HOSTS_FILE": str(hosts_file),
+    }
+    return env
+
+
+def test_reconfigure_live_switches_to_wave2_preemptible(tmp_path: Path) -> None:
+    """Live reconfigure: resize NVMe, recreate shell, update env + hosts files."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_nebius_shim(bin_dir)
+
+    env = _reconfigure_live_env(tmp_path)
+    log_path = Path(env["NEBIUS_SHIM_LOG"])
+    env_file = Path(env["NEBIUS_ENV_FILE"])
+    hosts_file = Path(env["NEBIUS_ANSIBLE_HOSTS_FILE"])
+
+    res = subprocess.run(
+        [
+            "bash",
+            str(NEBIUS_CTL),
+            "reconfigure",
+            "--preset",
+            "wave2",
+            "--preemptible",
+            "--nvme-gib",
+            "1860",
+            "--running",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, f"live reconfigure failed:\n{res.stdout}\n{res.stderr}"
+
+    calls = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    flat = "\n".join(" ".join(c) for c in calls)
+
+    assert "compute disk update --id disk-nvme-1 --size-gibibytes 1860" in flat
+    assert "compute instance delete --id inst-old-123" in flat
+    assert "compute instance create" in flat
+    # Instance started STOPPED -> no stop call; want_stopped=false handled at create time.
+    assert "compute instance stop" not in flat
+
+    create_call = next(c for c in calls if c[1:3] == ["instance", "create"])
+    payload = json.loads(next(a for a in create_call if a.lstrip().startswith("{")))
+    spec = payload["spec"]
+    assert spec["preemptible"] == {"on_preemption": "STOP"}
+    assert spec["recovery_policy"] == "FAIL"
+    assert spec["resources"] == {"platform": "gpu-h200-sxm", "preset": "8gpu-128vcpu-1600gb"}
+    assert spec["boot_disk"]["existing_disk"]["id"] == "disk-boot-1"
+    assert spec["secondary_disks"][0]["existing_disk"]["id"] == "disk-nvme-1"
+    assert payload["metadata"]["parent_id"] == "project-abc"
+
+    env_text = env_file.read_text(encoding="utf-8")
+    assert "NEBIUS_INSTANCE_ID=inst-new-999" in env_text
+    assert "NEBIUS_PROJECT_ID=project-abc" in env_text
+    assert "NEBIUS_SSH_HOST=1.2.3.4" in env_text  # other lines preserved
+
+    hosts_data = yaml.safe_load(hosts_file.read_text(encoding="utf-8"))
+    gpu_vars = hosts_data["all"]["children"]["nebius-gpu"]["hosts"]["gpu-vm"]
+    assert gpu_vars["nebius_instance_id"] == "inst-new-999"
+    assert gpu_vars["nebius_project_id"] == "project-abc"
+    assert gpu_vars["ansible_host"] == "1.2.3.4"
+
+
+def test_reconfigure_live_skips_resize_and_recreation_when_unchanged(tmp_path: Path) -> None:
+    """Same preset/preemptible + equal nvme target: no delete/create, start only."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_nebius_shim(bin_dir)
+
+    env = _reconfigure_live_env(tmp_path)
+    log_path = Path(env["NEBIUS_SHIM_LOG"])
+
+    res = subprocess.run(
+        [
+            "bash",
+            str(NEBIUS_CTL),
+            "reconfigure",
+            "--preset",
+            "wave1",
+            "--on-demand",
+            "--nvme-gib",
+            "1023",
+            "--running",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, f"live reconfigure failed:\n{res.stdout}\n{res.stderr}"
+
+    calls = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    flat = "\n".join(" ".join(c) for c in calls)
+    assert "instance delete" not in flat
+    assert "instance create" not in flat
+    assert "disk update" not in flat
+    assert "compute instance start --id inst-old-123" in flat
 
 
 def test_cli_terraform_fmt_and_ansible_syntax() -> None:
