@@ -32,6 +32,6 @@
   "passed_kl_gate": true,
   "router_freeze_ok": true,
   "h22_acceptance_passed": true,
-  "elapsed_seconds": 0.002,
+  "elapsed_seconds": 0.003,
   "run_path": "results/h22_looped_moe_drafter_sync/h22_looped_moe_drafter_sync"
 }

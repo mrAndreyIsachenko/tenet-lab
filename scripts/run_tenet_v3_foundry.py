@@ -899,6 +899,118 @@ def _detect_tensor_parallel_size() -> int:
     return 1
 
 
+def _fight_card_vllm_worker(
+    checkpoint: str,
+    tp_size: int,
+    house_prompts: list[str],
+    direct_prompts: list[str],
+    result_path: str,
+) -> None:
+    """Spawned child worker: run vLLM inference for one checkpoint and exit.
+
+    Writes a JSON result file so the parent process never keeps vLLM's
+    CUDA/EngineCore VRAM pinned while lm_eval runs afterwards.
+    """
+    try:
+        from vllm import LLM, SamplingParams
+    except Exception as exc:
+        Path(result_path).write_text(json.dumps({"status": "import_error", "error": str(exc)}))
+        return
+
+    try:
+        llm = LLM(
+            model=checkpoint,
+            tensor_parallel_size=tp_size,
+            dtype="bfloat16",
+            trust_remote_code=True,
+            gpu_memory_utilization=0.88,
+            max_model_len=16384,
+        )
+    except Exception as exc:
+        text = str(exc)
+        if any(m in text for m in _UNSUPPORTED_ARCH_MARKERS) or (
+            "not supported" in text or "does not recognize" in text
+        ):
+            payload = {"status": "unsupported_arch", "error": text[-4000:]}
+        else:
+            payload = {"status": "error", "error": text[-4000:]}
+        Path(result_path).write_text(json.dumps(payload))
+        return
+
+    try:
+        tokenizer = llm.get_tokenizer()
+    except Exception:
+        tokenizer = None
+    chat_template = getattr(tokenizer, "chat_template", None)
+    apply_chat_template = getattr(tokenizer, "apply_chat_template", None)
+
+    def _prepend_opened_think(fmt_p: str, txt: str) -> str:
+        stripped_p = fmt_p.rstrip()
+        for open_tag in ("<think>", "<|thought|>", "<|thought>"):
+            if stripped_p.endswith(open_tag) and not txt.lstrip().startswith(open_tag):
+                return f"{open_tag}\n{txt}"
+        return txt
+
+    if chat_template and callable(apply_chat_template):
+        _apply_fn: Any = apply_chat_template
+
+        def _format_house(p: str, _fn: Any = _apply_fn) -> str:
+            return _fn(
+                [{"role": "user", "content": p}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+
+        thinking_disabled = False
+        try:
+            direct_formatted = [
+                _apply_fn(
+                    [{"role": "user", "content": p}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False,
+                )
+                for p in direct_prompts
+            ]
+            thinking_disabled = True
+        except TypeError:
+            direct_formatted = [
+                _apply_fn(
+                    [{"role": "user", "content": p}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+                for p in direct_prompts
+            ]
+        try:
+            house_formatted = [_format_house(p) for p in house_prompts]
+        except Exception:
+            house_formatted = house_prompts
+    else:
+        house_formatted = house_prompts
+        direct_formatted = direct_prompts
+        thinking_disabled = False
+
+    # House prompts: allow full <think>...</think> deliberation.
+    house_sampling = SamplingParams(temperature=0.0, max_tokens=8192)
+    house_outs = llm.generate(house_formatted, house_sampling)
+    house_texts: list[str] = []
+    for fmt_p, o in zip(house_formatted, house_outs, strict=True):
+        house_texts.append(_prepend_opened_think(fmt_p, o.outputs[0].text))
+
+    # Direct prompts: no CoT needed; shorter budget unless the
+    # template fell back to thinking-enabled formatting.
+    direct_sampling = SamplingParams(
+        temperature=0.0, max_tokens=1536 if thinking_disabled else 4096
+    )
+    direct_outs = llm.generate(direct_formatted, direct_sampling)
+    direct_texts: list[str] = []
+    for fmt_p, o in zip(direct_formatted, direct_outs, strict=True):
+        direct_texts.append(_prepend_opened_think(fmt_p, o.outputs[0].text))
+
+    Path(result_path).write_text(json.dumps({"status": "ok", "texts": house_texts + direct_texts}))
+
+
 def _run_fight_card_gate(
     model_id: str,
     spec: dict[str, Any],
@@ -965,127 +1077,43 @@ def _run_fight_card_gate(
         _query(model_id, tenet_responses)
         _query(spec["base_model"], base_responses)
     else:
-        # Sequential in-process vLLM inference for base and tenet checkpoints.
-        try:
-            import gc
-
-            import torch
-            from vllm import LLM, SamplingParams
-        except Exception:
-            report = {"status": "skipped_unsupported_arch", "gate_passed": None}
-            gate_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
-            return report
+        # vLLM runs in spawned child processes (one per checkpoint) so CUDA
+        # VRAM is released before lm_eval runs in the parent process.
+        import multiprocessing
+        import tempfile
 
         house_prompts = [_item_prompt(i) for i in TENET_ARENA_HOUSE_SERIES]
         direct_prompts = list(BORDERLINE_OVER_REFUSAL_PROMPTS) + list(ANTI_SLOP_PROMPTS)
         tp_size = _detect_tensor_parallel_size()
+        tenet_checkpoint = str(materialized_dir or release_dir / "materialized")
 
         results_by_model: dict[str, list[str]] = {}
-        try:
-            tenet_checkpoint = str(materialized_dir or release_dir / "materialized")
-            for checkpoint in (tenet_checkpoint, spec["base_model"]):
-                try:
-                    llm = LLM(
-                        model=checkpoint,
-                        tensor_parallel_size=tp_size,
-                        dtype="bfloat16",
-                        trust_remote_code=True,
-                        gpu_memory_utilization=0.88,
-                        max_model_len=16384,
-                    )
-                except Exception as exc:
-                    text = str(exc)
-                    if any(m in text for m in _UNSUPPORTED_ARCH_MARKERS) or (
-                        "not supported" in text or "does not recognize" in text
-                    ):
-                        report = {
-                            "status": "skipped_unsupported_arch",
-                            "gate_passed": None,
-                            "error": text[-4000:],
-                        }
-                        gate_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
-                        return report
-                    raise
-                try:
-                    tokenizer = llm.get_tokenizer()
-                except Exception:
-                    tokenizer = None
-                chat_template = getattr(tokenizer, "chat_template", None)
-                apply_chat_template = getattr(tokenizer, "apply_chat_template", None)
+        ctx = multiprocessing.get_context("spawn")
 
-                def _prepend_opened_think(fmt_p: str, txt: str) -> str:
-                    stripped_p = fmt_p.rstrip()
-                    for open_tag in ("<think>", "<|thought|>", "<|thought>"):
-                        if stripped_p.endswith(open_tag) and not txt.lstrip().startswith(open_tag):
-                            return f"{open_tag}\n{txt}"
-                    return txt
-
-                if chat_template and callable(apply_chat_template):
-                    _apply_fn: Any = apply_chat_template
-
-                    def _format_house(p: str, _fn: Any = _apply_fn) -> str:
-                        return _fn(
-                            [{"role": "user", "content": p}],
-                            tokenize=False,
-                            add_generation_prompt=True,
-                        )
-
-                    thinking_disabled = False
-                    try:
-                        direct_formatted = [
-                            _apply_fn(
-                                [{"role": "user", "content": p}],
-                                tokenize=False,
-                                add_generation_prompt=True,
-                                enable_thinking=False,
-                            )
-                            for p in direct_prompts
-                        ]
-                        thinking_disabled = True
-                    except TypeError:
-                        direct_formatted = [
-                            _apply_fn(
-                                [{"role": "user", "content": p}],
-                                tokenize=False,
-                                add_generation_prompt=True,
-                            )
-                            for p in direct_prompts
-                        ]
-                    try:
-                        house_formatted = [_format_house(p) for p in house_prompts]
-                    except Exception:
-                        house_formatted = house_prompts
-                else:
-                    house_formatted = house_prompts
-                    direct_formatted = direct_prompts
-                    thinking_disabled = False
-
-                # House prompts: allow full <think>...</think> deliberation.
-                house_sampling = SamplingParams(temperature=0.0, max_tokens=8192)
-                house_outs = llm.generate(house_formatted, house_sampling)
-                house_texts: list[str] = []
-                for fmt_p, o in zip(house_formatted, house_outs, strict=True):
-                    house_texts.append(_prepend_opened_think(fmt_p, o.outputs[0].text))
-
-                # Direct prompts: no CoT needed; shorter budget unless the
-                # template fell back to thinking-enabled formatting.
-                direct_sampling = SamplingParams(
-                    temperature=0.0, max_tokens=1536 if thinking_disabled else 4096
+        for checkpoint in (tenet_checkpoint, spec["base_model"]):
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                result_path = str(Path(tmp_dir) / "fight_card_worker.json")
+                proc = ctx.Process(
+                    target=_fight_card_vllm_worker,
+                    args=(checkpoint, tp_size, house_prompts, direct_prompts, result_path),
                 )
-                direct_outs = llm.generate(direct_formatted, direct_sampling)
-                direct_texts: list[str] = []
-                for fmt_p, o in zip(direct_formatted, direct_outs, strict=True):
-                    direct_texts.append(_prepend_opened_think(fmt_p, o.outputs[0].text))
+                proc.start()
+                proc.join()
+                try:
+                    payload: dict[str, Any] = json.loads(Path(result_path).read_text())
+                except Exception:
+                    payload = {} if proc.exitcode == 0 else {"status": "unsupported_arch"}
 
-                results_by_model[checkpoint] = house_texts + direct_texts
-                del llm
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-        except (ImportError, ValueError, RuntimeError, OSError):
-            report = {"status": "skipped_unsupported_arch", "gate_passed": None}
-            gate_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
-            return report
+            status = payload.get("status")
+            if status == "ok":
+                results_by_model[checkpoint] = payload["texts"]
+            elif status == "error":
+                raise RuntimeError(payload.get("error", "fight_card_gate worker failed"))
+            else:
+                # import_error / unsupported_arch / silent non-zero exit.
+                report = {"status": "skipped_unsupported_arch", "gate_passed": None}
+                gate_path.write_text(json.dumps(report, indent=2, default=str) + "\n")
+                return report
 
         all_prompts = house_prompts + direct_prompts
         tenet_responses = {
@@ -1431,6 +1459,166 @@ def _cleanup_local_cache(
     }
 
 
+def _surgery_stage_worker(
+    model_dir_str: str,
+    materialized_dir_str: str,
+    release_dir_str: str,
+    spec: dict[str, Any],
+    args_ns_dict: dict[str, Any],
+    result_path: str,
+) -> None:
+    """Spawned child worker: run the H21/H22 surgery stage and exit.
+
+    Writes a JSON result file so the parent process never keeps the ~57.6 GiB
+    calibration load (and vLLM/CUDA VRAM) pinned while lm_eval runs afterwards.
+    """
+    from types import SimpleNamespace
+
+    try:
+        args = SimpleNamespace(**args_ns_dict)
+        model_dir = Path(model_dir_str)
+        materialized_dir = Path(materialized_dir_str)
+        release_dir = Path(release_dir_str)
+        cfg_info = _inspect_checkpoint_config(model_dir)
+        basis_out_path = release_dir / "lancet_basis.safetensors"
+        layer_bases, expert_profiles, prep_telemetry = _build_streaming_basis_and_profiles(
+            model_dir,
+            cfg_info,
+            spec,
+            basis_out_path=basis_out_path,
+            allow_weight_svd_fallback=args.allow_weight_svd_fallback,
+        )
+        h21 = _run_h21(
+            model_dir,
+            materialized_dir,
+            spec,
+            args,
+            layer_bases=layer_bases,
+            expert_profiles=expert_profiles,
+            cfg_info=cfg_info,
+            basis_path=basis_out_path,
+        )
+        h22: dict[str, Any] = {}
+        if spec["looped"] or spec["has_drafter"]:
+            _log("H22 read-only frozen-drift verification + speculative-drafter sync")
+            h22 = _run_h22(
+                model_dir,
+                materialized_dir,
+                spec,
+                args,
+                layer_bases=layer_bases,
+                prep_telemetry=prep_telemetry,
+                cfg_info=cfg_info,
+            )
+        Path(result_path).write_text(
+            json.dumps({"status": "ok", "h21": h21, "h22": h22}, default=str)
+        )
+    except Exception:
+        Path(result_path).write_text(
+            json.dumps({"status": "error", "traceback": traceback.format_exc()})
+        )
+
+
+def _run_surgery_isolated(
+    model_dir: Path,
+    materialized_dir: Path,
+    release_dir: Path,
+    spec: dict[str, Any],
+    args: Any,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Run the surgery stage in a spawned child and return ``(h21, h22)``.
+
+    Spawn creates a fresh interpreter so every CUDA/EngineCore allocation made
+    while building the streaming basis is fully released before the open evals
+    start. If tests monkeypatch the surgery functions on this module, spawn
+    would lose the patches — fall back to in-process execution in that case.
+    """
+    patched = any(
+        fn.__module__ != __name__
+        for fn in (
+            _inspect_checkpoint_config,
+            _build_streaming_basis_and_profiles,
+            _run_h21,
+            _run_h22,
+        )
+    )
+    if patched:
+        cfg_info = _inspect_checkpoint_config(model_dir)
+        basis_out_path = release_dir / "lancet_basis.safetensors"
+        layer_bases, expert_profiles, prep_telemetry = _build_streaming_basis_and_profiles(
+            model_dir,
+            cfg_info,
+            spec,
+            basis_out_path=basis_out_path,
+            allow_weight_svd_fallback=args.allow_weight_svd_fallback,
+        )
+        h21 = _run_h21(
+            model_dir,
+            materialized_dir,
+            spec,
+            args,
+            layer_bases=layer_bases,
+            expert_profiles=expert_profiles,
+            cfg_info=cfg_info,
+            basis_path=basis_out_path,
+        )
+        h22: dict[str, Any] = {}
+        if spec["looped"] or spec["has_drafter"]:
+            _log("H22 read-only frozen-drift verification + speculative-drafter sync")
+            h22 = _run_h22(
+                model_dir,
+                materialized_dir,
+                spec,
+                args,
+                layer_bases=layer_bases,
+                prep_telemetry=prep_telemetry,
+                cfg_info=cfg_info,
+            )
+        return h21, h22
+
+    import multiprocessing
+    import sys
+    import tempfile
+
+    ctx = multiprocessing.get_context("spawn")
+    args_ns_dict = dict(vars(args))
+    scripts_dir = str(Path(__file__).resolve().parent)
+    added_to_sys_path = scripts_dir not in sys.path
+    if added_to_sys_path:
+        sys.path.insert(0, scripts_dir)
+    result_payload: dict[str, Any]
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            result_path = str(Path(tmp) / "surgery_result.json")
+            proc = ctx.Process(
+                target=_surgery_stage_worker,
+                args=(
+                    str(model_dir),
+                    str(materialized_dir),
+                    str(release_dir),
+                    spec,
+                    args_ns_dict,
+                    result_path,
+                ),
+            )
+            proc.start()
+            proc.join()
+            result_file = Path(result_path)
+            if result_file.is_file():
+                result_payload = json.loads(result_file.read_text())
+            else:
+                result_payload = {
+                    "status": "error",
+                    "traceback": f"surgery worker produced no result (exitcode={proc.exitcode})",
+                }
+    finally:
+        if added_to_sys_path and scripts_dir in sys.path:
+            sys.path.remove(scripts_dir)
+    if result_payload.get("status") != "ok":
+        raise RuntimeError("surgery stage failed:\n" + str(result_payload.get("traceback", "")))
+    return result_payload["h21"], result_payload["h22"]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="run_tenet_v3_foundry",
@@ -1602,36 +1790,7 @@ def main(argv: list[str] | None = None) -> int:
         if model_dir is None:
             raise RuntimeError("no checkpoint directory resolved: pass --model-dir or --download")
         _log(f"H21 strata-tier-aware Lancet surgery on {args.model_id} (tier={spec['tier']})")
-        cfg_info = _inspect_checkpoint_config(model_dir)
-        basis_out_path = release_dir / "lancet_basis.safetensors"
-        layer_bases, expert_profiles, prep_telemetry = _build_streaming_basis_and_profiles(
-            model_dir,
-            cfg_info,
-            spec,
-            basis_out_path=basis_out_path,
-            allow_weight_svd_fallback=args.allow_weight_svd_fallback,
-        )
-        h21 = _run_h21(
-            model_dir,
-            materialized_dir,
-            spec,
-            args,
-            layer_bases=layer_bases,
-            expert_profiles=expert_profiles,
-            cfg_info=cfg_info,
-            basis_path=basis_out_path,
-        )
-        if spec["looped"] or spec["has_drafter"]:
-            _log("H22 read-only frozen-drift verification + speculative-drafter sync")
-            h22 = _run_h22(
-                model_dir,
-                materialized_dir,
-                spec,
-                args,
-                layer_bases=layer_bases,
-                prep_telemetry=prep_telemetry,
-                cfg_info=cfg_info,
-            )
+        h21, h22 = _run_surgery_isolated(model_dir, materialized_dir, release_dir, spec, args)
         if not h21.get("h21_verified"):
             status = "error"
         if (spec["looped"] or spec["has_drafter"]) and not h22.get("h22_verified"):
