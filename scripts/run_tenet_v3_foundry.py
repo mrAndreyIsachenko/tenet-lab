@@ -1482,6 +1482,16 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--keep-going-on-gate-fail",
+        action="store_true",
+        default=False,
+        help=(
+            "Return exit code 0 when the only failure is a failed Fight Card "
+            "Gate (foundry_summary.json still records status=error) so a "
+            "multi-model batch queue under set -e continues with the next model."
+        ),
+    )
+    parser.add_argument(
         "--allow-weight-svd-fallback",
         action="store_true",
         default=False,
@@ -1580,6 +1590,7 @@ def main(argv: list[str] | None = None) -> int:
 
     t0 = time.perf_counter()
     status = "ok"
+    gate_blocked = False
     h21: dict[str, Any] = {}
     h22: dict[str, Any] = {}
     fight_card_gate: dict[str, Any] = {"skipped": not args.run_fight_card_gate}
@@ -1695,13 +1706,28 @@ def main(argv: list[str] | None = None) -> int:
                 if fight_card_gate.get("gate_passed") is False:
                     status = "error"
                     if not args.force_upload_on_gate_fail:
-                        # A failed Fight Card Gate blocks upload + cleanup so a
-                        # bad release never reaches HF and never evicts the
+                        # A failed Fight Card Gate blocks strata bench, open
+                        # evals, upload and cleanup: a bad release never gets
+                        # GPU eval time, never reaches HF and never evicts the
                         # local checkpoint needed for a retry.
+                        gate_blocked = True
+                        if args.run_strata_bench:
+                            strata_bench = {
+                                "skipped": True,
+                                "reason": "fight_card_gate_failed",
+                            }
+                        if args.run_open_evals:
+                            open_evals = {
+                                "skipped": True,
+                                "reason": "fight_card_gate_failed",
+                            }
                         upload_result = {"skipped": True, "reason": "fight_card_gate_failed"}
                         cleanup_result = {"skipped": True, "reason": "fight_card_gate_failed"}
-                        _log("fight card gate failed: skipping HF upload and cache cleanup")
-            if args.run_strata_bench:
+                        _log(
+                            "fight card gate failed: skipping strata bench, "
+                            "open evals, HF upload and cache cleanup"
+                        )
+            if args.run_strata_bench and not gate_blocked:
                 strata_bench = _run_strata_bench(
                     args.model_id,
                     spec,
@@ -1712,7 +1738,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 if not strata_bench.get("passed"):
                     status = "error"
-            if args.run_open_evals:
+            if args.run_open_evals and not gate_blocked:
                 open_evals = _run_open_evals(
                     args.model_id,
                     spec,
@@ -1770,6 +1796,11 @@ def main(argv: list[str] | None = None) -> int:
     summary_path = release_dir / "foundry_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=False, default=str) + "\n")
     _log(f"wrote {summary_path} (status={status})")
+    if status == "error" and gate_blocked and args.keep_going_on_gate_fail:
+        # The only failure was the Fight Card Gate: return 0 so a multi-model
+        # batch queue under set -e continues with the next model. The summary
+        # still records status=error.
+        return 0
     return 0 if status == "ok" else 1
 
 

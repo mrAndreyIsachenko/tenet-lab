@@ -1279,3 +1279,208 @@ class TestMainResumeArmSummaryCache:
 
         assert exit_code == 0
         assert summary.exists()
+
+
+class TestMath500RecomputeNonSplitDir:
+    """``_recompute_math500_scores`` must also run on non-split raw dirs.
+
+    Non-split runs keep ``samples_hendrycks_math500_*.jsonl`` directly under
+    ``raw_dir`` (not under ``chat_0shot_math/``); the helper used to bail out
+    on any directory not named ``chat_0shot_math`` and left the broken 0.0.
+    """
+
+    def test_recompute_upgrades_scores_outside_chat_0shot_math(
+        self, vllm_runner, tmp_path, monkeypatch
+    ):
+        raw_dir = tmp_path / "raw" / "tenet"
+        raw_dir.mkdir(parents=True)  # NOT named chat_0shot_math
+        scores = {"math_500": 0.0, "hendrycks_math500": 0.0, "ifeval": 0.7}
+
+        monkeypatch.setattr(
+            vllm_runner,
+            "recompute_hendrycks_math500_from_samples",
+            lambda sub_dir: 0.42 if sub_dir == raw_dir else None,
+        )
+
+        vllm_runner._recompute_math500_scores(raw_dir, scores)
+
+        assert scores["math_500"] == pytest.approx(0.42)
+        assert scores["hendrycks_math500"] == pytest.approx(0.42)
+        assert scores["ifeval"] == pytest.approx(0.7)
+
+    def test_recompute_noop_without_math_keys(self, vllm_runner, tmp_path, monkeypatch):
+        raw_dir = tmp_path / "raw" / "tenet"
+        raw_dir.mkdir(parents=True)
+        monkeypatch.setattr(
+            vllm_runner,
+            "recompute_hendrycks_math500_from_samples",
+            lambda sub_dir: pytest.fail("must not be called without math keys"),
+        )
+        scores = {"ifeval": 0.7}
+        vllm_runner._recompute_math500_scores(raw_dir, scores)
+        assert scores == {"ifeval": 0.7}
+
+
+class TestMainResumeRescueMathFromSamples:
+    """``--resume`` must rescue a near-zero cached math_500 from raw samples
+    instead of deleting ``chat_0shot_math`` and re-running the arm."""
+
+    def _main_argv(self, release_id: str) -> list[str]:
+        return [
+            "--release-id",
+            release_id,
+            "--base-model",
+            "org/base",
+            "--naive-model",
+            "org/naive",
+            "--tenet-repo",
+            "org/tenet",
+            "--arms",
+            "tenet",
+            "--suite",
+            "full",
+            "--resume",
+        ]
+
+    def test_resume_rescues_math_500_without_deleting_raw(self, vllm_runner, tmp_path, monkeypatch):
+        release_id = "release-rescue-math"
+        raw_dir = tmp_path / "results" / "external_evals" / release_id / "raw" / "tenet"
+        chat_math = raw_dir / "chat_0shot_math"
+        chat_math.mkdir(parents=True)
+        (chat_math / "samples_hendrycks_math500_2026_01_01-00-00-00.jsonl").write_text(
+            "{}", encoding="utf-8"
+        )
+        summary = raw_dir / "arm_summary.json"
+        summary.write_text(
+            json.dumps(
+                {"arm": "tenet", "status": "ok", "scores": {"ifeval": 0.8, "math_500": 0.0}}
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(vllm_runner, "REPO_ROOT", tmp_path)
+
+        def fake_recompute(sub_dir):
+            if any(sub_dir.glob("samples_hendrycks_math500_*.jsonl")):
+                return 0.42
+            return None
+
+        monkeypatch.setattr(vllm_runner, "recompute_hendrycks_math500_from_samples", fake_recompute)
+
+        def fail_eval_arm(arm, model, **kwargs):
+            raise AssertionError("_eval_arm must not run when cache was rescued")
+
+        monkeypatch.setattr(vllm_runner, "_eval_arm", fail_eval_arm)
+
+        exit_code = vllm_runner.main(self._main_argv(release_id))
+
+        assert exit_code == 0
+        # The raw samples directory survived (no shutil.rmtree).
+        assert chat_math.exists()
+        cached = json.loads(summary.read_text(encoding="utf-8"))
+        assert cached["scores"]["math_500"] == pytest.approx(0.42)
+        assert cached["scores"]["hendrycks_math500"] == pytest.approx(0.42)
+        assert cached["scores"]["hendrycks_math500_exact_match"] == pytest.approx(0.42)
+
+    def test_resume_still_reruns_when_samples_cannot_rescue(
+        self, vllm_runner, tmp_path, monkeypatch
+    ):
+        release_id = "release-rescue-none"
+        raw_dir = tmp_path / "results" / "external_evals" / release_id / "raw" / "tenet"
+        chat_math = raw_dir / "chat_0shot_math"
+        chat_math.mkdir(parents=True)  # no samples file -> recompute returns None
+        summary = raw_dir / "arm_summary.json"
+        summary.write_text(
+            json.dumps(
+                {"arm": "tenet", "status": "ok", "scores": {"ifeval": 0.8, "math_500": 0.0}}
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(vllm_runner, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(
+            vllm_runner, "recompute_hendrycks_math500_from_samples", lambda sub_dir: None
+        )
+        monkeypatch.setattr(
+            vllm_runner,
+            "_eval_arm",
+            lambda arm, model, **kwargs: {"arm": arm, "scores": {"math_500": 0.6}},
+        )
+
+        exit_code = vllm_runner.main(self._main_argv(release_id))
+
+        assert exit_code == 0
+        # Broken cache invalidated and math raw dir removed before rerun.
+        assert not summary.exists()
+        assert not chat_math.exists()
+
+
+class TestRecomputeReleasesModelCard:
+    """``recompute_local_eval_releases`` must feed flat numeric metrics to
+    ``generate_tenet_model_card`` so the README renders real values."""
+
+    def _prepare_release(self, tmp_path: Path) -> tuple[Path, Path]:
+        release_id = "Tenet-35B-A3B-Qwen3.6-Unslop-v3"
+        results_root = tmp_path / "results"
+        raw_dir = results_root / "external_evals" / release_id / "raw" / "tenet"
+        raw_dir.mkdir(parents=True)
+        (raw_dir / "arm_summary.json").write_text(
+            json.dumps(
+                {"arm": "tenet", "status": "ok", "scores": {"math_500": 0.62, "ifeval_strict": 0.7}}
+            ),
+            encoding="utf-8",
+        )
+        (results_root / "external_evals" / f"{release_id}.json").write_text(
+            json.dumps(
+                {
+                    "release_id": release_id,
+                    "model_id": release_id,
+                    "base_model": "org/base",
+                    "arms": {
+                        "tenet": {"scores": {"math_500": 0.62, "ifeval_strict": 0.7}},
+                    },
+                    "after": {
+                        "scores": {"math_500": 0.62, "ifeval_strict": 0.7},
+                        "unclosed_think_rate": 0.01,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        rel_dir = results_root / "tenet_releases" / release_id
+        rel_dir.mkdir(parents=True)
+        (rel_dir / "foundry_summary.json").write_text(
+            json.dumps(
+                {
+                    "plan": {"base_model": "org/base"},
+                    "h21": {
+                        "max_row_crest_factor": 3.14,
+                        "max_block16_crest_factor": 2.5,
+                        "untouched_expert_ratio": 0.98,
+                        "router_weight_drift": 0.01,
+                        "peak_memory_mb": 12345.0,
+                    },
+                    "h22": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (rel_dir / "strata_bench.json").write_text(
+            json.dumps({"report": {"metrics": {"expert_cache_hit_rate": 0.9}}}),
+            encoding="utf-8",
+        )
+        return results_root, rel_dir
+
+    def test_renders_real_crest_factor_and_external_benchmarks(
+        self, vllm_runner, tmp_path, monkeypatch
+    ):
+        results_root, rel_dir = self._prepare_release(tmp_path)
+        monkeypatch.setattr(vllm_runner, "REPO_ROOT", tmp_path)
+
+        vllm_runner.recompute_local_eval_releases(
+            results_root / "external_evals", results_root / "tenet_releases"
+        )
+
+        card = (rel_dir / "README.md").read_text(encoding="utf-8")
+        assert "untouched_expert_ratio" in card
+        assert "98.0%" in card
+        assert "Max row crest-factor: 3.14" in card
+        assert "MATH-500" in card

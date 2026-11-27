@@ -188,7 +188,7 @@ V3_OPTIONAL_ITEMS: list[tuple[str, str, str]] = [
         f"{_V3_V3_NOTE} Parent: zai-org/GLM-4.7-Flash (30B-A3B MoE).",
     ),
     (
-        "mr-andrey-isachenko/Tenet-30B-A3B-GLM4.7-Unslop-v3-GGUF",
+        "mr-andrey-isachenko/Tenet-GLM-4.7-Flash-30B-A3B-Abliterated-Unslop-v3-GGUF",
         "model",
         f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-30B-A3B-GLM4.7-Unslop-v3.",
     ),
@@ -198,7 +198,7 @@ V3_OPTIONAL_ITEMS: list[tuple[str, str, str]] = [
         f"{_V3_V3_NOTE} Parent: Qwen/Qwen3.6-35B-A3B (35B-A3B MoE).",
     ),
     (
-        "mr-andrey-isachenko/Tenet-35B-A3B-Qwen3.6-Unslop-v3-GGUF",
+        "mr-andrey-isachenko/Tenet-Qwen3.6-35B-A3B-Abliterated-Unslop-v3-GGUF",
         "model",
         f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-35B-A3B-Qwen3.6-Unslop-v3.",
     ),
@@ -208,79 +208,24 @@ V3_OPTIONAL_ITEMS: list[tuple[str, str, str]] = [
         f"{_V3_V3_NOTE} Parent: Inkling2 26B-A3B MoE.",
     ),
     (
-        "mr-andrey-isachenko/Tenet-26B-A3B-Inkling2-Unslop-v3-GGUF",
-        "model",
-        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-26B-A3B-Inkling2-Unslop-v3.",
-    ),
-    (
-        "mr-andrey-isachenko/Tenet-106B-A12B-GLM4.5-Unslop-v3",
-        "model",
-        f"{_V3_V3_NOTE} Parent: zai-org/GLM-4.5 (106B-A12B MoE).",
-    ),
-    (
-        "mr-andrey-isachenko/Tenet-106B-A12B-GLM4.5-Unslop-v3-GGUF",
-        "model",
-        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-106B-A12B-GLM4.5-Unslop-v3.",
-    ),
-    (
         "mr-andrey-isachenko/Tenet-15B-A2B-Inkling2-Unslop-v3",
         "model",
         f"{_V3_V3_NOTE} Parent: Inkling2 15B-A2B MoE.",
     ),
     (
-        "mr-andrey-isachenko/Tenet-15B-A2B-Inkling2-Unslop-v3-GGUF",
+        "mr-andrey-isachenko/Tenet-106B-A12B-GLM4.5-Unslop-v3",
         "model",
-        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-15B-A2B-Inkling2-Unslop-v3.",
+        f"{_V3_V3_NOTE} Parent: zai-org/GLM-4.5-Air (106B-A12B MoE).",
     ),
     (
-        "mr-andrey-isachenko/Tenet-9B-Qwen3.5-Unslop-v3",
+        "mr-andrey-isachenko/Tenet-125B-A6B-Qwen3.8-Unslop-v3",
         "model",
-        f"{_V3_V3_NOTE} Parent: Qwen3.5-9B.",
+        f"{_V3_V3_NOTE} Parent: Qwen/Qwen3.8-Flash-Next (125B-A6B MoE).",
     ),
     (
-        "mr-andrey-isachenko/Tenet-9B-Qwen3.5-Unslop-v3-GGUF",
+        "mr-andrey-isachenko/Tenet-220B-A12B-Hy4-Unslop-v3",
         "model",
-        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-9B-Qwen3.5-Unslop-v3.",
-    ),
-    (
-        "mr-andrey-isachenko/Tenet-27B-Qwen3.5-Unslop-v3",
-        "model",
-        f"{_V3_V3_NOTE} Parent: Qwen3.5-27B.",
-    ),
-    (
-        "mr-andrey-isachenko/Tenet-27B-Qwen3.5-Unslop-v3-GGUF",
-        "model",
-        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-27B-Qwen3.5-Unslop-v3.",
-    ),
-    (
-        "mr-andrey-isachenko/Tenet-122B-A10B-Qwen3.5-Unslop-v3",
-        "model",
-        f"{_V3_V3_NOTE} Parent: Qwen3.5-122B-A10B MoE.",
-    ),
-    (
-        "mr-andrey-isachenko/Tenet-122B-A10B-Qwen3.5-Unslop-v3-GGUF",
-        "model",
-        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-122B-A10B-Qwen3.5-Unslop-v3.",
-    ),
-    (
-        "mr-andrey-isachenko/Tenet-120B-A12B-GLM4.5-Unslop-v3",
-        "model",
-        f"{_V3_V3_NOTE} Parent: zai-org/GLM-4.5 (120B-A12B MoE).",
-    ),
-    (
-        "mr-andrey-isachenko/Tenet-120B-A12B-GLM4.5-Unslop-v3-GGUF",
-        "model",
-        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-120B-A12B-GLM4.5-Unslop-v3.",
-    ),
-    (
-        "mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v3",
-        "model",
-        f"{_V3_V3_NOTE} Parent: Gemma-4-26B-A4B-it (26B-A4B MoE).",
-    ),
-    (
-        "mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v3-GGUF",
-        "model",
-        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-26B-A4B-Gemma4-Unslop-v3.",
+        f"{_V3_V3_NOTE} Parent: tencent/Hy4-flash (220B-A12B MoE).",
     ),
 ]
 

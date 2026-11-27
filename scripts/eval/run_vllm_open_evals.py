@@ -60,6 +60,10 @@ DEFAULT_API_BASE = "http://localhost:8080"
 
 ARMS = ("base", "naive", "tenet")
 
+# Score keys updated together when hendrycks_math500 is recomputed from raw
+# samples (cache rescue in main() and _recompute_math500_scores callers).
+MATH500_SCORE_KEYS = ("math_500", "hendrycks_math500", "hendrycks_math500_exact_match")
+
 # Zero-shot chat tasks that need the model's chat template with thinking
 # disabled (run separately under ``chat_0shot/`` when ``--split-chat-0shot``).
 ZERO_SHOT_CHAT_TASKS: tuple[str, ...] = ("ifeval", "hendrycks_math500")
@@ -341,17 +345,8 @@ def recompute_hendrycks_math500_from_samples(sub_dir: Path) -> float | None:
     return round(correct / total, 6)
 
 
-MATH500_SCORE_KEYS: tuple[str, ...] = (
-    "math_500",
-    "hendrycks_math500",
-    "hendrycks_math500_exact_match",
-)
-
-
 def _recompute_math500_scores(sub_dir: Path, scores: dict[str, float]) -> None:
     """Upgrade a near-zero math_500 score in-place from raw samples when possible."""
-    if sub_dir.name != "chat_0shot_math":
-        return
     if "hendrycks_math500" not in scores and "math_500" not in scores:
         return
     current = float(scores.get("math_500", 0.0) or 0.0)
@@ -378,6 +373,41 @@ def _load_release_json(path: Path) -> dict[str, Any]:
     except (json.JSONDecodeError, OSError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _num(value: Any) -> bool:
+    """True for finite real numbers (bools excluded)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+HEADLINE_EXT_KEYS: tuple[str, ...] = (
+    "ifeval_strict",
+    "ifeval_inst_strict",
+    "math_500",
+    "gsm8k_cot_strict",
+    "gsm8k_math_acc",
+    "gpqa_diamond",
+    "mmlu_pro",
+    "humaneval_pass1",
+    "mbpp_pass1",
+    "bfcl_tool_acc",
+    "eqbench_creative_writing",
+    "slop_score",
+    "unclosed_think_rate",
+)
+
+
+def _flat_arm_scores(block: Any) -> dict[str, float]:
+    """Extract flat numeric headline metrics from an arm payload block."""
+    raw_scores = (
+        block.get("scores")
+        if isinstance(block, dict) and isinstance(block.get("scores"), dict)
+        else (block if isinstance(block, dict) else {})
+    )
+    out = {k: float(raw_scores[k]) for k in HEADLINE_EXT_KEYS if _num(raw_scores.get(k))}
+    if isinstance(block, dict) and _num(block.get("unclosed_think_rate")):
+        out["unclosed_think_rate"] = float(block["unclosed_think_rate"])
+    return out
 
 
 def recompute_local_eval_releases(
@@ -466,7 +496,14 @@ def recompute_local_eval_releases(
                         changed = True
                 except (json.JSONDecodeError, OSError):
                     pass
-        if not changed:
+        rel_readme = (
+            (releases_root / release_id / "README.md") if releases_root is not None else None
+        )
+        needs_card_repair = rel_readme is not None and (
+            not rel_readme.exists()
+            or "Max row crest-factor: n/a" in rel_readme.read_text(encoding="utf-8")
+        )
+        if not changed and not needs_card_repair:
             continue
         arms = payload.get("arms")
         if isinstance(arms, dict) and {"base", "tenet"} <= set(arms):
@@ -511,15 +548,14 @@ def recompute_local_eval_releases(
                 "dry_run": dry_run,
             }
         )
-        if dry_run:
-            continue
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        if releases_root is not None:
-            rel_dir = releases_root / release_id
-            if rel_dir.is_dir():
-                (rel_dir / "external_benchmarks.json").write_text(
-                    json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-                )
+        if changed and not dry_run:
+            path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            if releases_root is not None:
+                rel_dir = releases_root / release_id
+                if rel_dir.is_dir():
+                    (rel_dir / "external_benchmarks.json").write_text(
+                        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+                    )
         generate_tenet_model_card = None  # type: ignore[assignment]
         render_model_index_yaml = None  # type: ignore[assignment]
         with contextlib.suppress(Exception):
@@ -542,16 +578,80 @@ def recompute_local_eval_releases(
             and generate_tenet_model_card is not None
         ):
             rel_dir = releases_root / release_id
-            foundry_path = rel_dir / "foundry_summary.json"
-            if foundry_path.exists():
-                try:
-                    summary = json.loads(foundry_path.read_text(encoding="utf-8"))
-                except (json.JSONDecodeError, OSError):
-                    summary = {}
-                if not isinstance(summary, dict):
-                    summary = {}
-                gate_data = _load_release_json(rel_dir / "fight_card_gate.json")
+            if (rel_dir / "foundry_summary.json").exists():
+                summary = _load_release_json(rel_dir / "foundry_summary.json")
+                v3_foundry_summary = _load_release_json(
+                    REPO_ROOT / "results" / "tenet_v3_foundry" / release_id / "foundry_summary.json"
+                )
+                h21 = dict(summary.get("h21") or {})
+                if isinstance(v3_foundry_summary.get("h21"), dict) and v3_foundry_summary[
+                    "h21"
+                ].get("h21_verified"):
+                    h21.update(v3_foundry_summary["h21"])
+
+                def _num(value: Any) -> bool:
+                    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+                card_metrics: dict[str, Any] = {}
+                flat_candidates = {
+                    "max_row_crest_factor": (
+                        h21.get("max_row_crest_factor")
+                        or summary.get("max_row_crest_factor")
+                        or (summary.get("h11") or {}).get("max_row_crest_factor")
+                    ),
+                    "max_block16_crest_factor": h21.get("max_block16_crest_factor"),
+                    "untouched_expert_ratio": h21.get("untouched_expert_ratio"),
+                    "router_weight_drift": h21.get("router_weight_drift"),
+                    "peak_host_ram_mb": (
+                        h21.get("peak_memory_mb") or summary.get("peak_host_ram_mb")
+                    ),
+                }
+                for key, value in flat_candidates.items():
+                    if _num(value):
+                        card_metrics[key] = value
                 strata_data = _load_release_json(rel_dir / "strata_bench.json")
+                strata_metrics = (
+                    (strata_data.get("report") or {}).get("metrics")
+                    or strata_data.get("metrics")
+                    or {}
+                )
+                for key in (
+                    "expert_cache_hit_rate",
+                    "coactivation_graph_drift",
+                    "speculative_acceptance_rate",
+                ):
+                    if _num(strata_metrics.get(key)):
+                        card_metrics[key] = strata_metrics[key]
+                flat_ext = _flat_arm_scores(payload.get("after"))
+                if flat_ext:
+                    card_metrics["external_benchmarks"] = flat_ext
+                comparison: dict[str, Any] = {}
+                if isinstance(payload.get("before"), dict) and isinstance(
+                    payload.get("after"), dict
+                ):
+                    b_flat = _flat_arm_scores(payload["before"])
+                    a_flat = _flat_arm_scores(payload["after"])
+                    if b_flat and a_flat:
+                        comparison["before"] = b_flat
+                        comparison["after"] = a_flat
+                        comparison["deltas"] = {
+                            k: round(a_flat[k] - b_flat[k], 6) for k in a_flat if k in b_flat
+                        }
+                if isinstance(payload.get("arms"), dict) and all(
+                    a in payload["arms"] for a in ("base", "naive", "tenet")
+                ):
+                    arms_flat = {
+                        a: _flat_arm_scores(payload["arms"][a]) for a in ("base", "naive", "tenet")
+                    }
+                    if all(arms_flat.values()):
+                        comparison["arms"] = arms_flat
+                        comparison["deltas_vs_naive"] = {
+                            k: round(arms_flat["tenet"][k] - arms_flat["naive"][k], 6)
+                            for k in arms_flat["tenet"]
+                            if k in arms_flat["naive"]
+                        }
+                if comparison:
+                    card_metrics["external_benchmarks_comparison"] = comparison
                 with contextlib.suppress(Exception):
                     card_md = generate_tenet_model_card(
                         str(payload.get("model_id") or release_id),
@@ -560,13 +660,7 @@ def recompute_local_eval_releases(
                             or summary.get("plan", {}).get("base_model")
                             or ""
                         ),
-                        {
-                            "external_benchmarks": payload,
-                            "fight_card_gate": gate_data,
-                            "strata_bench": strata_data,
-                            "h21": summary.get("h21"),
-                            "h22": summary.get("h22"),
-                        },
+                        card_metrics,
                         recipe_metadata=summary.get("plan"),
                     )
                     (rel_dir / "README.md").write_text(card_md, encoding="utf-8")
@@ -1241,8 +1335,10 @@ def _eval_arm(
             continue
         payload_found = True
         sub_scores = _flatten_lm_eval_scores(results)
+        # Recompute math_500 BEFORE publishing scores so MLflow and the merged
+        # arm scores receive the corrected value, not the broken 0.0.
+        _recompute_math500_scores(sub_dir, sub_scores)
         scores.update(sub_scores)
-        _recompute_math500_scores(sub_dir, scores)
         if log_open_evals_subtask is not None:
             try:
                 log_open_evals_subtask(
@@ -1470,6 +1566,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             os.replace(tmp_path, summary_path)
             continue
+        summary_invalidated = False
         if args.resume and summary_path.exists() and not args.dry_run:
             try:
                 cached = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -1487,10 +1584,39 @@ def main(argv: list[str] | None = None) -> int:
                     # but missing or near-zero, so _eval_arm runs chat_0shot_math
                     # while other cached subtasks remain reusable via --resume.
                     if math_required and math_missing:
+                        # Rescue first: if raw math samples exist on disk, the
+                        # near-zero score is likely the $-extraction bug, not a
+                        # broken run. Recompute from samples and reuse the
+                        # cached summary without deleting anything.
+                        recomputed: float | None = None
+                        for cand in (math_raw, base_raw / arm):
+                            if cand.is_dir():
+                                recomputed = recompute_hendrycks_math500_from_samples(cand)
+                                if recomputed is not None:
+                                    break
+                        if recomputed is not None and recomputed > 0.05:
+                            print(
+                                f"[{arm}] arm_summary.json math_500={math_score} "
+                                f"rescued from raw samples: {recomputed}; "
+                                "reusing cached summary without rerunning",
+                                flush=True,
+                            )
+                            for key in MATH500_SCORE_KEYS:
+                                cached_scores[key] = recomputed
+                            summary_path.parent.mkdir(parents=True, exist_ok=True)
+                            tmp_path = summary_path.with_suffix(".json.tmp")
+                            tmp_path.write_text(
+                                json.dumps(cached, indent=2, sort_keys=True) + "\n",
+                                encoding="utf-8",
+                            )
+                            os.replace(tmp_path, summary_path)
+                            arms[arm] = cached
+                            continue
                         # Do not reuse the summary as a whole when math_500 is
-                        # absent/near-zero: drop it, clear a broken math raw
-                        # dir, and rerun only chat_0shot_math while other
-                        # cached subtasks remain reusable via --resume.
+                        # absent/near-zero and no samples could rescue it:
+                        # drop it, clear a broken math raw dir, and rerun only
+                        # chat_0shot_math while other cached subtasks remain
+                        # reusable via --resume.
                         print(
                             f"[{arm}] arm_summary.json lacks usable math_500 "
                             f"(score={math_score}); invalidating cache and "
@@ -1498,6 +1624,7 @@ def main(argv: list[str] | None = None) -> int:
                             flush=True,
                         )
                         summary_path.unlink(missing_ok=True)
+                        summary_invalidated = True
                         if math_score <= 0.05:
                             shutil.rmtree(math_raw, ignore_errors=True)
                     else:
@@ -1536,7 +1663,7 @@ def main(argv: list[str] | None = None) -> int:
             sanity_gate=args.sanity_gate,
             release_id=args.release_id,
         )
-        if not args.dry_run:
+        if not args.dry_run and not summary_invalidated:
             tmp_path = summary_path.with_suffix(".json.tmp")
             tmp_path.write_text(
                 json.dumps(arms[arm], indent=2, sort_keys=True) + "\n", encoding="utf-8"

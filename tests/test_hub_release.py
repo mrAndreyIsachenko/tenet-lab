@@ -508,33 +508,40 @@ def test_resolve_gguf_repo_spec_v3_moe(
 
 
 def test_tenet_v3_collection_items_and_filtering(monkeypatch) -> None:
-    """Tenet v3 collection lists base + GGUF repos and skips unpublished ones."""
+    """Tenet v3 collection lists base + canonical GGUF repos; skips unpublished."""
     from scripts.hub import create_tenet_collection as ctc
 
     assert ctc.V3_TITLE
     assert ctc.V3_DESC
 
-    v3_bases = [
+    names = {item_id.rsplit("/", 1)[-1] for item_id, _, _ in ctc.V3_OPTIONAL_ITEMS}
+
+    # Canonical GGUF slugs (matching TENET_V2_GGUF_REPOS naming) must be present.
+    assert "Tenet-GLM-4.7-Flash-30B-A3B-Abliterated-Unslop-v3-GGUF" in names
+    assert "Tenet-Qwen3.6-35B-A3B-Abliterated-Unslop-v3-GGUF" in names
+
+    # Full canonical lineup from TENET_V3_MODEL_SPECS.
+    for base in (
         "Tenet-30B-A3B-GLM4.7-Unslop-v3",
         "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
         "Tenet-26B-A3B-Inkling2-Unslop-v3",
-        "Tenet-106B-A12B-GLM4.5-Unslop-v3",
         "Tenet-15B-A2B-Inkling2-Unslop-v3",
-        "Tenet-9B-Qwen3.5-Unslop-v3",
-        "Tenet-27B-Qwen3.5-Unslop-v3",
-        "Tenet-122B-A10B-Qwen3.5-Unslop-v3",
-        "Tenet-120B-A12B-GLM4.5-Unslop-v3",
-        "Tenet-26B-A4B-Gemma4-Unslop-v3",
-    ]
-    names = {item_id.rsplit("/", 1)[-1] for item_id, _, _ in ctc.V3_OPTIONAL_ITEMS}
-    for base in v3_bases:
+        "Tenet-106B-A12B-GLM4.5-Unslop-v3",
+        "Tenet-125B-A6B-Qwen3.8-Unslop-v3",
+        "Tenet-220B-A12B-Hy4-Unslop-v3",
+    ):
         assert base in names
-        assert f"{base}-GGUF" in names
+
+    # Bogus GGUF repo names and non-spec entries must not leak back in.
+    assert "Tenet-35B-A3B-Qwen3.6-Unslop-v3-GGUF" not in names
+    for bogus in names:
+        assert "Qwen3.5" not in bogus
+        assert bogus != "Tenet-120B-A12B-GLM4.5-Unslop-v3-GGUF"
 
     # main() filters V3_OPTIONAL_ITEMS through _repo_exists before upserting.
     published = {
-        "mr-andrey-isachenko/Tenet-9B-Qwen3.5-Unslop-v3",
-        "mr-andrey-isachenko/Tenet-9B-Qwen3.5-Unslop-v3-GGUF",
+        "mr-andrey-isachenko/Tenet-30B-A3B-GLM4.7-Unslop-v3",
+        "mr-andrey-isachenko/Tenet-GLM-4.7-Flash-30B-A3B-Abliterated-Unslop-v3-GGUF",
     }
 
     monkeypatch.setattr(ctc, "_load_env_token", lambda: "hf-test")
