@@ -21,7 +21,7 @@ from sml.evals.artifact_verifier import (
     evaluate_arena_house_series,
     verify_house_artifact,
 )
-from sml.evals.peer_eval import run_peer_eval_gate
+from sml.evals.peer_eval import run_paired_behavioral_gate, run_peer_eval_gate
 
 _EXPECTED_CATEGORIES = (
     "think_verification",
@@ -497,6 +497,83 @@ def test_run_peer_eval_gate_bare_numeric_surface_is_not_collapse() -> None:
     contrast = run_peer_eval_gate(responses=["roughly four thousand"], require_think=False)
     assert contrast["gate_passed"] is False
     assert contrast["gate_details"]["length_collapse"]["passed"] is False
+
+
+# ---------------------------------------------------------------------------
+# run_paired_behavioral_gate: paired length_collapse vs base arm.
+# ---------------------------------------------------------------------------
+
+_LONG_SENTENCE = (
+    "Postgres keeps each table as a heap of pages, and every page stores a "
+    "compact tuple layout plus visibility bits so sequential scans stay cheap."
+)
+
+
+def _long_response(long_words: int) -> str:
+    body = " ".join([_LONG_SENTENCE] * max(1, long_words // 25))
+    return f"<think>\nPlan the answer structure carefully.\n</think>\n{body}"
+
+
+def _house_arm(short_count: int, long_words: int, total: int = 24) -> list[str]:
+    responses = [_long_response(long_words) for _ in range(total)]
+    # Exact-numeric prompts are never collapse-eligible, so collapsed answers
+    # must land on a non-exact-numeric spec index or the rate stays at zero.
+    eligible_indices = [
+        i
+        for i, spec in enumerate(TENET_ARENA_HOUSE_SERIES)
+        if spec.artifact_type != "exact_numeric"
+    ]
+    for i in eligible_indices[:short_count]:
+        responses[i] = "<think>\nShort plan.\n</think>\nSure."
+    return responses
+
+
+def _collapse_rate() -> float:
+    """Collapse rate for one short answer over all non-exact-numeric house specs."""
+    eligible = sum(1 for spec in TENET_ARENA_HOUSE_SERIES if spec.artifact_type != "exact_numeric")
+    return 1 / eligible
+
+
+def test_run_paired_behavioral_gate_length_collapse_passes_against_matching_base() -> None:
+    result = run_paired_behavioral_gate(
+        base_house_responses=_house_arm(1, 100),
+        tenet_house_responses=_house_arm(1, 100),
+        base_refusal_responses=[],
+        tenet_refusal_responses=[],
+        base_slop_responses=[],
+        tenet_slop_responses=[],
+    )
+
+    # 1 collapsed response out of the 20 non-exact-numeric prompts exceeds the
+    # absolute 0.01 gate, but the base arm collapses at the same rate with
+    # comparable mean response words, so the paired gate passes.
+    assert result["length_collapse_rate"] == pytest.approx(_collapse_rate(), abs=1e-3)
+    assert result["house_base"]["length_collapse_rate"] == pytest.approx(_collapse_rate(), abs=1e-3)
+    assert result["gate_details"]["length_collapse"]["base_value"] == pytest.approx(
+        _collapse_rate(), abs=1e-3
+    )
+    assert result["gate_details"]["length_collapse"]["passed"] is True
+    assert result["gate_passed"] is True
+
+
+def test_run_paired_behavioral_gate_length_collapse_fails_on_shrunk_mean_words() -> None:
+    result = run_paired_behavioral_gate(
+        base_house_responses=_house_arm(1, 100),
+        tenet_house_responses=_house_arm(1, 30),
+        base_refusal_responses=[],
+        tenet_refusal_responses=[],
+        base_slop_responses=[],
+        tenet_slop_responses=[],
+    )
+
+    # Same collapse rate as base, but tenet mean response words dropped below
+    # half of the base arm's, so the paired length_collapse gate must fail.
+    assert result["gate_details"]["length_collapse"]["base_value"] == pytest.approx(
+        _collapse_rate(), abs=1e-3
+    )
+    assert result["gate_details"]["length_collapse"]["passed"] is False
+    assert result["gate_passed"] is False
+    assert result["mean_response_words"] < 0.5 * result["house_base"]["mean_response_words"]
 
 
 # ---------------------------------------------------------------------------

@@ -505,3 +505,56 @@ def test_resolve_gguf_repo_spec_v3_moe(
     assert spec["base_model"] == expected_base_model
     assert spec["is_moe"] is True
     assert spec["file_stem"] == expected_gguf_repo.removesuffix("-GGUF")
+
+
+def test_tenet_v3_collection_items_and_filtering(monkeypatch) -> None:
+    """Tenet v3 collection lists base + GGUF repos and skips unpublished ones."""
+    from scripts.hub import create_tenet_collection as ctc
+
+    assert ctc.V3_TITLE
+    assert ctc.V3_DESC
+
+    v3_bases = [
+        "Tenet-30B-A3B-GLM4.7-Unslop-v3",
+        "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+        "Tenet-26B-A3B-Inkling2-Unslop-v3",
+        "Tenet-106B-A12B-GLM4.5-Unslop-v3",
+        "Tenet-15B-A2B-Inkling2-Unslop-v3",
+        "Tenet-9B-Qwen3.5-Unslop-v3",
+        "Tenet-27B-Qwen3.5-Unslop-v3",
+        "Tenet-122B-A10B-Qwen3.5-Unslop-v3",
+        "Tenet-120B-A12B-GLM4.5-Unslop-v3",
+        "Tenet-26B-A4B-Gemma4-Unslop-v3",
+    ]
+    names = {item_id.rsplit("/", 1)[-1] for item_id, _, _ in ctc.V3_OPTIONAL_ITEMS}
+    for base in v3_bases:
+        assert base in names
+        assert f"{base}-GGUF" in names
+
+    # main() filters V3_OPTIONAL_ITEMS through _repo_exists before upserting.
+    published = {
+        "mr-andrey-isachenko/Tenet-9B-Qwen3.5-Unslop-v3",
+        "mr-andrey-isachenko/Tenet-9B-Qwen3.5-Unslop-v3-GGUF",
+    }
+
+    monkeypatch.setattr(ctc, "_load_env_token", lambda: "hf-test")
+    monkeypatch.setattr(
+        ctc,
+        "_repo_exists",
+        lambda api, item_id, item_type: item_id in published,
+    )
+    captured: dict[str, list[tuple[str, str]]] = {}
+
+    def fake_upsert(api, *, title, description, items, remove_ids=None):
+        if title == ctc.V3_TITLE:
+            captured["items"] = [(item_id, item_type) for item_id, item_type, _ in items]
+        return f"https://huggingface.co/collections/{title}"
+
+    monkeypatch.setattr(ctc, "_upsert_collection", fake_upsert)
+
+    ctc.main()  # must not raise even though most optional repos are unpublished
+
+    assert {item_id for item_id, _ in captured["items"]} == published
+    # Unpublished repos were filtered out, not passed through.
+    for item_id, _ in captured["items"]:
+        assert item_id in published

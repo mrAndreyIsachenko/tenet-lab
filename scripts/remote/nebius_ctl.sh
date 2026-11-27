@@ -44,6 +44,8 @@ shift || true
 S3_ENDPOINT="https://storage.eu-north1.nebius.cloud"
 S3_BUCKET="${NEBIUS_S3_BUCKET:-tenet-v3-artifacts}"
 RESULTS_DIR="${NEBIUS_RESULTS_DIR:-/mnt/nvme/tenet-lab/results}"
+# Local destination for s3-sync-down on the workstation (NEBIUS_RESULTS_DIR is a VM path).
+LOCAL_RESULTS_DIR="${NEBIUS_LOCAL_RESULTS_DIR:-$(pwd)/results}"
 INSTANCE_ID="${NEBIUS_INSTANCE_ID:-}"
 SSH_HOST="${NEBIUS_SSH_HOST:-}"
 
@@ -254,9 +256,13 @@ s3_sync() {
     if [[ "$direction" == "up" ]]; then
       log "DRY-RUN s3-sync-up: '$RESULTS_DIR' -> 's3://$S3_BUCKET/results' (endpoint $S3_ENDPOINT)"
     else
-      log "DRY-RUN s3-sync-down: 's3://$S3_BUCKET/results' -> '$RESULTS_DIR' (endpoint $S3_ENDPOINT)"
+      log "DRY-RUN s3-sync-down: 's3://$S3_BUCKET/results' -> '$LOCAL_RESULTS_DIR' (endpoint $S3_ENDPOINT)"
     fi
     return
+  fi
+  # Ensure the local destination exists even when the sync itself is skipped.
+  if [[ "$direction" == "down" ]]; then
+    mkdir -p "$LOCAL_RESULTS_DIR"
   fi
   if [[ -z "${AWS_ACCESS_KEY_ID:-}" ]] && [[ ! -f "$HOME/.aws/credentials" ]]; then
     log "s3-sync-${direction:-cmd}: static S3 credentials not set; skipping (persisted via HF Hub & rsync)"
@@ -266,15 +272,15 @@ s3_sync() {
     if [[ "$direction" == "up" ]]; then
       s5cmd --endpoint-url "$S3_ENDPOINT" sync "${RESULTS_DIR%/}/*" "s3://$S3_BUCKET/results/"
     else
-      mkdir -p "$RESULTS_DIR"
-      s5cmd --endpoint-url "$S3_ENDPOINT" sync "s3://$S3_BUCKET/results/*" "${RESULTS_DIR%/}/"
+      mkdir -p "$LOCAL_RESULTS_DIR"
+      s5cmd --endpoint-url "$S3_ENDPOINT" sync "s3://$S3_BUCKET/results/*" "${LOCAL_RESULTS_DIR%/}/"
     fi
   else
     if [[ "$direction" == "up" ]]; then
       aws s3 sync --endpoint-url "$S3_ENDPOINT" "$RESULTS_DIR" "s3://$S3_BUCKET/results" | sed 's/^/[nebius_ctl][aws] /'
     else
-      mkdir -p "$RESULTS_DIR"
-      aws s3 sync --endpoint-url "$S3_ENDPOINT" "s3://$S3_BUCKET/results" "$RESULTS_DIR" | sed 's/^/[nebius_ctl][aws] /'
+      mkdir -p "$LOCAL_RESULTS_DIR"
+      aws s3 sync --endpoint-url "$S3_ENDPOINT" "s3://$S3_BUCKET/results" "$LOCAL_RESULTS_DIR" | sed 's/^/[nebius_ctl][aws] /'
     fi
   fi
 }

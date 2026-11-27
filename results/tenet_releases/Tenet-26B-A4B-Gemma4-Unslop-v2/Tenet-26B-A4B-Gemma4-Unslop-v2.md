@@ -119,7 +119,7 @@ precision.
 | FP8 (E4M3) | n/a |
 | Naive Abliteration | n/a |
 
-Max row crest-factor: 5.87
+Max row crest-factor: n/a
 
 ## Why Tenet instead of Naive Abliteration?
 
@@ -130,29 +130,13 @@ Max row crest-factor: 5.87
 | Tool/SQL Anchor Orthogonality | — | — | — | — |
 | LoRA Re-Leakage | — | — | — | — |
 | FP8 Subspace Re-Leakage | — | — | — | — |
-| Max Row Crest-Factor (< 25.0) | — | — | 5.87 | 5.87 |
+| Max Row Crest-Factor (< 25.0) | — | — | — | — |
 
 ## External Benchmarks
 
 | Benchmark | Score |
 | --- | --- |
 | Unclosed <think> Rate | 0.00 |
-
-## Strata Engine, Speculative Decoding & Nebius Benchmark Passport
-
-Tenet-26B-A4B-Gemma4-Unslop-v2 ships with **Strata** telemetry (H21 expert-cache / coactivation
-graph and H22 speculative decoding passes). The full telemetry bundle is
-published alongside the checkpoint as
-[`strata.toml`](strata.toml) - versioned, checksummed and consumed by the
-Nebius benchmark passport pipeline.
-
-| Telemetry | Value |
-| --- | --- |
-| `expert_cache_hit_rate` (H21) | n/a |
-| `coactivation_graph_drift` (H21) | n/a |
-| `speculative_acceptance_rate` (H22) | n/a |
-| `untouched_expert_ratio` | 18.8% |
-| `peak_host_ram_mb` | n/a |
 
 ## Side-by-Side: Naive Abliteration vs Tenet (Engineering & SQL Tool-Call)
 

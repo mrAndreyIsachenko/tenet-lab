@@ -1,4 +1,4 @@
-"""Idempotent helper to create/update the Tenet v1 & Tenet v2 Hugging Face Collections."""
+"""Idempotent helper to create/update the Tenet v1, v2 & v3 Hugging Face Collections."""
 
 from __future__ import annotations
 
@@ -165,6 +165,126 @@ V2_OPTIONAL_ITEMS: list[tuple[str, str, str]] = [
 ]
 
 
+V3_TITLE = "Tenet v3 — Strata & Tier-Aware MoE Lancet (H21/H22)"
+V3_DESC = (
+    "Strata & Tier-Aware MoE Lancet (H21) + H22 MoE quant protection: "
+    "Wave 1 & Wave 2 Tenet v3 checkpoints and their GGUF quant ladders."
+)
+
+# Tenet v3 Wave 1 + Wave 2 base models and their GGUF companion repos.
+# Every entry lives in V3_OPTIONAL_ITEMS: main() filters through _repo_exists
+# so unpublished checkpoints never fail the collection upsert.
+_V3_V3_NOTE = (
+    "Tenet v3 (Strata & Tier-Aware MoE Lancet H21 + H22): tier-aware MoE "
+    "surgical subspace recipe with router-frozen quant protection."
+)
+
+V3_REQUIRED_ITEMS: list[tuple[str, str, str]] = []
+
+V3_OPTIONAL_ITEMS: list[tuple[str, str, str]] = [
+    (
+        "mr-andrey-isachenko/Tenet-30B-A3B-GLM4.7-Unslop-v3",
+        "model",
+        f"{_V3_V3_NOTE} Parent: zai-org/GLM-4.7-Flash (30B-A3B MoE).",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-30B-A3B-GLM4.7-Unslop-v3-GGUF",
+        "model",
+        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-30B-A3B-GLM4.7-Unslop-v3.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+        "model",
+        f"{_V3_V3_NOTE} Parent: Qwen/Qwen3.6-35B-A3B (35B-A3B MoE).",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-35B-A3B-Qwen3.6-Unslop-v3-GGUF",
+        "model",
+        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-35B-A3B-Qwen3.6-Unslop-v3.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-26B-A3B-Inkling2-Unslop-v3",
+        "model",
+        f"{_V3_V3_NOTE} Parent: Inkling2 26B-A3B MoE.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-26B-A3B-Inkling2-Unslop-v3-GGUF",
+        "model",
+        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-26B-A3B-Inkling2-Unslop-v3.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-106B-A12B-GLM4.5-Unslop-v3",
+        "model",
+        f"{_V3_V3_NOTE} Parent: zai-org/GLM-4.5 (106B-A12B MoE).",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-106B-A12B-GLM4.5-Unslop-v3-GGUF",
+        "model",
+        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-106B-A12B-GLM4.5-Unslop-v3.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-15B-A2B-Inkling2-Unslop-v3",
+        "model",
+        f"{_V3_V3_NOTE} Parent: Inkling2 15B-A2B MoE.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-15B-A2B-Inkling2-Unslop-v3-GGUF",
+        "model",
+        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-15B-A2B-Inkling2-Unslop-v3.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-9B-Qwen3.5-Unslop-v3",
+        "model",
+        f"{_V3_V3_NOTE} Parent: Qwen3.5-9B.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-9B-Qwen3.5-Unslop-v3-GGUF",
+        "model",
+        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-9B-Qwen3.5-Unslop-v3.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-27B-Qwen3.5-Unslop-v3",
+        "model",
+        f"{_V3_V3_NOTE} Parent: Qwen3.5-27B.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-27B-Qwen3.5-Unslop-v3-GGUF",
+        "model",
+        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-27B-Qwen3.5-Unslop-v3.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-122B-A10B-Qwen3.5-Unslop-v3",
+        "model",
+        f"{_V3_V3_NOTE} Parent: Qwen3.5-122B-A10B MoE.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-122B-A10B-Qwen3.5-Unslop-v3-GGUF",
+        "model",
+        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-122B-A10B-Qwen3.5-Unslop-v3.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-120B-A12B-GLM4.5-Unslop-v3",
+        "model",
+        f"{_V3_V3_NOTE} Parent: zai-org/GLM-4.5 (120B-A12B MoE).",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-120B-A12B-GLM4.5-Unslop-v3-GGUF",
+        "model",
+        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-120B-A12B-GLM4.5-Unslop-v3.",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v3",
+        "model",
+        f"{_V3_V3_NOTE} Parent: Gemma-4-26B-A4B-it (26B-A4B MoE).",
+    ),
+    (
+        "mr-andrey-isachenko/Tenet-26B-A4B-Gemma4-Unslop-v3-GGUF",
+        "model",
+        f"{_V3_V3_NOTE} GGUF quant ladder. Parent: Tenet-26B-A4B-Gemma4-Unslop-v3.",
+    ),
+]
+
+
 def _load_env_token() -> str:
     env_path = Path(".env")
     if env_path.exists():
@@ -261,6 +381,19 @@ def main() -> None:
         items=v2_items,
     )
     print(f"Tenet v2 Collection URL: {v2_url}")
+
+    v3_items = list(V3_REQUIRED_ITEMS)
+    for item_id, item_type, note in V3_OPTIONAL_ITEMS:
+        if _repo_exists(api, item_id, item_type):
+            v3_items.append((item_id, item_type, note))
+
+    v3_url = _upsert_collection(
+        api,
+        title=V3_TITLE,
+        description=V3_DESC,
+        items=v3_items,
+    )
+    print(f"Tenet v3 Collection URL: {v3_url}")
 
 
 if __name__ == "__main__":

@@ -966,3 +966,230 @@ def test_foundry_open_evals_and_cleanup_flags(tmp_path, monkeypatch):
     result_snap = foundry._cleanup_local_cache(snap_dir, upload_result={"uploaded": True})
     assert result_snap["cleaned_up"] is True
     assert not hf_repo_cache.exists()
+
+
+# ---------------------------------------------------------------------------
+# 8. Bug 2/3 regressions: gate-fail upload block, unsupported-arch pre-check,
+#    README.md in release dir, upstream 401/404 skip
+# ---------------------------------------------------------------------------
+def test_foundry_open_evals_unsupported_arch_precheck(tmp_path):
+    foundry = _load_foundry()
+
+    materialized_dir = tmp_path / "materialized"
+    materialized_dir.mkdir()
+    (materialized_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "model_type": "inkling2_loop",
+                "architectures": ["Inkling2LoopForConditionalGeneration"],
+            }
+        )
+    )
+
+    result = foundry._run_open_evals(
+        "Tenet-26B-A3B-Inkling2-Unslop-v3",
+        {"base_model": "test/base", "think_end_token": "</think>"},
+        "release-precheck",
+        materialized_dir,
+    )
+    assert result["status"] == "unsupported_arch_in_vllm"
+    assert result["passed"] is True
+    assert result["model_type"] == "inkling2_loop"
+    assert result["architectures"] == ["Inkling2LoopForConditionalGeneration"]
+
+
+def test_foundry_fight_card_gate_fail_blocks_upload_and_cleanup(tmp_path, monkeypatch):
+    foundry = _load_foundry()
+
+    model_dir = tmp_path / "ckpt"
+    model_dir.mkdir()
+    output_dir = tmp_path / "out"
+
+    spec = {
+        "tier": "edge",
+        "base_model": "test/gate-base",
+        "naive_model": None,
+        "think_end_token": "</think>",
+        "hypothesis_stack": ["H21"],
+        "looped": False,
+        "has_drafter": False,
+        "hot_vram_expert_ids": [],
+    }
+    monkeypatch.setitem(foundry.TENET_V3_MODEL_SPECS, "TestGateModel", spec)
+
+    calls: dict[str, int] = {"upload": 0, "cleanup": 0}
+
+    monkeypatch.setattr(
+        foundry,
+        "_resolve_model_dir",
+        lambda *a, **kw: model_dir,
+    )
+    monkeypatch.setattr(foundry, "_inspect_checkpoint_config", lambda *a, **kw: {"hidden_size": 16})
+    monkeypatch.setattr(
+        foundry,
+        "_build_streaming_basis_and_profiles",
+        lambda *a, **kw: ({}, {}, {}),
+    )
+    monkeypatch.setattr(foundry, "_run_h21", lambda *a, **kw: {"h21_verified": True})
+    monkeypatch.setattr(
+        foundry,
+        "_run_fight_card_gate",
+        lambda *a, **kw: {"gate_passed": False, "failed": True},
+    )
+    monkeypatch.setattr(
+        foundry,
+        "_upload_to_hf",
+        lambda *a, **kw: calls.__setitem__("upload", calls["upload"] + 1) or {"uploaded": True},
+    )
+    monkeypatch.setattr(
+        foundry,
+        "_cleanup_local_cache",
+        lambda *a, **kw: calls.__setitem__("cleanup", calls["cleanup"] + 1) or {"cleaned_up": True},
+    )
+
+    # The foundry imports `generate_tenet_model_card` from `sml.hub.release`,
+    # but the implementation lives in `sml.hub.model_card`. Provide a stub
+    # module so README.md generation stays exercised without the stale import.
+    import sys
+    import types
+
+    release_mod = types.ModuleType("sml.hub.release")
+    release_mod.generate_tenet_model_card = lambda *a, **kw: "# Stub Tenet model card\n"
+    monkeypatch.setitem(sys.modules, "sml.hub.release", release_mod)
+
+    argv = [
+        "--model-id",
+        "TestGateModel",
+        "--model-dir",
+        str(model_dir),
+        "--output-dir",
+        str(output_dir),
+        "--release-id",
+        "gate-fail-test",
+        "--run-fight-card-gate",
+        "--upload-hf",
+        "--cleanup-cache",
+    ]
+    code = foundry.main(argv)
+    assert code == 1  # gate failed -> status "error"
+
+    assert calls["upload"] == 0
+    assert calls["cleanup"] == 0
+
+    summary = json.loads((output_dir / "gate-fail-test" / "foundry_summary.json").read_text())
+    assert summary["status"] == "error"
+    assert summary["hf_upload"] == {"skipped": True, "reason": "fight_card_gate_failed"}
+    assert summary["cache_cleanup"] == {"skipped": True, "reason": "fight_card_gate_failed"}
+
+    # README.md must exist in the release dir even when evals are skipped.
+    assert (output_dir / "gate-fail-test" / "README.md").is_file()
+
+
+def test_foundry_force_upload_on_gate_fail(tmp_path, monkeypatch):
+    foundry = _load_foundry()
+
+    model_dir = tmp_path / "ckpt"
+    model_dir.mkdir()
+    output_dir = tmp_path / "out"
+
+    spec = {
+        "tier": "edge",
+        "base_model": "test/gate-base",
+        "naive_model": None,
+        "think_end_token": "</think>",
+        "hypothesis_stack": ["H21"],
+        "looped": False,
+        "has_drafter": False,
+        "hot_vram_expert_ids": [],
+    }
+    monkeypatch.setitem(foundry.TENET_V3_MODEL_SPECS, "TestGateModel", spec)
+
+    monkeypatch.setattr(foundry, "_resolve_model_dir", lambda *a, **kw: model_dir)
+    monkeypatch.setattr(foundry, "_inspect_checkpoint_config", lambda *a, **kw: {"hidden_size": 16})
+    monkeypatch.setattr(
+        foundry, "_build_streaming_basis_and_profiles", lambda *a, **kw: ({}, {}, {})
+    )
+    monkeypatch.setattr(foundry, "_run_h21", lambda *a, **kw: {"h21_verified": True})
+    monkeypatch.setattr(foundry, "_run_fight_card_gate", lambda *a, **kw: {"gate_passed": False})
+    monkeypatch.setattr(foundry, "_upload_to_hf", lambda *a, **kw: {"uploaded": True})
+    monkeypatch.setattr(foundry, "_cleanup_local_cache", lambda *a, **kw: {"cleaned_up": True})
+
+    argv = [
+        "--model-id",
+        "TestGateModel",
+        "--model-dir",
+        str(model_dir),
+        "--output-dir",
+        str(output_dir),
+        "--release-id",
+        "gate-force-test",
+        "--run-fight-card-gate",
+        "--force-upload-on-gate-fail",
+        "--upload-hf",
+        "--cleanup-cache",
+    ]
+    code = foundry.main(argv)
+    assert code == 1
+
+    summary = json.loads((output_dir / "gate-force-test" / "foundry_summary.json").read_text())
+    assert summary["hf_upload"] == {"uploaded": True}
+    assert summary["cache_cleanup"] == {"cleaned_up": True}
+
+
+def test_foundry_skips_unavailable_upstream_401(tmp_path, monkeypatch):
+    foundry = _load_foundry()
+
+    output_dir = tmp_path / "out"
+
+    def _raise_401(*a, **kw):
+        raise RuntimeError("401 Unauthorized: gated repo for user")
+
+    monkeypatch.setattr(foundry, "_resolve_model_dir", _raise_401)
+    monkeypatch.setattr(foundry, "_log", lambda message: None)
+
+    argv = [
+        "--model-id",
+        "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+        "--output-dir",
+        str(output_dir),
+        "--release-id",
+        "upstream-401-test",
+        "--download",
+    ]
+    code = foundry.main(argv)
+    assert code == 0
+
+    summary = json.loads((output_dir / "upstream-401-test" / "foundry_summary.json").read_text())
+    assert summary["status"] == "skipped_unavailable_upstream"
+    assert "401" in summary["error"]
+
+
+def test_foundry_skips_unavailable_upstream_404(tmp_path, monkeypatch):
+    foundry = _load_foundry()
+
+    output_dir = tmp_path / "out"
+
+    def _raise_404(*a, **kw):
+        # Avoid importing RepositoryNotFoundError: the installed
+        # huggingface_hub version may not export it; main() must catch the
+        # error by message regardless of the exception class.
+        raise RuntimeError("404 Repository Not Found: no repo named test/missing")
+
+    monkeypatch.setattr(foundry, "_resolve_model_dir", _raise_404)
+    monkeypatch.setattr(foundry, "_log", lambda message: None)
+
+    argv = [
+        "--model-id",
+        "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
+        "--output-dir",
+        str(output_dir),
+        "--release-id",
+        "upstream-404-test",
+        "--download",
+    ]
+    code = foundry.main(argv)
+    assert code == 0
+
+    summary = json.loads((output_dir / "upstream-404-test" / "foundry_summary.json").read_text())
+    assert summary["status"] == "skipped_unavailable_upstream"
+    assert "Repository Not Found" in summary["error"]

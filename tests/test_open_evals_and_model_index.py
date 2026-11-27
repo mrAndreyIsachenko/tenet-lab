@@ -419,6 +419,85 @@ class TestResolveMmluProLimit:
         assert isinstance(resolved, int)
 
 
+class TestMath500Recompute:
+    def test_last_boxed_and_equivalence(self, vllm_runner):
+        text = "Reasoning with $(0,3)$ and other $x$ steps.\n\\boxed{(3, \\frac{\\pi}{2})}"
+        assert vllm_runner._last_boxed_only_string(text) == "(3, \\frac{\\pi}{2})"
+        assert vllm_runner._remove_boxed("(3, \\frac{\\pi}{2})") == "(3, \\frac{\\pi}{2})"
+        assert vllm_runner._math_answers_equiv(
+            "(3, \\frac{\\pi}{2})", "\\left( 3, \\frac{\\pi}{2} \\right)"
+        )
+
+    def test_recompute_from_samples_real_world_case(self, vllm_runner, tmp_path):
+        rows = [
+            {
+                "target": "\\left( 3, \\frac{\\pi}{2} \\right)",
+                "resps": [["$(0,3)$ ... intermediate $x$ steps ... \\boxed{(3, \\frac{\\pi}{2})"]],
+            },
+            {"target": "2", "resps": [["\\boxed{2}"]]},
+            {"target": "5", "resps": [["\\boxed{4}"]]},
+        ]
+        sub = tmp_path / "chat_0shot_math"
+        sub.mkdir()
+        with (sub / "samples_hendrycks_math500_2026.jsonl").open("w", encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(json.dumps(row) + "\n")
+        assert vllm_runner.recompute_hendrycks_math500_from_samples(sub) == round(2 / 3, 6)
+
+    def test_recompute_real_release_dir(self, vllm_runner):
+        real_dir = (
+            REPO_ROOT
+            / "results"
+            / "external_evals"
+            / "Tenet-35B-A3B-Qwen3.6-Unslop-v3"
+            / "raw"
+            / "tenet"
+            / "chat_0shot_math"
+        )
+        if not (real_dir.is_dir() and list(real_dir.rglob("samples_hendrycks_math500_*.jsonl"))):
+            pytest.skip("real chat_0shot_math samples not present on disk")
+        score = vllm_runner.recompute_hendrycks_math500_from_samples(real_dir)
+        assert score is not None
+        assert score > 0.70
+
+    @pytest.mark.parametrize("marker", ["401 Unauthorized", "inkling2_loop"])
+    def test_fatal_markers_stop_on_first_attempt(self, vllm_runner, tmp_path, monkeypatch, marker):
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, log_path=None):
+            calls.append(cmd)
+            return 1, "", f"Traceback: {marker} failed"
+
+        def boom(seconds):
+            raise AssertionError("sleep must not be called on fatal markers")
+
+        monkeypatch.setattr(vllm_runner, "_run_subtask_with_cleanup", fake_run)
+        monkeypatch.setattr(vllm_runner.time, "sleep", boom)
+        record = vllm_runner._eval_arm(
+            "base",
+            "org/model",
+            tasks=("hendrycks_math500",),
+            evalplus_tasks=(),
+            eqbench_tasks=(),
+            raw_dir=tmp_path / "raw",
+            limit=None,
+            backend="vllm",
+            precision="bf16",
+            batch_size="auto",
+            tensor_parallel_size=1,
+            gpu_memory_utilization=0.9,
+            max_model_len=16384,
+            max_gen_toks=8192,
+            think_start_token="<think>",
+            think_end_token="</think>",
+            api_base=None,
+            dry_run=False,
+            max_retries=2,
+        )
+        assert record["status"] == "error"
+        assert len(calls) == 1
+
+
 def _eval_arm_kwargs(vllm_runner: Any, raw_dir: Path, **overrides: Any) -> dict[str, Any]:
     """Default keyword arguments for ``_eval_arm`` (full suite profile)."""
     profile = vllm_runner.SUITE_PROFILES["full"]

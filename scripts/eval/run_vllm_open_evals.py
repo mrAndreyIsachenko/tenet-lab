@@ -34,6 +34,7 @@ import argparse
 import contextlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -65,7 +66,8 @@ ZERO_SHOT_CHAT_TASKS: tuple[str, ...] = ("ifeval", "hendrycks_math500")
 DEFAULT_CHAT_0SHOT_MAX_GEN_TOKS = 1280
 DEFAULT_CHAT_0SHOT_MATH_MAX_GEN_TOKS = 2048
 DEFAULT_MATH_500_SYSTEM_INSTRUCTION = (
-    "Please reason step by step, and put your final answer within \\boxed{}."
+    "Please reason step by step without using $ delimiters for intermediate "
+    "steps, and put only your final answer within \\boxed{}."
 )
 
 # Reference to the pristine subprocess.run so tests that monkeypatch
@@ -181,6 +183,395 @@ def extract_lm_eval_samples_unclosed_think_rate(
     return compute_unclosed_think_rate(
         texts, think_start_token=think_start_token, think_end_token=think_end_token
     )
+
+
+# ---------------------------------------------------------------------------
+# Pure helpers: deterministic boxed-answer extraction & math equivalence
+# ---------------------------------------------------------------------------
+
+
+def _last_boxed_only_string(text: str) -> str | None:
+    """Return the contents of the last ``\\boxed{...}`` / ``\\fbox{...}`` (balanced braces)."""
+    best: tuple[int, str] | None = None
+    for cmd in ("\\boxed", "\\fbox"):
+        idx = text.find(cmd)
+        while idx != -1:
+            i = idx + len(cmd)
+            while i < len(text) and text[i] != "{":
+                if not text[i].isspace():
+                    break
+                i += 1
+            if i < len(text) and text[i] == "{":
+                depth = 0
+                j = i
+                closed = False
+                while j < len(text):
+                    if text[j] == "{":
+                        depth += 1
+                    elif text[j] == "}":
+                        depth -= 1
+                        if depth == 0:
+                            closed = True
+                            break
+                    j += 1
+                # A truncated response may open ``\boxed{`` without closing it;
+                # fall back to the remainder of the text so the answer is still
+                # recoverable instead of dropping the sample.
+                content = text[i + 1 : j] if closed else text[i + 1 :]
+                if best is None or idx > best[0]:
+                    best = (idx, content)
+            idx = text.find(cmd, idx + len(cmd))
+    return best[1] if best is not None else None
+
+
+def _remove_boxed(text: str) -> str:
+    """Strip a leading ``\\boxed{`` / ``\\fbox{`` and the trailing ``}``."""
+    for cmd in ("\\boxed{", "\\fbox{"):
+        if text.startswith(cmd) and text.endswith("}"):
+            return text[len(cmd) : -1]
+    return text
+
+
+def _normalize_math_answer(expr: str) -> str:
+    """Canonicalize a LaTeX math answer for string comparison."""
+    if expr is None:
+        return ""
+    s = str(expr).strip().replace("$", "")
+    s = s.replace("\\left", "").replace("\\right", "")
+    s = re.sub(r"\\text\{[^{}]*\}", "", s)
+    s = re.sub(r"\\mathrm\{([^{}]*)\}", r"\1", s)
+    s = s.replace("\\dfrac", "\\frac").replace("\\tfrac", "\\frac")
+    s = s.replace("^{\\circ}", "").replace("^\\circ", "")
+    s = s.replace("\\!", "").replace("\\,", "").replace("\\ ", "")
+    s = re.sub(r"[,.;:!]+\s*$", "", s.strip())
+    s = re.sub(r"\s+", "", s)
+    # Rewrite every ``\frac{a}{b}`` occurrence (not just full-string matches)
+    # so tuples like ``(3,\frac{\pi}{2})`` canonicalize deterministically.
+    for _ in range(3):
+        rewritten = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"(\1)/(\2)", s)
+        if rewritten == s:
+            break
+        s = rewritten
+    return s
+
+
+def _math_answers_equiv(pred: str, target: str) -> bool:
+    """Best-effort equivalence check for math answers (lm-eval is_equiv plus fallbacks)."""
+    if pred is None or target is None:
+        return False
+    pred_s, target_s = str(pred).strip(), str(target).strip()
+    if pred_s == target_s and pred_s:
+        return True
+    try:
+        from lm_eval.tasks.hendrycks_math.utils import is_equiv
+
+        if is_equiv(pred_s, target_s):
+            return True
+    except Exception:
+        pass
+    norm_pred, norm_target = _normalize_math_answer(pred_s), _normalize_math_answer(target_s)
+    if norm_pred and norm_pred == norm_target:
+        return True
+
+    def _numeric(value: str) -> float | None:
+        try:
+            return float(value)
+        except ValueError:
+            pass
+        m = re.fullmatch(r"\((-?[\d.]+)\)/\((-?[\d.]+)\)", value) or re.fullmatch(
+            r"(-?[\d.]+)/(-?[\d.]+)", value
+        )
+        if m and float(m.group(2)) != 0.0:
+            return float(m.group(1)) / float(m.group(2))
+        return None
+
+    pred_n, target_n = _numeric(norm_pred), _numeric(norm_target)
+    if pred_n is not None and target_n is not None:
+        return abs(pred_n - target_n) < 1e-6
+    return False
+
+
+def recompute_hendrycks_math500_from_samples(sub_dir: Path) -> float | None:
+    """Recompute the hendrycks_math500 exact-match score from raw lm-eval samples.
+
+    lm-eval's hendrycks_math500 extraction slices between the first and last
+    ``$`` in a CoT response, which yields 0.0 for responses that use ``$`` in
+    intermediate steps. This recomputes the score deterministically from the
+    last ``\\boxed{...}`` of each response instead. Returns ``None`` when no
+    valid sample rows are found.
+    """
+    if not sub_dir.is_dir():
+        return None
+    paths = sorted(sub_dir.rglob("samples_hendrycks_math500_*.jsonl"))
+    if not paths:
+        return None
+    correct = 0
+    total = 0
+    for path in paths:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict):
+                continue
+            target = row.get("target")
+            resp: Any = None
+            resps = row.get("resps") or []
+            if resps and isinstance(resps[0], (list, tuple)) and resps[0]:
+                resp = resps[0][0]
+            elif resps and isinstance(resps[0], str):
+                resp = resps[0]
+            if resp is None:
+                filtered = row.get("filtered_resps") or []
+                if filtered:
+                    resp = filtered[0]
+            if not isinstance(resp, str) or not isinstance(target, str):
+                continue
+            total += 1
+            boxed = _last_boxed_only_string(resp)
+            pred = _remove_boxed(boxed) if boxed is not None else None
+            if pred is not None and _math_answers_equiv(pred, target):
+                correct += 1
+    if total == 0:
+        return None
+    return round(correct / total, 6)
+
+
+MATH500_SCORE_KEYS: tuple[str, ...] = (
+    "math_500",
+    "hendrycks_math500",
+    "hendrycks_math500_exact_match",
+)
+
+
+def _recompute_math500_scores(sub_dir: Path, scores: dict[str, float]) -> None:
+    """Upgrade a near-zero math_500 score in-place from raw samples when possible."""
+    if sub_dir.name != "chat_0shot_math":
+        return
+    if "hendrycks_math500" not in scores and "math_500" not in scores:
+        return
+    current = float(scores.get("math_500", 0.0) or 0.0)
+    if current > 0.05:
+        return
+    recomputed = recompute_hendrycks_math500_from_samples(sub_dir)
+    if recomputed is None or recomputed <= 0.0 or recomputed <= current:
+        return
+    print(
+        f"Recomputed hendrycks_math500 from samples under {sub_dir}: {current} -> {recomputed}",
+        flush=True,
+    )
+    for key in MATH500_SCORE_KEYS:
+        if key in scores or key == "math_500":
+            scores[key] = recomputed
+
+
+def _load_release_json(path: Path) -> dict[str, Any]:
+    """Best-effort JSON loader returning {} for missing/invalid files."""
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def recompute_local_eval_releases(
+    results_root: Path,
+    releases_root: Path | None = None,
+    *,
+    dry_run: bool = False,
+) -> list[dict[str, Any]]:
+    """Backfill math_500 scores for existing local release JSONs from raw samples.
+
+    Iterates ``*-v3.json`` / ``*-v2.json`` payloads under ``results_root``,
+    recomputes ``hendrycks_math500`` from ``samples_hendrycks_math500_*.jsonl``
+    for each arm, and updates arm summaries, payload scores, deltas and
+    downstream artifacts (release copies, model index, model cards).
+    """
+    updated: list[dict[str, Any]] = []
+    if not results_root.is_dir():
+        return updated
+    paths = sorted(
+        p
+        for p in list(results_root.glob("*-v3.json")) + list(results_root.glob("*-v2.json"))
+        if p.is_file()
+    )
+    for path in paths:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        release_id = str(payload.get("release_id") or payload.get("model_id") or path.stem)
+        release_raw = results_root / release_id / "raw"
+        changed = False
+        recomputed_by_arm: dict[str, float] = {}
+        for arm in ARMS:
+            arm_dir = release_raw / arm
+            if not arm_dir.is_dir():
+                continue
+            sub_dir = arm_dir / "chat_0shot_math"
+            if not (sub_dir.is_dir() and list(sub_dir.rglob("samples_hendrycks_math500_*.jsonl"))):
+                alt = arm_dir / "chat_0shot"
+                if alt.is_dir() and list(alt.rglob("samples_hendrycks_math500_*.jsonl")):
+                    sub_dir = alt
+                else:
+                    continue
+            score = recompute_hendrycks_math500_from_samples(sub_dir)
+            if score is None or score <= 0.0:
+                continue
+            recomputed_by_arm[arm] = score
+            records: list[Any] = [payload.get("arms", {}).get(arm)]
+            if arm == "base":
+                records.append(payload.get("before"))
+            if arm == "tenet":
+                records.append(payload.get("after"))
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                scores = record.get("scores")
+                if not isinstance(scores, dict):
+                    continue
+                old = float(scores.get("math_500", 0.0) or 0.0)
+                if score <= old:
+                    continue
+                for key in MATH500_SCORE_KEYS:
+                    if key in scores or key == "math_500":
+                        scores[key] = score
+                changed = True
+            summary_path = arm_dir / "arm_summary.json"
+            if summary_path.exists():
+                try:
+                    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                    s_scores = summary.get("scores") if isinstance(summary, dict) else None
+                    if isinstance(s_scores, dict) and score > float(
+                        s_scores.get("math_500", 0.0) or 0.0
+                    ):
+                        for key in MATH500_SCORE_KEYS:
+                            if key in s_scores or key == "math_500":
+                                s_scores[key] = score
+                        if not dry_run:
+                            tmp = summary_path.with_suffix(".json.tmp")
+                            tmp.write_text(
+                                json.dumps(summary, indent=2, sort_keys=True) + "\n",
+                                encoding="utf-8",
+                            )
+                            os.replace(tmp, summary_path)
+                        changed = True
+                except (json.JSONDecodeError, OSError):
+                    pass
+        if not changed:
+            continue
+        arms = payload.get("arms")
+        if isinstance(arms, dict) and {"base", "tenet"} <= set(arms):
+            tenet_scores = arms["tenet"].get("scores", {})
+            base_scores = arms["base"].get("scores", {})
+            delta = {
+                k: round(float(tenet_scores[k]) - float(base_scores[k]), 6)
+                for k in MATH500_SCORE_KEYS
+                if isinstance(tenet_scores.get(k), (int, float))
+                and not isinstance(tenet_scores.get(k), bool)
+                and isinstance(base_scores.get(k), (int, float))
+                and not isinstance(base_scores.get(k), bool)
+            }
+            for dkey in ("deltas", "deltas_vs_base"):
+                deltas = payload.get(dkey)
+                if isinstance(deltas, dict):
+                    deltas.update(delta)
+            naive_scores = arms.get("naive", {}).get("scores", {})
+            dvn = payload.get("deltas_vs_naive")
+            if isinstance(dvn, dict) and naive_scores:
+                dvn.update(
+                    {
+                        k: round(float(tenet_scores[k]) - float(naive_scores[k]), 6)
+                        for k in delta
+                        if isinstance(naive_scores.get(k), (int, float))
+                        and not isinstance(naive_scores.get(k), bool)
+                    }
+                )
+        ext = payload.get("external_benchmarks")
+        if isinstance(ext, dict) and isinstance(arms, dict) and "tenet" in arms:
+            ext_scores = ext.get("scores")
+            tenet_scores = arms["tenet"].get("scores", {})
+            if isinstance(ext_scores, dict):
+                for key in MATH500_SCORE_KEYS:
+                    if key in ext_scores and key in tenet_scores:
+                        ext_scores[key] = tenet_scores[key]
+        updated.append(
+            {
+                "release_id": release_id,
+                "path": str(path),
+                "recomputed": recomputed_by_arm,
+                "dry_run": dry_run,
+            }
+        )
+        if dry_run:
+            continue
+        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        if releases_root is not None:
+            rel_dir = releases_root / release_id
+            if rel_dir.is_dir():
+                (rel_dir / "external_benchmarks.json").write_text(
+                    json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+                )
+        generate_tenet_model_card = None  # type: ignore[assignment]
+        render_model_index_yaml = None  # type: ignore[assignment]
+        with contextlib.suppress(Exception):
+            from sml.hub.model_card import generate_tenet_model_card, render_model_index_yaml
+        index_model_id = str(payload.get("tenet_model") or payload.get("model_id") or release_id)
+        index_metrics = payload.get("after") or payload.get("external_benchmarks") or payload
+        if render_model_index_yaml is not None:
+            with contextlib.suppress(Exception):
+                yaml_text = render_model_index_yaml(index_model_id, index_metrics)
+            if yaml_text:
+                for root in (results_root, releases_root):
+                    if root is None:
+                        continue
+                    target_dir = root / release_id
+                    if target_dir.is_dir():
+                        (target_dir / "model_index.yaml").write_text(yaml_text, encoding="utf-8")
+        if (
+            releases_root is not None
+            and (releases_root / release_id).is_dir()
+            and generate_tenet_model_card is not None
+        ):
+            rel_dir = releases_root / release_id
+            foundry_path = rel_dir / "foundry_summary.json"
+            if foundry_path.exists():
+                try:
+                    summary = json.loads(foundry_path.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    summary = {}
+                if not isinstance(summary, dict):
+                    summary = {}
+                gate_data = _load_release_json(rel_dir / "fight_card_gate.json")
+                strata_data = _load_release_json(rel_dir / "strata_bench.json")
+                with contextlib.suppress(Exception):
+                    card_md = generate_tenet_model_card(
+                        str(payload.get("model_id") or release_id),
+                        str(
+                            payload.get("base_model")
+                            or summary.get("plan", {}).get("base_model")
+                            or ""
+                        ),
+                        {
+                            "external_benchmarks": payload,
+                            "fight_card_gate": gate_data,
+                            "strata_bench": strata_data,
+                            "h21": summary.get("h21"),
+                            "h22": summary.get("h22"),
+                        },
+                        recipe_metadata=summary.get("plan"),
+                    )
+                    (rel_dir / "README.md").write_text(card_md, encoding="utf-8")
+                    (rel_dir / f"{release_id}.md").write_text(card_md, encoding="utf-8")
+    return updated
 
 
 # ---------------------------------------------------------------------------
@@ -788,6 +1179,7 @@ def _eval_arm(
                         "config", {}
                     ).get("lm_eval_version")
                 samples.extend(_load_sample_dicts(sub_dir, cached_payload))
+                _recompute_math500_scores(sub_dir, scores)
                 continue
         print(f"[{arm}] Running: {' '.join(cmd)}", flush=True)
         t0 = time.time()
@@ -810,6 +1202,13 @@ def _eval_arm(
                 for m in (
                     "Inkling2ForConditionalGeneration",
                     "Inkling2LoopForConditionalGeneration",
+                    "inkling2_loop",
+                    "inkling2",
+                    "is not supported for now",
+                    "401",
+                    "403",
+                    "Repository Not Found",
+                    "Unauthorized",
                     "Qwen4ExpForConditionalGeneration",
                     "HYV4FlashForConditionalGeneration",
                     "are not supported",
@@ -843,6 +1242,7 @@ def _eval_arm(
         payload_found = True
         sub_scores = _flatten_lm_eval_scores(results)
         scores.update(sub_scores)
+        _recompute_math500_scores(sub_dir, scores)
         if log_open_evals_subtask is not None:
             try:
                 log_open_evals_subtask(
@@ -919,10 +1319,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="3-way OpenEvals runner (vLLM / OpenAI-compatible)."
     )
-    parser.add_argument("--release-id", required=True)
-    parser.add_argument("--base-model", required=True)
-    parser.add_argument("--naive-model", required=True, help="Naive Abliteration control model ref")
-    parser.add_argument("--tenet-repo", required=True)
+    parser.add_argument("--release-id", required=False, default=None)
+    parser.add_argument("--base-model", required=False, default=None)
+    parser.add_argument(
+        "--naive-model",
+        required=False,
+        default=None,
+        help="Naive Abliteration control model ref",
+    )
+    parser.add_argument("--tenet-repo", required=False, default=None)
     parser.add_argument("--suite", choices=["full", "quick"], default="full")
     parser.add_argument(
         "--limit", type=int, default=None, help="Override suite limit (0/negative = None)"
@@ -985,7 +1390,39 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--dry-run", action="store_true", help="Print commands and exit without running"
     )
+    parser.add_argument(
+        "--recompute-local-math500",
+        action="store_true",
+        help=(
+            "Recompute near-zero hendrycks_math500 scores for existing local "
+            "release JSONs from raw lm-eval samples and exit"
+        ),
+    )
     args = parser.parse_args(argv)
+
+    if args.recompute_local_math500:
+        updates = recompute_local_eval_releases(
+            REPO_ROOT / "results" / "external_evals",
+            REPO_ROOT / "results" / "tenet_releases",
+            dry_run=args.dry_run,
+        )
+        for item in updates:
+            print(json.dumps(item), flush=True)
+        print(f"Recompute complete: {len(updates)} release payload(s) updated.", flush=True)
+        return 0
+
+    missing = [
+        flag
+        for flag, value in (
+            ("--release-id", args.release_id),
+            ("--base-model", args.base_model),
+            ("--naive-model", args.naive_model),
+            ("--tenet-repo", args.tenet_repo),
+        )
+        if not value
+    ]
+    if missing:
+        parser.error(f"the following arguments are required: {', '.join(missing)}")
 
     if args.backend == "hf":
         parser.error("--backend hf is not supported here; use run_external_benchmark_3way.py")
