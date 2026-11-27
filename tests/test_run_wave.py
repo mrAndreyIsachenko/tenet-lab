@@ -84,9 +84,10 @@ def test_build_wave_commands_wave1() -> None:
 def test_build_wave_commands_wave2_no_gguf() -> None:
     cmds = run_wave.build_wave_commands(2)
 
-    assert len(cmds) == 3  # three foundry models, no gguf batch
+    assert len(cmds) == 4  # four foundry models, no gguf batch
     ids = [c[c.index("--model-id") + 1] for c in cmds]
     assert ids == [
+        "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
         "Tenet-106B-A12B-GLM4.5-Unslop-v3",
         "Tenet-125B-A6B-Qwen3.8-Unslop-v3",
         "Tenet-32B-A3B-GLM4.5-Unslop-v3",
