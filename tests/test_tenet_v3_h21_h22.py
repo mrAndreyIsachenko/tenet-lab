@@ -955,3 +955,14 @@ def test_foundry_open_evals_and_cleanup_flags(tmp_path, monkeypatch):
     result = foundry._cleanup_local_cache(ckpt_dir, upload_result={"uploaded": True})
     assert result["cleaned_up"] is True
     assert not ckpt_dir.exists()
+
+    # Also deletes parent models--org--repo/blobs when given an HF Hub snapshots/<sha> path!
+    hf_repo_cache = hf_home / "models--Qwen--Qwen3.8-Flash-Next"
+    blobs_dir = hf_repo_cache / "blobs"
+    snap_dir = hf_repo_cache / "snapshots" / "deadbeef"
+    blobs_dir.mkdir(parents=True)
+    snap_dir.mkdir(parents=True)
+    (blobs_dir / "giant_335gb_blob").write_bytes(b"x" * 1024)
+    result_snap = foundry._cleanup_local_cache(snap_dir, upload_result={"uploaded": True})
+    assert result_snap["cleaned_up"] is True
+    assert not hf_repo_cache.exists()

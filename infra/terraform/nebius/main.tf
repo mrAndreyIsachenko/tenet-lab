@@ -164,6 +164,7 @@ resource "local_file" "nebius_env" {
   filename        = "${local.repo_root}/.env.nebius"
   file_permission = "0600"
   content = templatefile("${path.module}/templates/nebius_env.tftpl", {
+    nebius_project_id   = var.parent_id
     nebius_instance_id  = nebius_compute_v1_instance.gpu.id
     nebius_ssh_host     = local.ssh_host
     nebius_s3_bucket    = nebius_storage_v1_bucket.artifacts.name
@@ -179,6 +180,7 @@ resource "local_file" "ansible_inventory" {
   content = templatefile("${path.module}/templates/ansible_inventory.tftpl", {
     public_ip           = local.public_ip
     ssh_user            = var.ssh_user
+    nebius_project_id   = var.parent_id
     nebius_instance_id  = nebius_compute_v1_instance.gpu.id
     nebius_s3_bucket    = nebius_storage_v1_bucket.artifacts.name
     mlflow_tracking_uri = local.mlflow_uri

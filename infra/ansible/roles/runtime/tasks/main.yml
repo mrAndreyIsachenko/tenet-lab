@@ -10,6 +10,8 @@
       - htop
       - rsync
       - ca-certificates
+      - build-essential
+      - python3-dev
     state: present
     update_cache: true
 
@@ -111,6 +113,8 @@
     cmd: >-
       rsync -az --delete
       --exclude '.git' --exclude '.venv' --exclude '.terraform'
+      --exclude '/hf_cache' --exclude '/tenet_materialized' --exclude '/results'
+      --exclude '.env' --exclude '.env.nebius'
       --exclude 'results/*/models' --exclude '/shards' --exclude '/data'
       -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
       "{{ playbook_dir }}/../../"

@@ -2,6 +2,7 @@
 # Nebius AI Cloud Compute GPU VM & Object Storage lifecycle management.
 # Global flags: --dry-run (or env DRY_RUN=1) plans actions without side effects; --help prints usage.
 set -euo pipefail
+export PATH="$HOME/.nebius/bin:/home/ubuntu/.nebius/bin:/usr/local/bin:$PATH"
 
 DRY_RUN="${DRY_RUN:-0}"
 if [[ "${1:-}" == "--dry-run" ]]; then
@@ -118,6 +119,10 @@ cmd_setup_sa_auth() {
 }
 
 s3_cmd() {
+  if [[ -z "${AWS_ACCESS_KEY_ID:-}" ]] && [[ ! -f "$HOME/.aws/credentials" ]]; then
+    log "s3-sync-${direction:-cmd}: static S3 credentials not set; skipping (persisted via HF Hub & rsync)"
+    return 0
+  fi
   if command -v s5cmd >/dev/null 2>&1; then
     s5cmd --endpoint-url "$S3_ENDPOINT" "$@"
   else
@@ -182,9 +187,13 @@ cmd_preflight() {
   else
     curl -sS -o /dev/null -w '%{http_code}' "$S3_ENDPOINT" >/dev/null \
       || fail "Object Storage endpoint $S3_ENDPOINT is unreachable"
-    s3_cmd "ls" "s3://$S3_BUCKET" >/dev/null \
-      || fail "bucket s3://$S3_BUCKET is not accessible"
-    log "s3: bucket s3://$S3_BUCKET OK via $S3_ENDPOINT"
+    if [[ -n "${AWS_ACCESS_KEY_ID:-}" ]] || [[ -f "$HOME/.aws/credentials" ]]; then
+      s3_cmd "ls" "s3://$S3_BUCKET" >/dev/null \
+        || fail "bucket s3://$S3_BUCKET is not accessible"
+      log "s3: bucket s3://$S3_BUCKET OK via $S3_ENDPOINT"
+    else
+      log "s3: endpoint $S3_ENDPOINT reachable (no static AWS_ACCESS_KEY_ID set; bucket ls skipped)"
+    fi
   fi
 
   # 6. Managed MLflow
@@ -248,6 +257,10 @@ s3_sync() {
       log "DRY-RUN s3-sync-down: 's3://$S3_BUCKET/results' -> '$RESULTS_DIR' (endpoint $S3_ENDPOINT)"
     fi
     return
+  fi
+  if [[ -z "${AWS_ACCESS_KEY_ID:-}" ]] && [[ ! -f "$HOME/.aws/credentials" ]]; then
+    log "s3-sync-${direction:-cmd}: static S3 credentials not set; skipping (persisted via HF Hub & rsync)"
+    return 0
   fi
   if command -v s5cmd >/dev/null 2>&1; then
     if [[ "$direction" == "up" ]]; then

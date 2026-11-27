@@ -2,6 +2,7 @@
 # Idle GPU watchdog: terminates the cloud instance if GPU utilization stays below threshold
 # Usage: nohup ./scripts/remote/idle_watchdog.sh 15 5 > watchdog.log 2>&1 &
 set -euo pipefail
+export PATH="$HOME/.nebius/bin:/home/ubuntu/.nebius/bin:/usr/local/bin:$PATH"
 
 MAX_IDLE_MINUTES="${1:-15}"
 UTIL_THRESHOLD_PCT="${2:-5}"

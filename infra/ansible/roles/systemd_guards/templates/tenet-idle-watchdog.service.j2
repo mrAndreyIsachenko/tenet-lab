@@ -9,6 +9,7 @@ RestartSec=15
 User={{ tenet_user }}
 WorkingDirectory={{ tenet_workdir }}
 EnvironmentFile={{ tenet_workdir }}/.env
+Environment=PATH=/home/{{ tenet_user }}/.nebius/bin:/usr/local/bin:/usr/bin:/bin
 Environment=NEBIUS_INSTANCE_ID={{ nebius_instance_id | default('', true) }}
 ExecStart=/usr/bin/env bash {{ tenet_workdir }}/scripts/remote/idle_watchdog.sh {{ idle_watchdog_minutes }} {{ idle_watchdog_util_pct }}
 
