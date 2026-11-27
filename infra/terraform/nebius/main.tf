@@ -6,7 +6,7 @@ locals {
     }
     wave2 = {
       platform = "gpu-h200-sxm"
-      preset   = "4gpu-64vcpu-800gb"
+      preset   = "8gpu-128vcpu-1600gb"
     }
   }
 
@@ -114,6 +114,8 @@ resource "nebius_compute_v1_instance" "gpu" {
   name               = "tenet-v3-gpu-${var.gpu_preset}"
   stopped            = var.instance_stopped
   service_account_id = nebius_iam_v1_service_account.tenet.id
+  preemptible        = var.preemptible ? { on_preemption = "STOP" } : null
+  recovery_policy    = var.preemptible ? "FAIL" : "RECOVER"
 
   resources = {
     platform = local.selected_gpu.platform

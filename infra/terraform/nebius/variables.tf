@@ -12,7 +12,7 @@ variable "region" {
 variable "gpu_preset" {
   type        = string
   default     = "wave1"
-  description = "GPU preset tier: 'wave1' (1x/2x H200 141GB) or 'wave2' (2x/4x H200 or B200)."
+  description = "GPU preset tier: 'wave1' (1x H200 141GB) or 'wave2' (8x H200 1128GB)."
 
   validation {
     condition     = contains(["wave1", "wave2"], var.gpu_preset)
@@ -54,6 +54,12 @@ variable "instance_stopped" {
   type        = bool
   default     = false
   description = "Set true to stop the GPU VM ($0/hr GPU billing while keeping disks)."
+}
+
+variable "preemptible" {
+  type        = bool
+  default     = true
+  description = "Launch GPU VM as preemptible spot instance (on_preemption=STOP, ~3x cheaper)."
 }
 
 variable "boot_image_family" {
