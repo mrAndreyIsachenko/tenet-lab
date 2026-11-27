@@ -19,6 +19,75 @@ tags:
 - safetensors
 - gguf
 - conversational
+model-index:
+- name: Tenet-35B-A3B-Qwen3.6-Unslop-v3
+  results:
+  - task:
+      type: text-generation
+    dataset:
+      name: IFEval
+      type: google/IFEval
+    metrics:
+    - name: Prompt-level Strict Accuracy
+      type: ifeval_strict
+      value: 0.828096
+    - name: Instruction-level Strict Accuracy
+      type: ifeval_inst_strict
+      value: 0.882494
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-35B-A3B-Qwen3.6-Unslop-v3
+  - task:
+      type: text-generation
+    dataset:
+      name: MATH-500
+      type: HuggingFaceH4/MATH-500
+    metrics:
+    - name: Accuracy
+      type: math_500
+      value: 0.82
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-35B-A3B-Qwen3.6-Unslop-v3
+  - task:
+      type: text-generation
+    dataset:
+      name: GSM8K
+      type: openai/gsm8k
+    metrics:
+    - name: Strict Match
+      type: gsm8k_cot_strict
+      value: 0.945413
+    - name: Accuracy
+      type: gsm8k_math_acc
+      value: 0.946171
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-35B-A3B-Qwen3.6-Unslop-v3
+  - task:
+      type: text-generation
+    dataset:
+      name: GPQA Diamond
+      type: Idavidrein/gpqa
+    metrics:
+    - name: Accuracy
+      type: gpqa_diamond
+      value: 0.454545
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-35B-A3B-Qwen3.6-Unslop-v3
+  - task:
+      type: text-generation
+    dataset:
+      name: MMLU-Pro
+      type: TIGER-Lab/MMLU-Pro
+    metrics:
+    - name: Accuracy
+      type: mmlu_pro
+      value: 0.739087
+    source:
+      name: Tenet OpenEvals (vLLM)
+      url: https://huggingface.co/mr-andrey-isachenko/Tenet-35B-A3B-Qwen3.6-Unslop-v3
 ---
 
 # Tenet-35B-A3B-Qwen3.6-Unslop-v3
@@ -120,7 +189,7 @@ precision.
 | FP8 (E4M3) | n/a |
 | Naive Abliteration | n/a |
 
-Max row crest-factor: n/a
+Max row crest-factor: 11.21
 
 ## Why Tenet instead of Naive Abliteration?
 
@@ -131,13 +200,21 @@ Max row crest-factor: n/a
 | Tool/SQL Anchor Orthogonality | — | — | — | — |
 | LoRA Re-Leakage | — | — | — | — |
 | FP8 Subspace Re-Leakage | — | — | — | — |
-| Max Row Crest-Factor (< 25.0) | — | — | — | — |
+| Max Row Crest-Factor (< 25.0) | — | — | 11.21 | 11.21 |
 
 ## External Benchmarks
 
-| Benchmark | Score |
-| --- | --- |
-| Unclosed <think> Rate | 1.00e-03 |
+### Base vs Naive Abliteration vs Tenet (Three-Arm External Eval)
+
+| Benchmark | Base | Naive Abliteration | Tenet v1 | Δ (Tenet vs Base) | Δ (Tenet vs Naive) |
+| --- | --- | --- | --- | --- | --- |
+| IFEval (strict) | 0.82 | 0.82 | 0.83 | +7.39e-03 | +5.54e-03 |
+| IFEval (inst strict) | 0.88 | 0.88 | 0.88 | +4.80e-03 | +2.40e-03 |
+| MATH-500 | 0.82 | 0.77 | 0.82 | +4.00e-03 | +0.05 |
+| GSM8K CoT (strict) | 0.95 | 0.95 | 0.95 | -3.03e-03 | -9.10e-03 |
+| GPQA Diamond | 0.44 | 0.49 | 0.45 | +0.02 | -0.04 |
+| MMLU-Pro | 0.73 | 0.64 | 0.74 | +9.92e-03 | +0.10 |
+| Unclosed <think> Rate | 9.21e-04 | 1.59e-03 | 1.00e-03 | +8.30e-05 | -5.86e-04 |
 
 ## Strata Engine, Speculative Decoding & Nebius Benchmark Passport
 
@@ -149,11 +226,11 @@ Nebius benchmark passport pipeline.
 
 | Telemetry | Value |
 | --- | --- |
-| `expert_cache_hit_rate` (H21) | n/a |
-| `coactivation_graph_drift` (H21) | n/a |
-| `speculative_acceptance_rate` (H22) | n/a |
-| `untouched_expert_ratio` | n/a |
-| `peak_host_ram_mb` | n/a |
+| `expert_cache_hit_rate` (H21) | 94.0% |
+| `coactivation_graph_drift` (H21) | 0.00 |
+| `speculative_acceptance_rate` (H22) | 71.0% |
+| `untouched_expert_ratio` | 90.1% |
+| `peak_host_ram_mb` | 0.75 |
 
 ## Side-by-Side: Naive Abliteration vs Tenet (Engineering & SQL Tool-Call)
 
