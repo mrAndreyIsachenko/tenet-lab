@@ -1,13 +1,14 @@
-.PHONY: help sync test lint format verify-h1 verify-env compare-adaptation run-surgery verify-h9 verify-h10 verify-h11 verify-h12 build-tenet train-smoke profile-h2-local gpu-smoke smoke report clean pod-preflight pod-sync-daemon pod-sync-stop pod-launch pod-wait nebius-preflight nebius-start nebius-stop nebius-s3-pull nebius-mlflow-backfill nebius-up nebius-down nebius-iac-validate
+.PHONY: help sync test lint format verify-h1 verify-env compare-adaptation run-surgery verify-h9 verify-h10 verify-h11 verify-h12 build-tenet train-smoke profile-h2-local gpu-smoke smoke report clean pod-preflight pod-sync-daemon pod-sync-stop pod-launch pod-wait pod-logs nebius-preflight nebius-start nebius-stop nebius-status nebius-logs nebius-logs-follow nebius-s3-pull nebius-mlflow-backfill nebius-up nebius-down nebius-iac-validate nebius-wait-and-stop
 
 HARNESS ?= harness
 POD_HOST ?=
-POD_WORKDIR ?= ~/Small-Model-Lab
+POD_WORKDIR ?= /mnt/nvme/tenet-lab
 POD_SESSION ?= sml_pod
 POD_LOCAL_DIR ?= $(CURDIR)
-POD_PATHS ?= results,releases
+POD_PATHS ?= results
 POD_MIN_VRAM_MIB ?= 6144
 POD_MAX_WAIT_SEC ?= 14400
+POD_LINES ?= 60
 POD_CMD ?=
 POD_ON_CHECKPOINT ?=
 
@@ -121,6 +122,48 @@ pod-launch:
 pod-wait:
 	@test -n "$(POD_HOST)" || { echo "POD_HOST is required (make pod-wait POD_HOST=<host>)"; exit 1; }
 	$(HARNESS) pod wait --host "$(POD_HOST)" --workdir "$(POD_WORKDIR)" --max-wait-sec "$(POD_MAX_WAIT_SEC)" --local-dir "$(POD_LOCAL_DIR)"
+
+pod-logs:
+	@test -n "$(POD_HOST)" || { echo "POD_HOST is required (make pod-logs POD_HOST=<host>)"; exit 1; }
+	$(HARNESS) pod logs --host "$(POD_HOST)" --workdir "$(POD_WORKDIR)" --lines "$(POD_LINES)"
+
+nebius-status:
+	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; \
+	echo "=== NEBIUS CLOUD VM ==="; \
+	(nebius --profile tenet-sa compute instance get --id "$$NEBIUS_INSTANCE_ID" --format json 2>/dev/null || nebius compute instance get --id "$$NEBIUS_INSTANCE_ID" --format json 2>/dev/null) | jq "{id: .metadata.id, name: .metadata.name, state: .status.state}" || echo "(nebius API unavailable)"; \
+	HOST="$${POD_HOST:-$${NEBIUS_SSH_HOST}}"; \
+	WORKDIR="$${POD_WORKDIR:-/mnt/nvme/tenet-lab}"; \
+	if [ -n "$$HOST" ] && ssh -o BatchMode=yes -o ConnectTimeout=4 "$$HOST" "true" 2>/dev/null; then \
+		$(HARNESS) pod logs --host "$$HOST" --workdir "$$WORKDIR" --lines "$(POD_LINES)"; \
+	else \
+		echo "=== LOCAL SYNCED STATUS (VM SSH offline) ==="; \
+		cat results/.pod_status.json 2>/dev/null || true; \
+		echo "=== LOCAL SYNCED WORKER LOG (last $(POD_LINES) lines) ==="; \
+		tail -n "$(POD_LINES)" results/worker.log 2>/dev/null || echo "(no local results/worker.log)"; \
+	fi'
+
+nebius-logs:
+	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; \
+	HOST="$${POD_HOST:-$${NEBIUS_SSH_HOST}}"; \
+	WORKDIR="$${POD_WORKDIR:-/mnt/nvme/tenet-lab}"; \
+	$(HARNESS) pod logs --host "$$HOST" --workdir "$$WORKDIR" --lines "$(POD_LINES)"'
+
+nebius-logs-follow:
+	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; \
+	HOST="$${POD_HOST:-$${NEBIUS_SSH_HOST}}"; \
+	WORKDIR="$${POD_WORKDIR:-/mnt/nvme/tenet-lab}"; \
+	$(HARNESS) pod logs --host "$$HOST" --workdir "$$WORKDIR" --lines "$(POD_LINES)" --follow'
+
+nebius-wait-and-stop:
+	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; \
+	HOST="$${POD_HOST:-$${NEBIUS_SSH_HOST}}"; \
+	WORKDIR="$${POD_WORKDIR:-/mnt/nvme/tenet-lab}"; \
+	$(HARNESS) pod wait --host "$$HOST" --workdir "$$WORKDIR" --max-wait-sec "$(POD_MAX_WAIT_SEC)" --local-dir "$(POD_LOCAL_DIR)"; \
+	WAIT_RC=$$?; \
+	$(HARNESS) pod sync --host "$$HOST" --remote-dir "$$WORKDIR" --local-dir "$(POD_LOCAL_DIR)" --paths "$(POD_PATHS)" --stop || true; \
+	bash scripts/remote/nebius_ctl.sh s3-sync-down || true; \
+	bash scripts/remote/nebius_ctl.sh stop || true; \
+	exit $$WAIT_RC'
 
 nebius-preflight:
 	@bash -c 'set -a; [ -f .env.nebius ] && source .env.nebius; set +a; bash scripts/remote/nebius_ctl.sh preflight'

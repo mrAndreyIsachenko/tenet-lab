@@ -1126,6 +1126,40 @@ def _run_fight_card_gate(
     return report
 
 
+_REAL_SUBPROCESS_RUN = subprocess.run
+
+
+def _run_streaming_subprocess(cmd: list[str], *, prefix: str = "") -> tuple[int, str]:
+    """Stream subprocess stdout+stderr live to worker.log while keeping the tail."""
+    if subprocess.run is not _REAL_SUBPROCESS_RUN:
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        combined = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+        return proc.returncode, combined
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        env=env,
+    )
+    tail_chunks: list[str] = []
+    tail_len = 0
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        out_line = f"{prefix}{line}" if prefix else line
+        print(out_line, end="", flush=True)
+        tail_chunks.append(line)
+        tail_len += len(line)
+        while tail_len > 8000 and len(tail_chunks) > 1:
+            removed = tail_chunks.pop(0)
+            tail_len -= len(removed)
+    rc = proc.wait()
+    return rc, "".join(tail_chunks)
+
+
 def _run_strata_bench(
     model_id: str,
     spec: dict[str, Any],
@@ -1135,7 +1169,7 @@ def _run_strata_bench(
     *,
     backend: str = "sim",
 ) -> dict[str, Any]:
-    """Run the Strata benchmark driver as a subprocess."""
+    """Run the Strata benchmark driver as a subprocess with live log streaming."""
     cmd = [
         sys.executable,
         str(REPO_ROOT / "scripts" / "eval" / "run_strata_bench.py"),
@@ -1152,15 +1186,15 @@ def _run_strata_bench(
         "--output",
         str(release_dir / "strata_bench.json"),
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    rc, combined_tail = _run_streaming_subprocess(cmd, prefix="[strata] ")
     report: dict[str, Any] = {
-        "returncode": proc.returncode,
-        "stdout_tail": proc.stdout[-2000:],
-        "stderr_tail": proc.stderr[-2000:],
-        "passed": proc.returncode == 0,
+        "returncode": rc,
+        "stdout_tail": combined_tail[-2000:],
+        "stderr_tail": "",
+        "passed": rc == 0,
     }
     output_path = release_dir / "strata_bench.json"
-    if proc.returncode == 0 and output_path.exists():
+    if rc == 0 and output_path.exists():
         import contextlib
 
         with contextlib.suppress(Exception):
@@ -1214,21 +1248,21 @@ def _run_open_evals(
         "--tensor-parallel-size",
         str(_detect_tensor_parallel_size()),
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    rc, combined_tail = _run_streaming_subprocess(cmd)
     report: dict[str, Any] = {
-        "returncode": proc.returncode,
-        "stdout_tail": proc.stdout[-2000:],
-        "stderr_tail": proc.stderr[-2000:],
-        "passed": proc.returncode == 0,
+        "returncode": rc,
+        "stdout_tail": combined_tail[-2000:],
+        "stderr_tail": "",
+        "passed": rc == 0,
     }
-    if proc.returncode != 0:
+    if rc != 0:
         arch_markers = (
             "Inkling2ForConditionalGeneration",
             "Inkling2LoopForConditionalGeneration",
             "Qwen4ExpForConditionalGeneration",
             "HYV4FlashForConditionalGeneration",
         )
-        diag_text = proc.stdout + "\n" + proc.stderr
+        diag_text = combined_tail
         raw_root = REPO_ROOT / "results" / "external_evals" / release_id / "raw"
         if raw_root.is_dir():
             for log_file in raw_root.rglob("lm_eval_live.log"):
@@ -1244,7 +1278,7 @@ def _run_open_evals(
             report["status"] = "unsupported_arch_in_vllm"
             report["passed"] = True
             return report
-    if proc.returncode == 0:
+    if rc == 0:
         export_cmd = [
             sys.executable,
             str(REPO_ROOT / "scripts" / "eval" / "export_model_index.py"),

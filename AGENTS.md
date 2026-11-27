@@ -55,9 +55,9 @@ After any environment setup, package install, or script modification on a pod:
 - **STRICTLY FORBIDDEN:**
   1. Using `schedule` (`*/15 * * * *`) or repeated `manage_task` turns in the main LLM session to poll `nvidia-smi` or `tail` logs.
   2. Setting short 180s timeouts (`POD_MAX_WAIT_SEC=180` or `NotificationTimeoutSeconds=120`) and stopping to ask the user *"Продолжай / Continue?"* while a pod job is `RUNNING`. Every wakeup re-bills 150K+ tokens and forces human babysitting.
-- **Autonomous Full-Run Rule:**
-  1. Wait via `make pod-wait POD_HOST=<host> POD_MAX_WAIT_SEC=14400` (`harness pod wait --max-wait-sec 14400 --poll-interval-sec 30`, **omit `NotificationTimeoutSeconds`** on `run_command` and set `WaitMsBeforeAsync: 5000` so the background task sleeps quietly at **0 LLM token cost** and wakes you **only once** when `DONE`, `ERROR`, or `CHECKPOINT` occurs).
-  2. As soon as the Smoke Gate passes, launch the **entire remaining multi-model queue + S3/HF sync + `nebius-stop`** inside a single autonomous remote script via `make pod-launch`, start one `make pod-wait POD_MAX_WAIT_SEC=21600` background task, and let it run unattended to completion without ever asking the user for permission to continue.
+- **Autonomous Full-Run Rule (NEVER kill the VM inside `{worker}` before `DONE` is synced!):**
+  1. **Root-cause rule:** Never put `nebius_ctl.sh stop` or `shutdown -h now` inside `{worker}`'s `EXIT` trap! Killing the VM inside `{worker}` kills SSH *before* `harness pod launch` writes `{"status": "DONE"}` to `results/.pod_status.json` and *before* `pod-wait` runs its final `rsync`. Instead, `{worker}` only runs `nebius_ctl.sh s3-sync-up` and exits `0`/`1`; `tenet-idle-watchdog.service` on the VM stays as a 10-minute idle safety net if the Mac goes offline.
+  2. Wait and auto-stop from the **Mac** in one atomic background command: **`make nebius-wait-and-stop POD_MAX_WAIT_SEC=36000`** (`WaitMsBeforeAsync: 5000`, **omit `NotificationTimeoutSeconds`**). As soon as `{worker}` finishes, `pod-wait` sees `DONE`/`ERROR` within 15s, pulls the final `rsync`, stops `pod-sync-daemon`, calls `nebius_ctl.sh stop` (`STOPPED` via API), and immediately wakes up the LLM session! (And if the VM ever stops early via watchdog/preemption, `harness pod wait` exits after 4 unreachable SSH polls instead of hanging).
 
 ---
 
