@@ -32,6 +32,7 @@ WAVE_SPECS: dict[int, dict[str, list[str]]] = {
     },
     2: {
         "models": [
+            "Tenet-35B-A3B-Qwen3.6-Unslop-v3",
             "Tenet-106B-A12B-GLM4.5-Unslop-v3",
             "Tenet-125B-A6B-Qwen3.8-Unslop-v3",
             "Tenet-32B-A3B-GLM4.5-Unslop-v3",
