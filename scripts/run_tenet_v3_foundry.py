@@ -1374,9 +1374,17 @@ def _cleanup_local_cache(
     if materialized_dir is not None and Path(materialized_dir).is_dir():
         targets.append(Path(materialized_dir))
     if model_dir.is_dir() and _under_guarded_root(model_dir):
-        # Whole HF cache dir: delete it (covers every shard at once).
-        shutil.rmtree(model_dir)
-        removed.append(str(model_dir))
+        # When model_dir is an HF Hub snapshot (.../models--org--repo/snapshots/<sha>),
+        # remove the parent models--org--repo folder so multi-hundred-GiB blobs/ are freed!
+        cache_target = model_dir
+        if (
+            model_dir.parent.name == "snapshots"
+            and model_dir.parent.parent.name.startswith("models--")
+            and _under_guarded_root(model_dir.parent.parent)
+        ):
+            cache_target = model_dir.parent.parent
+        shutil.rmtree(cache_target)
+        removed.append(str(cache_target))
     else:
         targets.append(model_dir)
     for target in targets:

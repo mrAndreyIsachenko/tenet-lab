@@ -47,15 +47,24 @@
     set -euo pipefail
     DEV="{{ nvme_device.stdout | trim }}"
     UUID=$(blkid -s UUID -o value "$DEV")
-    if ! grep -q "/mnt/nvme" /etc/fstab; then
-      echo "UUID=${UUID} /mnt/nvme xfs defaults,noatime,nofail 0 2" >> /etc/fstab
-    fi
+    sed -i '\#[[:space:]]/mnt/nvme[[:space:]]#d' /etc/fstab
+    echo "UUID=${UUID} /mnt/nvme xfs defaults,noatime,nofail 0 2" >> /etc/fstab
     mount /mnt/nvme
   args:
     executable: /bin/bash
   when:
     - nvme_device.stdout | trim != "ALREADY_MOUNTED"
     - nvme_device.stdout | trim != "NONE"
+
+- name: Grow XFS filesystem on /mnt/nvme if scratch disk was resized
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if mountpoint -q /mnt/nvme; then
+      xfs_growfs /mnt/nvme || true
+    fi
+  args:
+    executable: /bin/bash
+  changed_when: false
 
 - name: Create Tenet workspace directories on /mnt/nvme
   ansible.builtin.file:

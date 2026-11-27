@@ -8,4 +8,5 @@ Type=oneshot
 User={{ tenet_user }}
 WorkingDirectory={{ tenet_workdir }}
 EnvironmentFile={{ tenet_workdir }}/.env
+Environment=PATH=/home/{{ tenet_user }}/.nebius/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/usr/bin/env bash {{ tenet_workdir }}/scripts/remote/nebius_ctl.sh s3-sync-up
